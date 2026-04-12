@@ -1,0 +1,577 @@
+package com.cloudalbum.publisher.device.service.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.cloudalbum.publisher.album.entity.Album;
+import com.cloudalbum.publisher.album.entity.AlbumMedia;
+import com.cloudalbum.publisher.album.mapper.AlbumMapper;
+import com.cloudalbum.publisher.album.mapper.AlbumMediaMapper;
+import com.cloudalbum.publisher.common.enums.DeviceStatus;
+import com.cloudalbum.publisher.common.enums.ResultCode;
+import com.cloudalbum.publisher.common.exception.BusinessException;
+import com.cloudalbum.publisher.common.util.JwtUtil;
+import com.cloudalbum.publisher.device.dto.*;
+import com.cloudalbum.publisher.device.entity.Device;
+import com.cloudalbum.publisher.device.entity.DeviceGroup;
+import com.cloudalbum.publisher.device.entity.DeviceGroupRel;
+import com.cloudalbum.publisher.device.mapper.DeviceGroupMapper;
+import com.cloudalbum.publisher.device.mapper.DeviceGroupRelMapper;
+import com.cloudalbum.publisher.device.mapper.DeviceMapper;
+import com.cloudalbum.publisher.device.service.DeviceService;
+import com.cloudalbum.publisher.distribution.entity.Distribution;
+import com.cloudalbum.publisher.distribution.entity.DistributionDevice;
+import com.cloudalbum.publisher.distribution.mapper.DistributionDeviceMapper;
+import com.cloudalbum.publisher.distribution.mapper.DistributionMapper;
+import com.cloudalbum.publisher.media.content.MediaContentResolverRegistry;
+import com.cloudalbum.publisher.media.content.MediaHttpWriter;
+import com.cloudalbum.publisher.media.entity.Media;
+import com.cloudalbum.publisher.media.mapper.MediaMapper;
+import com.cloudalbum.publisher.review.entity.ReviewRecord;
+import com.cloudalbum.publisher.review.mapper.ReviewRecordMapper;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+
+import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class DeviceServiceImpl implements DeviceService {
+
+    @Value("${minio.bucket}")
+    private String bucket;
+
+    private final DeviceMapper deviceMapper;
+    private final DeviceGroupMapper deviceGroupMapper;
+    private final DeviceGroupRelMapper deviceGroupRelMapper;
+    private final DistributionMapper distributionMapper;
+    private final DistributionDeviceMapper distributionDeviceMapper;
+    private final AlbumMapper albumMapper;
+    private final AlbumMediaMapper albumMediaMapper;
+    private final MediaMapper mediaMapper;
+    private final ReviewRecordMapper reviewRecordMapper;
+    private final MediaContentResolverRegistry mediaContentResolverRegistry;
+    private final MediaHttpWriter mediaHttpWriter;
+    private final JwtUtil jwtUtil;
+
+    @Override
+    public List<DeviceResponse> listDevices(Long userId) {
+        return deviceMapper.selectList(new LambdaQueryWrapper<Device>()
+                        .eq(Device::getUserId, userId)
+                        .orderByDesc(Device::getUpdatedAt))
+                .stream().map(this::toDeviceResponse).toList();
+    }
+
+    @Override
+    @Transactional
+    public DeviceResponse bindDevice(Long userId, DeviceBindRequest request) {
+        Device exists = deviceMapper.selectOne(new LambdaQueryWrapper<Device>()
+                .eq(Device::getDeviceUid, request.getDeviceUid())
+                .last("limit 1"));
+
+        if (exists != null && !Objects.equals(exists.getUserId(), userId)) {
+            throw new BusinessException(ResultCode.DEVICE_ALREADY_BOUND);
+        }
+
+        Device device = exists == null ? new Device() : exists;
+        device.setUserId(userId);
+        device.setDeviceUid(request.getDeviceUid());
+        device.setType(request.getType());
+        device.setName(StringUtils.hasText(request.getName()) ? request.getName() : request.getDeviceUid());
+        device.setStatus(DeviceStatus.OFFLINE.name());
+        device.setLastHeartbeatAt(LocalDateTime.now());
+        device.setBoundAt(LocalDateTime.now());
+
+        if (exists == null) {
+            deviceMapper.insert(device);
+        } else {
+            deviceMapper.updateById(device);
+        }
+        return toDeviceResponse(device);
+    }
+
+    @Override
+    @Transactional
+    public DeviceTokenResponse createAccessToken(Long userId, DeviceTokenRequest request) {
+        Device device = getOwnedDeviceByUid(userId, request.getDeviceUid());
+        String accessToken = jwtUtil.generateDeviceAccessToken(device.getUserId(), device.getId(), device.getDeviceUid());
+        return new DeviceTokenResponse(
+                accessToken,
+                jwtUtil.getDeviceAccessTokenExpire(),
+                device.getId(),
+                device.getDeviceUid());
+    }
+
+    @Override
+    @Transactional
+    public void unbindDevice(Long userId, Long deviceId) {
+        Device device = getOwnedDevice(userId, deviceId);
+        device.setStatus(DeviceStatus.UNBOUND.name());
+        device.setUnboundAt(LocalDateTime.now());
+        deviceMapper.updateById(device);
+        deviceMapper.deleteById(deviceId);
+
+        deviceGroupRelMapper.delete(new LambdaQueryWrapper<DeviceGroupRel>()
+                .eq(DeviceGroupRel::getDeviceId, deviceId));
+    }
+
+    @Override
+    @Transactional
+    public DeviceResponse renameDevice(Long userId, Long deviceId, DeviceRenameRequest request) {
+        Device device = getOwnedDevice(userId, deviceId);
+        device.setName(request.getName());
+        deviceMapper.updateById(device);
+        return toDeviceResponse(device);
+    }
+
+    @Override
+    @Transactional
+    public DeviceResponse updateDeviceStatus(Long userId, Long deviceId, DeviceStatusUpdateRequest request) {
+        Device device = getOwnedDevice(userId, deviceId);
+        DeviceStatus status = parseDeviceStatus(request.getStatus());
+        if (status == DeviceStatus.UNBOUND) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "设备状态不可直接设置为UNBOUND");
+        }
+        device.setStatus(status.name());
+        if (status == DeviceStatus.ONLINE) {
+            device.setLastHeartbeatAt(LocalDateTime.now());
+        }
+        deviceMapper.updateById(device);
+        return toDeviceResponse(device);
+    }
+
+    @Override
+    @Transactional
+    public DevicePullResponse pullContent(Long userId, String deviceUid) {
+        if (!StringUtils.hasText(deviceUid)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "设备标识不能为空");
+        }
+        return buildPullResponse(getOwnedDeviceByUid(userId, deviceUid), false);
+    }
+
+    @Override
+    @Transactional
+    public DevicePullResponse pullContentByDevice(Long deviceId) {
+        return buildPullResponse(getDevice(deviceId), true);
+    }
+
+    @Override
+    public List<DeviceGroupResponse> listGroups(Long userId) {
+        List<DeviceGroup> groups = deviceGroupMapper.selectList(new LambdaQueryWrapper<DeviceGroup>()
+                .eq(DeviceGroup::getUserId, userId)
+                .orderByDesc(DeviceGroup::getUpdatedAt));
+        return groups.stream().map(this::toGroupResponse).toList();
+    }
+
+    @Override
+    @Transactional
+    public DeviceGroupResponse createGroup(Long userId, DeviceGroupCreateRequest request) {
+        DeviceGroup group = new DeviceGroup();
+        group.setUserId(userId);
+        group.setName(request.getName());
+        group.setDescription(request.getDescription());
+        deviceGroupMapper.insert(group);
+        return toGroupResponse(group);
+    }
+
+    @Override
+    @Transactional
+    public DeviceGroupResponse updateGroup(Long userId, Long groupId, DeviceGroupUpdateRequest request) {
+        DeviceGroup group = getOwnedGroup(userId, groupId);
+        if (StringUtils.hasText(request.getName())) {
+            group.setName(request.getName());
+        }
+        if (request.getDescription() != null) {
+            group.setDescription(request.getDescription());
+        }
+        deviceGroupMapper.updateById(group);
+        return toGroupResponse(group);
+    }
+
+    @Override
+    @Transactional
+    public void deleteGroup(Long userId, Long groupId) {
+        DeviceGroup group = getOwnedGroup(userId, groupId);
+        deviceGroupRelMapper.delete(new LambdaQueryWrapper<DeviceGroupRel>()
+                .eq(DeviceGroupRel::getGroupId, groupId));
+        deviceGroupMapper.deleteById(group.getId());
+    }
+
+    @Override
+    @Transactional
+    public void addGroupMember(Long userId, Long groupId, Long deviceId) {
+        getOwnedGroup(userId, groupId);
+        getOwnedDevice(userId, deviceId);
+
+        Long count = deviceGroupRelMapper.selectCount(new LambdaQueryWrapper<DeviceGroupRel>()
+                .eq(DeviceGroupRel::getGroupId, groupId)
+                .eq(DeviceGroupRel::getDeviceId, deviceId));
+        if (count != null && count > 0) {
+            throw new BusinessException(ResultCode.DEVICE_GROUP_MEMBER_EXISTS);
+        }
+        DeviceGroupRel rel = new DeviceGroupRel();
+        rel.setGroupId(groupId);
+        rel.setDeviceId(deviceId);
+        deviceGroupRelMapper.insert(rel);
+    }
+
+    @Override
+    @Transactional
+    public void removeGroupMember(Long userId, Long groupId, Long deviceId) {
+        getOwnedGroup(userId, groupId);
+        Long count = deviceGroupRelMapper.selectCount(new LambdaQueryWrapper<DeviceGroupRel>()
+                .eq(DeviceGroupRel::getGroupId, groupId)
+                .eq(DeviceGroupRel::getDeviceId, deviceId));
+        if (count == null || count == 0) {
+            throw new BusinessException(ResultCode.DEVICE_GROUP_MEMBER_NOT_FOUND);
+        }
+        deviceGroupRelMapper.delete(new LambdaQueryWrapper<DeviceGroupRel>()
+                .eq(DeviceGroupRel::getGroupId, groupId)
+                .eq(DeviceGroupRel::getDeviceId, deviceId));
+    }
+
+    @Override
+    @Transactional
+    public int markOfflineDevices(long offlineThresholdSeconds) {
+        LocalDateTime threshold = LocalDateTime.now().minusSeconds(offlineThresholdSeconds);
+        List<Device> onlineDevices = deviceMapper.selectList(new LambdaQueryWrapper<Device>()
+                .eq(Device::getStatus, DeviceStatus.ONLINE.name())
+                .lt(Device::getLastHeartbeatAt, threshold));
+        for (Device device : onlineDevices) {
+            device.setStatus(DeviceStatus.OFFLINE.name());
+            deviceMapper.updateById(device);
+        }
+        return onlineDevices.size();
+    }
+
+    @Override
+    public void writeDeviceMediaContent(Long deviceId, Long mediaId, boolean thumbnail, HttpServletRequest request, HttpServletResponse response) {
+        Device device = getDevice(deviceId);
+        Media media = mediaMapper.selectById(mediaId);
+        if (media == null) {
+            throw new BusinessException(ResultCode.MEDIA_NOT_FOUND);
+        }
+        if (!Objects.equals(media.getUserId(), device.getUserId())) {
+            throw new BusinessException(ResultCode.MEDIA_ACCESS_DENIED);
+        }
+        if (!"READY".equals(media.getStatus())) {
+            throw new BusinessException(ResultCode.MEDIA_NOT_READY);
+        }
+        ReviewRecord latestReview = queryLatestReviewMap(List.of(mediaId)).get(mediaId);
+        if (latestReview == null || !"APPROVED".equals(latestReview.getStatus())) {
+            throw new BusinessException(ResultCode.MEDIA_REVIEW_PENDING);
+        }
+        mediaHttpWriter.write(
+                mediaContentResolverRegistry.resolve(media, thumbnail),
+                request,
+                response,
+                "读取媒体内容失败");
+    }
+
+
+    private DevicePullResponse buildPullResponse(Device device, boolean deviceTokenAccess) {
+        LocalDateTime now = LocalDateTime.now();
+        device.setStatus(DeviceStatus.ONLINE.name());
+        device.setLastHeartbeatAt(now);
+        deviceMapper.updateById(device);
+
+        DevicePullResponse response = new DevicePullResponse();
+        response.setDevice(toDeviceResponse(device));
+        response.setPulledAt(now);
+
+        List<Long> distributionIds = queryTargetDistributionIds(device.getId());
+        if (CollectionUtils.isEmpty(distributionIds)) {
+            response.setDistributions(Collections.emptyList());
+            return response;
+        }
+
+        List<Distribution> distributions = distributionMapper.selectList(
+                new LambdaQueryWrapper<Distribution>()
+                        .in(Distribution::getId, distributionIds)
+                        .eq(Distribution::getUserId, device.getUserId())
+                        .eq(Distribution::getStatus, "ACTIVE")
+                        .orderByDesc(Distribution::getCreatedAt));
+
+        List<DevicePullResponse.DistributionItem> items = distributions.stream()
+                .map(distribution -> toPullDistribution(distribution, device.getUserId(), deviceTokenAccess))
+                .filter(Objects::nonNull)
+                .toList();
+        response.setDistributions(items);
+        return response;
+    }
+
+    private List<Long> queryTargetDistributionIds(Long deviceId) {
+        LinkedHashSet<Long> distributionIds = new LinkedHashSet<>();
+
+        List<DistributionDevice> directRelations = distributionDeviceMapper.selectList(
+                new LambdaQueryWrapper<DistributionDevice>()
+                        .eq(DistributionDevice::getDeviceId, deviceId));
+        directRelations.stream()
+                .map(DistributionDevice::getDistributionId)
+                .forEach(distributionIds::add);
+
+        List<DeviceGroupRel> groupRelations = deviceGroupRelMapper.selectList(
+                new LambdaQueryWrapper<DeviceGroupRel>()
+                        .eq(DeviceGroupRel::getDeviceId, deviceId));
+        if (!CollectionUtils.isEmpty(groupRelations)) {
+            List<Long> groupIds = groupRelations.stream()
+                    .map(DeviceGroupRel::getGroupId)
+                    .distinct()
+                    .toList();
+            if (!CollectionUtils.isEmpty(groupIds)) {
+                List<DistributionDevice> groupedRelations = distributionDeviceMapper.selectList(
+                        new LambdaQueryWrapper<DistributionDevice>()
+                                .in(DistributionDevice::getGroupId, groupIds));
+                groupedRelations.stream()
+                        .map(DistributionDevice::getDistributionId)
+                        .forEach(distributionIds::add);
+            }
+        }
+
+        return distributionIds.stream().toList();
+    }
+
+    private DevicePullResponse.DistributionItem toPullDistribution(Distribution distribution, Long userId, boolean deviceTokenAccess) {
+        Album album = albumMapper.selectById(distribution.getAlbumId());
+        if (album == null || !Objects.equals(album.getUserId(), userId)) {
+            return null;
+        }
+        if (!canDeviceAccessAlbum(album, deviceTokenAccess)) {
+            return null;
+        }
+
+        List<AlbumMedia> albumMediaList = albumMediaMapper.selectList(
+                new LambdaQueryWrapper<AlbumMedia>()
+                        .eq(AlbumMedia::getAlbumId, album.getId())
+                        .orderByAsc(AlbumMedia::getSortOrder)
+                        .orderByAsc(AlbumMedia::getId));
+        if (CollectionUtils.isEmpty(albumMediaList)) {
+            return null;
+        }
+
+        List<Long> mediaIds = albumMediaList.stream()
+                .map(AlbumMedia::getMediaId)
+                .distinct()
+                .toList();
+        List<Media> mediaList = mediaMapper.selectBatchIds(mediaIds);
+        Map<Long, Media> mediaMap = mediaList.stream()
+                .collect(Collectors.toMap(Media::getId, Function.identity()));
+        Map<Long, ReviewRecord> latestReviewMap = queryLatestReviewMap(mediaIds);
+
+        List<DevicePullResponse.MediaItem> mediaItems = albumMediaList.stream()
+                .map(albumMedia -> toPullMediaItem(albumMedia, mediaMap.get(albumMedia.getMediaId()),
+                        latestReviewMap.get(albumMedia.getMediaId()), userId, distribution.getItemDuration()))
+                .filter(Objects::nonNull)
+                .toList();
+        if (CollectionUtils.isEmpty(mediaItems)) {
+            return null;
+        }
+
+        DevicePullResponse.DistributionItem item = new DevicePullResponse.DistributionItem();
+        item.setId(distribution.getId());
+        item.setName(distribution.getName());
+        item.setStatus(distribution.getStatus());
+        item.setLoopPlay(distribution.getLoopPlay());
+        item.setShuffle(distribution.getShuffle());
+        item.setItemDuration(distribution.getItemDuration());
+        item.setAlbum(toPullAlbumItem(album));
+        item.setMediaList(mediaItems);
+        return item;
+    }
+
+    private boolean canDeviceAccessAlbum(Album album, boolean deviceTokenAccess) {
+        if (!StringUtils.hasText(album.getVisibility())) {
+            return true;
+        }
+        if ("PRIVATE".equals(album.getVisibility())) {
+            return false;
+        }
+        if ("DEVICE_ONLY".equals(album.getVisibility())) {
+            return deviceTokenAccess;
+        }
+        return true;
+    }
+
+    private DevicePullResponse.AlbumItem toPullAlbumItem(Album album) {
+        DevicePullResponse.AlbumItem item = new DevicePullResponse.AlbumItem();
+        item.setId(album.getId());
+        item.setTitle(album.getTitle());
+        item.setDescription(album.getDescription());
+        item.setCoverUrl(buildAlbumCoverUrl(album));
+        item.setBgmUrl(album.getBgmUrl());
+        item.setBgmVolume(album.getBgmVolume());
+        item.setVisibility(album.getVisibility());
+        return item;
+    }
+
+    private DevicePullResponse.MediaItem toPullMediaItem(AlbumMedia albumMedia,
+                                                         Media media,
+                                                         ReviewRecord latestReview,
+                                                         Long userId,
+                                                         Integer distributionItemDuration) {
+        if (media == null || !Objects.equals(media.getUserId(), userId)) {
+            return null;
+        }
+        if (!"READY".equals(media.getStatus())) {
+            return null;
+        }
+        if (latestReview == null || !"APPROVED".equals(latestReview.getStatus())) {
+            return null;
+        }
+
+        DevicePullResponse.MediaItem item = new DevicePullResponse.MediaItem();
+        item.setId(media.getId());
+        item.setFileName(media.getFileName());
+        item.setMediaType(media.getMediaType());
+        item.setContentType(media.getContentType());
+        item.setUrl(buildDeviceContentUrl(media.getId()));
+        item.setThumbnailUrl(buildDeviceThumbnailUrl(media.getId(), media.getThumbnailKey()));
+        item.setDurationSec(media.getDurationSec());
+        item.setWidth(media.getWidth());
+        item.setHeight(media.getHeight());
+        item.setSortOrder(albumMedia.getSortOrder());
+        item.setItemDuration(resolveItemDuration(albumMedia, distributionItemDuration));
+        return item;
+    }
+
+    private Integer resolveItemDuration(AlbumMedia albumMedia, Integer distributionItemDuration) {
+        if (albumMedia.getDuration() != null && albumMedia.getDuration() > 0) {
+            return albumMedia.getDuration();
+        }
+        return distributionItemDuration;
+    }
+
+    private Map<Long, ReviewRecord> queryLatestReviewMap(List<Long> mediaIds) {
+        if (CollectionUtils.isEmpty(mediaIds)) {
+            return Collections.emptyMap();
+        }
+        List<ReviewRecord> reviewRecords = reviewRecordMapper.selectList(
+                new LambdaQueryWrapper<ReviewRecord>()
+                        .in(ReviewRecord::getMediaId, mediaIds)
+                        .orderByDesc(ReviewRecord::getUpdatedAt)
+                        .orderByDesc(ReviewRecord::getId));
+        Map<Long, ReviewRecord> latestReviewMap = new HashMap<>();
+        for (ReviewRecord reviewRecord : reviewRecords) {
+            latestReviewMap.putIfAbsent(reviewRecord.getMediaId(), reviewRecord);
+        }
+        return latestReviewMap;
+    }
+
+    private Device getOwnedDevice(Long userId, Long deviceId) {
+        Device device = deviceMapper.selectById(deviceId);
+        if (device == null) {
+            throw new BusinessException(ResultCode.DEVICE_NOT_FOUND);
+        }
+        if (!Objects.equals(device.getUserId(), userId)) {
+            throw new BusinessException(ResultCode.DEVICE_ACCESS_DENIED);
+        }
+        return device;
+    }
+
+    private Device getOwnedDeviceByUid(Long userId, String deviceUid) {
+        Device device = deviceMapper.selectOne(new LambdaQueryWrapper<Device>()
+                .eq(Device::getUserId, userId)
+                .eq(Device::getDeviceUid, deviceUid)
+                .last("limit 1"));
+        if (device == null) {
+            throw new BusinessException(ResultCode.DEVICE_NOT_FOUND);
+        }
+        return device;
+    }
+
+    private Device getDevice(Long deviceId) {
+        Device device = deviceMapper.selectById(deviceId);
+        if (device == null) {
+            throw new BusinessException(ResultCode.DEVICE_NOT_FOUND);
+        }
+        return device;
+    }
+
+    private DeviceGroup getOwnedGroup(Long userId, Long groupId) {
+        DeviceGroup group = deviceGroupMapper.selectById(groupId);
+        if (group == null) {
+            throw new BusinessException(ResultCode.DEVICE_GROUP_NOT_FOUND);
+        }
+        if (!Objects.equals(group.getUserId(), userId)) {
+            throw new BusinessException(ResultCode.DEVICE_ACCESS_DENIED);
+        }
+        return group;
+    }
+
+    private DeviceStatus parseDeviceStatus(String status) {
+        try {
+            return DeviceStatus.valueOf(status.toUpperCase());
+        } catch (Exception ex) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "无效设备状态: " + status);
+        }
+    }
+
+    private DeviceResponse toDeviceResponse(Device device) {
+        DeviceResponse response = new DeviceResponse();
+        response.setId(device.getId());
+        response.setDeviceUid(device.getDeviceUid());
+        response.setName(device.getName());
+        response.setType(device.getType());
+        response.setStatus(device.getStatus());
+        response.setLastHeartbeatAt(device.getLastHeartbeatAt());
+        response.setBoundAt(device.getBoundAt());
+        response.setUpdatedAt(device.getUpdatedAt());
+        return response;
+    }
+
+    private DeviceGroupResponse toGroupResponse(DeviceGroup group) {
+        Long count = deviceGroupRelMapper.selectCount(new LambdaQueryWrapper<DeviceGroupRel>()
+                .eq(DeviceGroupRel::getGroupId, group.getId()));
+        DeviceGroupResponse response = new DeviceGroupResponse();
+        response.setId(group.getId());
+        response.setName(group.getName());
+        response.setDescription(group.getDescription());
+        response.setDeviceCount(count == null ? 0L : count);
+        response.setCreatedAt(group.getCreatedAt());
+        response.setUpdatedAt(group.getUpdatedAt());
+        return response;
+    }
+
+    private String buildDeviceContentUrl(Long mediaId) {
+        return ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/v1/devices/media/{id}/content")
+                .buildAndExpand(mediaId)
+                .toUriString();
+    }
+
+    private String buildAlbumCoverUrl(Album album) {
+        if (album == null) {
+            return null;
+        }
+        if (album.getCoverMediaId() == null && !StringUtils.hasText(album.getCoverUrl())) {
+            return null;
+        }
+        return ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/v1/albums/{id}/cover")
+                .buildAndExpand(album.getId())
+                .toUriString();
+    }
+
+    private String buildDeviceThumbnailUrl(Long mediaId, String thumbnailKey) {
+        if (!StringUtils.hasText(thumbnailKey)) {
+            return null;
+        }
+        return ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/v1/devices/media/{id}/thumbnail")
+                .buildAndExpand(mediaId)
+                .toUriString();
+    }
+}

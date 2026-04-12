@@ -1,0 +1,12 @@
+target/
+.m2/
+dist/
+*.class
+*.jar
+*.war
+.idea/
+*.iml
+.DS_Store
+*.log
+application-prod.yml
+.env

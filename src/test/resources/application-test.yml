@@ -1,0 +1,56 @@
+spring:
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:cloud_album_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE;NON_KEYWORDS=VALUE
+    username: sa
+    password:
+  sql:
+    init:
+      schema-locations: classpath:db/h2/schema.sql
+      mode: always
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      timeout: 3000ms
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+jwt:
+  secret: cloud-album-publisher-jwt-secret-key-must-be-at-least-256-bits-long!!
+  access-token-expire: 900
+  refresh-token-expire: 604800
+
+bootstrap:
+  admin:
+    enabled: false
+    username: admin
+    email: admin@cloud-album.local
+    nickname: System Admin
+
+minio:
+  endpoint: http://test-minio:9000
+  access-key: minioadmin
+  secret-key: minioadmin
+  bucket: test-bucket
+
+media:
+  task:
+    poll-interval-ms: 3600000
+    poll-batch-size: 10
+    lock-seconds: 30
+
+device:
+  access-token-expire: 2592000
+  offline-threshold-seconds: 90
+  offline-check-interval-ms: 3600000

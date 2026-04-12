@@ -1,0 +1,31 @@
+{
+  "name": "device-client",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:renderer": "vite --port 5174",
+    "dev:electron": "wait-on tcp:5174 && cross-env DEVICE_CLIENT_RENDERER_URL=http://127.0.0.1:5174 electron .",
+    "build": "vite build",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@ant-design/icons-vue": "^7.0.1",
+    "ant-design-vue": "^4.2.6",
+    "axios": "^1.14.0",
+    "node-machine-id": "^1.1.12",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.30",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.5",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.0.0",
+    "electron": "^37.10.3",
+    "vite": "^8.0.1",
+    "wait-on": "^8.0.3"
+  }
+}

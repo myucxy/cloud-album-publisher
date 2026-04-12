@@ -1,0 +1,33 @@
+package com.cloudalbum.publisher.album.service;
+
+import com.cloudalbum.publisher.album.dto.*;
+import com.cloudalbum.publisher.album.entity.AlbumMedia;
+import com.cloudalbum.publisher.common.model.PageRequest;
+import com.cloudalbum.publisher.common.model.PageResult;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+public interface AlbumService {
+
+    PageResult<AlbumResponse> listAlbums(Long userId, PageRequest pageRequest, String visibility);
+
+    AlbumResponse getAlbum(Long albumId, Long currentUserId);
+
+    AlbumResponse createAlbum(Long userId, AlbumCreateRequest request);
+
+    AlbumResponse updateAlbum(Long albumId, Long userId, AlbumUpdateRequest request);
+
+    void deleteAlbum(Long albumId, Long userId);
+
+    PageResult<AlbumMedia> listContents(Long albumId, Long userId, PageRequest pageRequest);
+
+    AlbumMedia addContent(Long albumId, Long userId, AlbumAddContentRequest request);
+
+    void removeContent(Long albumId, Long contentId, Long userId);
+
+    AlbumResponse updateCover(Long albumId, Long userId, AlbumCoverRequest request);
+
+    AlbumResponse updateBgm(Long albumId, Long userId, AlbumBgmRequest request);
+
+    void writeAlbumCover(Long albumId, Long userId, HttpServletRequest request, HttpServletResponse response);
+}
