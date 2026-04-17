@@ -33,33 +33,67 @@ CREATE TABLE IF NOT EXISTS t_user_role (
 );
 
 CREATE TABLE IF NOT EXISTS t_album (
-    id             BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id        BIGINT NOT NULL,
-    title          VARCHAR(200) NOT NULL,
-    description    TEXT,
-    cover_url      VARCHAR(500),
-    cover_media_id BIGINT,
-    bgm_url        VARCHAR(500),
-    bgm_volume     TINYINT DEFAULT 80,
-    visibility     VARCHAR(20) NOT NULL DEFAULT 'PRIVATE',
-    status         VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
-    sort_order     INT DEFAULT 0,
-    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted        TINYINT NOT NULL DEFAULT 0
+    id                       BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id                  BIGINT NOT NULL,
+    title                    VARCHAR(200) NOT NULL,
+    description              TEXT,
+    cover_url                VARCHAR(500),
+    cover_media_id           BIGINT,
+    cover_source_id          BIGINT,
+    cover_source_type        VARCHAR(20),
+    cover_source_name        VARCHAR(100),
+    cover_external_media_key VARCHAR(255),
+    cover_path               VARCHAR(500),
+    cover_file_name          VARCHAR(255),
+    cover_content_type       VARCHAR(100),
+    cover_media_type         VARCHAR(20),
+    bgm_url                  VARCHAR(500),
+    bgm_volume               TINYINT DEFAULT 80,
+    visibility               VARCHAR(20) NOT NULL DEFAULT 'PRIVATE',
+    status                   VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+    sort_order               INT DEFAULT 0,
+    created_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted                  TINYINT NOT NULL DEFAULT 0
 );
 
 ALTER TABLE t_album ADD COLUMN IF NOT EXISTS cover_media_id BIGINT;
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS cover_source_id BIGINT;
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS cover_source_type VARCHAR(20);
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS cover_source_name VARCHAR(100);
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS cover_external_media_key VARCHAR(255);
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS cover_path VARCHAR(500);
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS cover_file_name VARCHAR(255);
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS cover_content_type VARCHAR(100);
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS cover_media_type VARCHAR(20);
 
 CREATE TABLE IF NOT EXISTS t_album_media (
-    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
-    album_id   BIGINT NOT NULL,
-    media_id   BIGINT NOT NULL,
-    sort_order INT DEFAULT 0,
-    duration   INT,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id                 BIGINT AUTO_INCREMENT PRIMARY KEY,
+    album_id           BIGINT NOT NULL,
+    media_id           BIGINT,
+    source_id          BIGINT,
+    source_type        VARCHAR(20),
+    source_name        VARCHAR(100),
+    external_media_key VARCHAR(255),
+    file_path          VARCHAR(500),
+    file_name          VARCHAR(255),
+    content_type       VARCHAR(100),
+    media_type         VARCHAR(20),
+    sort_order         INT DEFAULT 0,
+    duration           INT,
+    created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uk_album_media UNIQUE (album_id, media_id)
 );
+
+ALTER TABLE t_album_media ALTER COLUMN media_id BIGINT;
+ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS source_id BIGINT;
+ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS source_type VARCHAR(20);
+ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS source_name VARCHAR(100);
+ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS external_media_key VARCHAR(255);
+ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS file_path VARCHAR(500);
+ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS file_name VARCHAR(255);
+ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS content_type VARCHAR(100);
+ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS media_type VARCHAR(20);
 
 -- ===================== V2: 分发 / 审核 / 审计 =====================
 

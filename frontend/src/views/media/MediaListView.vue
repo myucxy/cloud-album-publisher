@@ -164,7 +164,9 @@
           :columns="columns"
           :row-key="resolveMediaRowKey"
           :loading="loading"
-          :pagination="externalBrowseActive ? false : { total, current: page, pageSize, onChange: onTablePageChange }"
+          :pagination="externalBrowseActive
+            ? { total, current: externalBrowsePage, pageSize: externalBrowsePageSize, onChange: onTablePageChange, showLessItems: true }
+            : { total, current: page, pageSize, onChange: onTablePageChange }"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'preview'">
@@ -678,6 +680,8 @@ const browseItems = ref([])
 
 const externalBrowseSource = ref(null)
 const externalBrowsePath = ref('')
+const externalBrowsePage = ref(1)
+const externalBrowsePageSize = 12
 
 const uploadDrawerOpen = ref(false)
 const uploadStep = ref(0)
@@ -701,7 +705,7 @@ const mediaTypeGroups = computed(() => groups.value?.mediaTypeGroups || [])
 const totalMediaCount = computed(() => sourceGroups.value.reduce((sum, item) => sum + (item.mediaCount || 0), 0))
 const currentSourceTypeImplemented = computed(() => isImplementedSourceType(mediaSourceForm.value.sourceType))
 const selectedSourceRecord = computed(() => findSelectedSource())
-const externalBrowseActive = computed(() => libraryMode.value === EXTERNAL_LIBRARY_MODE && !!externalBrowseSource.value?.id)
+const externalBrowseActive = computed(() => libraryMode.value === EXTERNAL_LIBRARY_MODE && !!(externalBrowseSource.value?.id ?? externalBrowseSource.value?.sourceId))
 const currentLibraryTitle = computed(() => {
   if (externalBrowseActive.value) {
     return `${externalBrowseSource.value?.sourceName || sourceTypeLabel(externalBrowseSource.value?.sourceType)} / 外部目录`
@@ -761,12 +765,14 @@ const sourceTypeSections = computed(() => {
 
   const ensureSource = source => {
     const normalizedType = source?.sourceType || 'UPLOAD'
-    const key = sourceGroupKey({ sourceType: normalizedType, sourceId: source?.sourceId ?? null, sourceName: source?.sourceName })
+    const normalizedSourceId = source?.sourceId ?? source?.id ?? null
+    const key = sourceGroupKey({ sourceType: normalizedType, sourceId: normalizedSourceId, sourceName: source?.sourceName || source?.name })
     if (!sourceMap.has(key)) {
       const base = {
+        id: source?.id ?? normalizedSourceId,
         sourceType: normalizedType,
-        sourceId: source?.sourceId ?? null,
-        sourceName: source?.sourceName || (normalizedType === 'UPLOAD' ? '自行上传' : sourceTypeLabel(normalizedType)),
+        sourceId: normalizedSourceId,
+        sourceName: source?.sourceName || source?.name || (normalizedType === 'UPLOAD' ? '自行上传' : sourceTypeLabel(normalizedType)),
         mediaCount: 0,
         folders: [],
         boundPath: source?.boundPath || source?.config?.rootPath || source?.configSummary?.rootPath || '/',
@@ -780,6 +786,9 @@ const sourceTypeSections = computed(() => {
       ensureSection(normalizedType).sources.push(base)
     }
     const target = sourceMap.get(key)
+    if (source?.id !== undefined && source?.id !== null) target.id = source.id
+    if (source?.sourceId !== undefined && source?.sourceId !== null) target.sourceId = source.sourceId
+    if (source?.name && !source?.sourceName) target.sourceName = source.name
     if (source?.sourceName) target.sourceName = source.sourceName
     if (source?.boundPath) target.boundPath = source.boundPath
     if (source?.boundPathName) target.boundPathName = source.boundPathName
@@ -958,7 +967,7 @@ async function load() {
   loading.value = true
   try {
     if (externalBrowseActive.value) {
-      const sourceId = externalBrowseSource.value?.id
+      const sourceId = externalBrowseSource.value?.id ?? externalBrowseSource.value?.sourceId
       if (!sourceId) {
         mediaList.value = []
         total.value = 0
@@ -966,7 +975,7 @@ async function load() {
       }
       const res = await mediaSourceApi.browse(sourceId, { path: externalBrowsePath.value || externalBrowseSource.value?.boundPath || '/' })
       const items = Array.isArray(res.data?.items) ? res.data.items : []
-      mediaList.value = items
+      const filteredItems = items
         .filter(item => !item.directory)
         .filter(item => !filterType.value || item.mediaType === filterType.value)
         .filter(item => !filterStatus.value || item.status === filterStatus.value)
@@ -977,7 +986,8 @@ async function load() {
           const text = `${item.fileName || ''} ${item.sourceName || ''} ${item.folderPath || ''}`.toLowerCase()
           return text.includes(String(keyword.value).toLowerCase())
         })
-      total.value = mediaList.value.length
+      total.value = filteredItems.length
+      mediaList.value = paginateExternalItems(filteredItems)
       externalBrowsePath.value = normalizePath(res.data?.currentPath || externalBrowsePath.value || '/')
       return
     }
@@ -1037,22 +1047,25 @@ function exitExternalBrowseMode() {
   libraryMode.value = INTERNAL_LIBRARY_MODE
   externalBrowseSource.value = null
   externalBrowsePath.value = ''
+  externalBrowsePage.value = 1
 }
 
 function applyExternalBrowseToLibrary() {
-  if (!browseMediaSource.value?.id) {
+  if (!(browseMediaSource.value?.id ?? browseMediaSource.value?.sourceId)) {
     return
   }
   libraryMode.value = EXTERNAL_LIBRARY_MODE
   externalBrowseSource.value = browseMediaSource.value
   externalBrowsePath.value = normalizePath(browseCurrentPath.value)
+  externalBrowsePage.value = 1
   page.value = 1
   closeBrowseModal()
   load()
 }
 
-function resolveMediaRowKey(record) {
-  return record?.id ?? record?.externalMediaKey ?? record?.path ?? record?.fileName
+function paginateExternalItems(items) {
+  const start = Math.max(0, (externalBrowsePage.value - 1) * externalBrowsePageSize)
+  return items.slice(start, start + externalBrowsePageSize)
 }
 
 async function openMediaSourceDrawer() {
@@ -1224,7 +1237,7 @@ async function openDraftBrowse() {
 }
 
 async function openBrowseSource(source, path = null) {
-  if (!source?.id) {
+  if (!source?.id && !source?.sourceId) {
     return
   }
   browseMode.value = 'saved'
@@ -1263,8 +1276,8 @@ async function loadBrowse(path = browseCurrentPath.value) {
         config: buildSourceConfigPayload(),
         credentials: buildSourceCredentialsPayload()
       })
-    } else if (browseMediaSource.value?.id) {
-      res = await mediaSourceApi.browse(browseMediaSource.value.id, { path: targetPath })
+    } else if (browseMediaSource.value?.id || browseMediaSource.value?.sourceId) {
+      res = await mediaSourceApi.browse(browseMediaSource.value.id ?? browseMediaSource.value.sourceId, { path: targetPath })
     } else {
       return
     }
@@ -1351,6 +1364,7 @@ async function selectSource(source) {
     libraryMode.value = EXTERNAL_LIBRARY_MODE
     externalBrowseSource.value = source
     externalBrowsePath.value = normalizePath(source.boundPath)
+    externalBrowsePage.value = 1
     filterSourceType.value = source.sourceType || undefined
     filterSourceId.value = source.sourceId ?? undefined
     filterFolderPath.value = undefined
@@ -1390,6 +1404,8 @@ async function clearTypeFilter() {
 
 async function onTablePageChange(nextPage) {
   if (externalBrowseActive.value) {
+    externalBrowsePage.value = nextPage
+    await load()
     return
   }
   page.value = nextPage

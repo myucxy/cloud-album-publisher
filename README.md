@@ -62,6 +62,10 @@ MinIO Console 访问：`http://localhost:9001`，账号 `minioadmin` / `minioadm
 mvn spring-boot:run
 ```
 
+开发环境默认使用 H2 文件库 `./data/cloud_album.mv.db`，启动时会执行 `src/main/resources/db/h2/schema.sql`。
+该脚本会兼容旧的本地 H2 开发库，并补齐相册外部媒体引用相关列。
+如果你在升级代码后仍遇到 H2 列缺失异常，先重启一次应用；如果旧本地库状态仍异常，再删除 `data/cloud_album.*` 后重启。
+
 或构建后运行：
 
 ```bash
