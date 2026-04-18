@@ -29,6 +29,11 @@ import static com.hierynomus.mssmb2.SMB2ShareAccess.ALL;
 public class SmbMediaSourceFileClient implements MediaSourceFileClient {
 
     @Override
+    public String getSourceType() {
+        return "SMB";
+    }
+
+    @Override
     public List<Entry> list(MediaSourceConnection connection, String path) throws Exception {
         try (SMBClient client = new SMBClient();
              Connection smbConnection = client.connect(connection.getHost(), connection.getPort());

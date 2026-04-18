@@ -13,7 +13,7 @@
     </div>
     <img
       v-else-if="media.mediaType === 'IMAGE' && mediaResolvedUrl"
-      :key="`image-${media.id}`"
+      :key="`image-${mediaIdentity}`"
       class="image-content"
       :src="mediaResolvedUrl"
       :alt="media.fileName"
@@ -22,7 +22,7 @@
     />
     <video
       v-else-if="media.mediaType === 'VIDEO' && mediaResolvedUrl"
-      :key="`video-${media.id}`"
+      :key="`video-${mediaIdentity}`"
       ref="videoRef"
       class="video-content"
       :src="mediaResolvedUrl"
@@ -33,6 +33,23 @@
       @ended="$emit('ended')"
       @error="handleMediaError"
     />
+    <div
+      v-else-if="media.mediaType === 'AUDIO' && mediaResolvedUrl"
+      :key="`audio-${mediaIdentity}`"
+      class="audio-content"
+    >
+      <div class="audio-title">{{ media.fileName }}</div>
+      <audio
+        ref="audioRef"
+        class="audio-element"
+        :src="mediaResolvedUrl"
+        autoplay
+        controls
+        @loadeddata="handleMediaLoaded"
+        @ended="$emit('ended')"
+        @error="handleMediaError"
+      />
+    </div>
     <div v-else class="placeholder">
       <a-empty description="暂不支持的媒体类型" />
       <div class="placeholder-text">{{ media.mediaType }} / {{ media.fileName }}</div>
@@ -43,6 +60,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useSecureObjectUrl } from '@/components/useSecureObjectUrl'
+import { resolveMediaIdentity } from '@/stores/player'
 
 const props = defineProps({
   media: {
@@ -62,8 +80,10 @@ const props = defineProps({
 const emit = defineEmits(['ended', 'loaded', 'error'])
 
 const videoRef = ref(null)
+const audioRef = ref(null)
 const loadErrorMessage = ref('')
 const mediaUrl = computed(() => props.media?.url || '')
+const mediaIdentity = computed(() => resolveMediaIdentity(props.media))
 const { resolvedSrc: mediaResolvedUrl, error: mediaResolveError } = useSecureObjectUrl(mediaUrl)
 const mediaErrorMap = {
   1: '媒体加载被中止',
@@ -96,24 +116,28 @@ function buildMediaErrorMessage() {
   }
 
   if (props.media.mediaType === 'VIDEO') {
-    return `视频播放失败：${resolveVideoErrorMessage()}`
+    return `视频播放失败：${resolveMediaElementErrorMessage('视频', videoRef.value)}`
+  }
+
+  if (props.media.mediaType === 'AUDIO') {
+    return `音频播放失败：${resolveMediaElementErrorMessage('音频', audioRef.value)}`
   }
 
   return `媒体加载失败：${props.media.fileName || props.media.mediaType || '未知媒体'}`
 }
 
-function resolveVideoErrorMessage() {
+function resolveMediaElementErrorMessage(mediaLabel, element) {
   const media = props.media
-  const errorCode = videoRef.value?.error?.code
+  const errorCode = element?.error?.code
   const detail = mediaErrorMap[errorCode]
   if (detail) {
     return `${detail}（${media?.fileName || '未命名文件'}）`
   }
-  return media?.fileName ? `${media.fileName} 无法播放` : '当前视频无法播放'
+  return media?.fileName ? `${media.fileName} ${mediaLabel}无法播放` : `当前${mediaLabel}无法播放`
 }
 
 watch(
-  () => props.media?.id,
+  () => mediaIdentity.value,
   () => {
     loadErrorMessage.value = ''
   },
@@ -161,4 +185,28 @@ watch(mediaResolveError, value => {
   object-fit: contain;
   background: #000;
 }
+
+.audio-content {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 32px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.audio-title {
+  font-size: 28px;
+  line-height: 1.5;
+  max-width: 720px;
+  word-break: break-word;
+}
+
+.audio-element {
+  width: min(480px, 100%);
+}
 </style>
+

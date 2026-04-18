@@ -83,7 +83,7 @@ public class MediaSourceServiceImpl implements MediaSourceService {
     private final MediaMapper mediaMapper;
     private final MediaProcessTaskMapper mediaProcessTaskMapper;
     private final CredentialCryptoService credentialCryptoService;
-    private final MediaSourceFileClient mediaSourceFileClient;
+    private final List<MediaSourceFileClient> mediaSourceFileClients;
     private final List<MediaSourceTypeHandler> typeHandlers;
     private final MinioClient minioClient;
     private final ObjectMapper objectMapper;
@@ -280,7 +280,8 @@ public class MediaSourceServiceImpl implements MediaSourceService {
 
         String objectKey = buildObjectKey(userId, fileName);
         long fileSize;
-        try (InputStream inputStream = mediaSourceFileClient.open(buildConnection(mediaSource), normalizedPath)) {
+        try (InputStream inputStream = getRequiredFileClient(normalizeSourceType(mediaSource.getSourceType()))
+                .open(buildConnection(mediaSource), normalizedPath)) {
             minioClient.putObject(PutObjectArgs.builder()
                     .bucket(bucket)
                     .object(objectKey)
@@ -381,7 +382,8 @@ public class MediaSourceServiceImpl implements MediaSourceService {
 
     private List<MediaSourceFileClient.Entry> listEntries(MediaSource mediaSource, String path) {
         try {
-            return mediaSourceFileClient.list(buildConnection(mediaSource), path);
+            return getRequiredFileClient(normalizeSourceType(mediaSource.getSourceType()))
+                    .list(buildConnection(mediaSource), path);
         } catch (Exception ex) {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "读取媒体源目录失败: " + ex.getMessage());
         }
@@ -551,7 +553,8 @@ public class MediaSourceServiceImpl implements MediaSourceService {
         if (objectExists(objectKey)) {
             return objectKey;
         }
-        try (InputStream inputStream = mediaSourceFileClient.open(buildConnection(mediaSource), normalizedPath)) {
+        try (InputStream inputStream = getRequiredFileClient(normalizeSourceType(mediaSource.getSourceType()))
+                .open(buildConnection(mediaSource), normalizedPath)) {
             minioClient.putObject(PutObjectArgs.builder()
                     .bucket(bucket)
                     .object(objectKey)
@@ -820,6 +823,13 @@ public class MediaSourceServiceImpl implements MediaSourceService {
             credentials.put("password", credentialCryptoService.decrypt(mediaSource.getPasswordCiphertext()));
         }
         return credentials;
+    }
+
+    private MediaSourceFileClient getRequiredFileClient(String sourceType) {
+        return mediaSourceFileClients.stream()
+                .filter(client -> Objects.equals(client.getSourceType(), sourceType))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ResultCode.BAD_REQUEST, "当前媒体源文件客户端暂未实现"));
     }
 
     private Map<String, Object> configSummary(MediaSource mediaSource) {

@@ -55,7 +55,7 @@ import MediaPlayer from '@/components/MediaPlayer.vue'
 import PlaylistSidebar from '@/components/PlaylistSidebar.vue'
 import { useSecureObjectUrl } from '@/components/useSecureObjectUrl'
 import { useDeviceAuthStore } from '@/stores/deviceAuth'
-import { usePlayerStore } from '@/stores/player'
+import { usePlayerStore, resolveMediaIdentity } from '@/stores/player'
 
 const router = useRouter()
 const deviceAuth = useDeviceAuthStore()
@@ -123,7 +123,7 @@ function scheduleImageAdvance() {
 
   const media = currentMedia.value
   const distribution = currentDistribution.value
-  if (!media || media.mediaType === 'VIDEO') {
+  if (!media || media.mediaType === 'VIDEO' || media.mediaType === 'AUDIO') {
     return
   }
 
@@ -136,7 +136,7 @@ function scheduleImageAdvance() {
 function scheduleMediaErrorAdvance() {
   clearMediaErrorAdvanceTimer()
 
-  if (!currentMedia.value || !currentMedia.value.id) {
+  if (!currentMedia.value) {
     return
   }
 
@@ -175,7 +175,7 @@ async function syncAndStart() {
 }
 
 watch(
-  () => [currentMedia.value?.id, currentDistribution.value?.id],
+  () => [resolveMediaIdentity(currentMedia.value), currentDistribution.value?.id],
   () => {
     clearMediaErrorAdvanceTimer()
     player.clearMediaError()

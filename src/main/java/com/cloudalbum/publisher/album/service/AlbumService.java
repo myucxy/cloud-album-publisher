@@ -1,7 +1,6 @@
 package com.cloudalbum.publisher.album.service;
 
 import com.cloudalbum.publisher.album.dto.*;
-import com.cloudalbum.publisher.album.entity.AlbumMedia;
 import com.cloudalbum.publisher.common.model.PageRequest;
 import com.cloudalbum.publisher.common.model.PageResult;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,9 +18,9 @@ public interface AlbumService {
 
     void deleteAlbum(Long albumId, Long userId);
 
-    PageResult<AlbumMedia> listContents(Long albumId, Long userId, PageRequest pageRequest);
+    PageResult<AlbumContentResponse> listContents(Long albumId, Long userId, PageRequest pageRequest);
 
-    AlbumMedia addContent(Long albumId, Long userId, AlbumAddContentRequest request);
+    AlbumContentResponse addContent(Long albumId, Long userId, AlbumAddContentRequest request);
 
     void removeContent(Long albumId, Long contentId, Long userId);
 

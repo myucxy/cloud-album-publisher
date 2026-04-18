@@ -65,6 +65,7 @@
 
     <a-modal v-model:open="coverModalOpen" title="从媒体库选择相册封面" @ok="submitCover" :confirm-loading="saving" :width="860"
              ok-text="保存" cancel-text="取消"
+             :ok-button-props="{ disabled: coverSubmitDisabled }"
              :body-style="{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto', padding: '16px 20px' }">
       <div class="album-picker-modal-layout">
         <div class="album-picker-modal-sidebar">
@@ -122,17 +123,17 @@
             <a-space wrap>
               <a-select v-model:value="coverPickerFilterType" style="width:120px" allow-clear placeholder="媒体类型" @change="reloadCoverPicker">
                 <a-select-option value="IMAGE">图片</a-select-option>
-                <a-select-option value="VIDEO">视频</a-select-option>
+                <a-select-option v-if="!isExternalCoverSelection" value="VIDEO">视频</a-select-option>
               </a-select>
               <a-tag color="blue">{{ coverPickerTitle }}</a-tag>
               <a-tag v-if="coverPickerKeyword">搜索：{{ coverPickerKeyword }}</a-tag>
             </a-space>
-            <span style="color:#8c8c8c; font-size:12px">可直接选择图片或视频缩略图作为相册封面</span>
+            <span style="color:#8c8c8c; font-size:12px">{{ coverPickerHintText }}</span>
           </div>
 
           <a-spin :spinning="coverPickerLoading || coverGroupLoading">
             <div v-if="coverSelectableMedia.length" style="display:grid; grid-template-columns:1fr; gap:12px">
-              <a-card v-for="item in coverSelectableMedia" :key="item.id" hoverable :body-style="{ padding: '12px' }" :style="coverMediaCardStyle(item)" @click="selectCoverMedia(item)">
+              <a-card v-for="item in coverSelectableMedia" :key="resolvePickerItemKey(item)" hoverable :body-style="{ padding: '12px' }" :style="coverMediaCardStyle(item)" @click="selectCoverMedia(item)">
                 <div style="display:flex; gap:12px; align-items:flex-start">
                   <div style="width:88px; height:88px; display:flex; align-items:center; justify-content:center; background:#fafafa; border-radius:8px; overflow:hidden; flex-shrink:0">
                     <SecureImage
@@ -207,7 +208,11 @@
               <div style="color:#8c8c8c; font-size:12px; margin-top:4px">来源：{{ selectedCoverMediaRecord.sourceName || sourceTypeLabel(selectedCoverMediaRecord.sourceType) }}</div>
               <div v-if="selectedCoverMediaRecord.folderPath" style="color:#8c8c8c; font-size:12px; margin-top:4px">目录：{{ selectedCoverMediaRecord.folderPath }}</div>
               <div style="color:#8c8c8c; font-size:12px; margin-top:4px">
-                {{ selectedCoverMediaRecord.mediaType === 'VIDEO' && !selectedCoverMediaRecord.thumbnailUrl ? '当前视频暂无可用缩略图，请先等待封面生成后再设置为相册封面' : '将使用当前媒体的缩略图作为相册封面' }}
+                {{ isExternalPickerItem(selectedCoverMediaRecord)
+                  ? '将通过服务端代理使用此外部图片作为相册封面'
+                  : (selectedCoverMediaRecord.mediaType === 'VIDEO' && !selectedCoverMediaRecord.thumbnailUrl
+                    ? '当前视频暂无可用缩略图，请先等待封面生成后再设置为相册封面'
+                    : '将使用当前媒体的缩略图作为相册封面') }}
               </div>
             </template>
             <template v-else-if="coverUrl">
@@ -239,6 +244,7 @@
 
     <a-modal v-model:open="addMediaModalOpen" title="添加媒体到相册" @ok="submitAddMedia" :confirm-loading="saving" :width="860"
              ok-text="保存" cancel-text="取消"
+             :ok-button-props="{ disabled: addMediaSubmitDisabled }"
              :body-style="{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto', padding: '16px 20px' }">
       <div class="album-picker-modal-layout">
         <div class="album-picker-modal-sidebar">
@@ -302,12 +308,12 @@
               <a-tag color="blue">{{ mediaPickerTitle }}</a-tag>
               <a-tag v-if="mediaPickerKeyword">搜索：{{ mediaPickerKeyword }}</a-tag>
             </a-space>
-            <span style="color:#8c8c8c; font-size:12px">仅展示已处理完成的媒体</span>
+            <span style="color:#8c8c8c; font-size:12px">{{ mediaPickerHintText }}</span>
           </div>
 
           <a-spin :spinning="mediaPickerLoading || mediaGroupLoading">
             <div v-if="selectableMedia.length" style="display:grid; grid-template-columns:1fr; gap:12px">
-              <a-card v-for="item in selectableMedia" :key="item.id" hoverable :body-style="{ padding: '12px' }" :style="mediaCardStyle(item)" @click="selectMedia(item)">
+              <a-card v-for="item in selectableMedia" :key="resolvePickerItemKey(item)" hoverable :body-style="{ padding: '12px' }" :style="mediaCardStyle(item)" @click="selectMedia(item)">
                 <div style="display:flex; gap:12px; align-items:flex-start">
                   <div style="width:88px; height:88px; display:flex; align-items:center; justify-content:center; background:#fafafa; border-radius:8px; overflow:hidden; flex-shrink:0">
                     <SecureImage
@@ -383,6 +389,11 @@
               <div style="color:#8c8c8c; font-size:12px; margin-top:8px">{{ formatSize(selectedMediaRecord.fileSize) }}</div>
               <div style="color:#8c8c8c; font-size:12px; margin-top:4px">来源：{{ selectedMediaRecord.sourceName || sourceTypeLabel(selectedMediaRecord.sourceType) }}</div>
               <div v-if="selectedMediaRecord.folderPath" style="color:#8c8c8c; font-size:12px; margin-top:4px">目录：{{ selectedMediaRecord.folderPath }}</div>
+              <div style="color:#8c8c8c; font-size:12px; margin-top:4px">
+                {{ isExternalPickerItem(selectedMediaRecord)
+                  ? '当前将直接绑定此外部媒体到相册，播放时通过服务端代理访问'
+                  : '当前将添加该媒体到相册播放列表' }}
+              </div>
             </template>
             <a-empty v-else description="请先从上方选择媒体" />
 
@@ -414,8 +425,11 @@ import {
 } from '@ant-design/icons-vue'
 import { albumApi } from '@/api/album'
 import { mediaApi } from '@/api/media'
+import { mediaSourceApi } from '@/api/media-source'
 import SecureImage from '@/components/SecureImage.vue'
 import { useSecureObjectUrl } from '@/components/useSecureObjectUrl'
+
+const SOURCE_TYPE_ORDER = ['UPLOAD', 'SMB', 'FTP', 'SFTP', 'WEBDAV']
 
 const route = useRoute()
 const router = useRouter()
@@ -434,7 +448,7 @@ const bgmModalOpen = ref(false)
 const addMediaModalOpen = ref(false)
 
 const coverUrl = ref('')
-const bgmUrl = ref('')
+const bgmUrl = ref(80)
 const bgmVolume = ref(80)
 const addMediaForm = reactive({ mediaId: null, sortOrder: 0, duration: 5 })
 const selectableMedia = ref([])
@@ -451,6 +465,7 @@ const mediaPickerKeywordInput = ref('')
 const mediaPickerKeyword = ref(undefined)
 const mediaPickerGroups = ref({ sourceGroups: [], mediaTypeGroups: [] })
 const mediaGroupLoading = ref(false)
+const mediaSources = ref([])
 
 const coverSelectableMedia = ref([])
 const selectedCoverMediaRecord = ref(null)
@@ -470,12 +485,28 @@ const coverGroupLoading = ref(false)
 const selectedMediaRecordUrl = computed(() => selectedMediaRecord.value?.url || '')
 const { resolvedSrc: selectedMediaRecordResolvedUrl } = useSecureObjectUrl(selectedMediaRecordUrl)
 
-const mediaSourceGroups = computed(() => mediaPickerGroups.value?.sourceGroups || [])
-const coverSourceGroups = computed(() => coverPickerGroups.value?.sourceGroups || [])
+const mediaSourceGroups = computed(() => mergePickerSourceGroups(mediaPickerGroups.value?.sourceGroups || [], mediaSources.value || []))
+const coverSourceGroups = computed(() => mergePickerSourceGroups(coverPickerGroups.value?.sourceGroups || [], mediaSources.value || []))
 const mediaTotalMediaCount = computed(() => mediaSourceGroups.value.reduce((sum, item) => sum + (item.mediaCount || 0), 0))
 const coverTotalMediaCount = computed(() => coverSourceGroups.value.reduce((sum, item) => sum + (item.mediaCount || 0), 0))
 const mediaPickerTitle = computed(() => buildPickerTitle(mediaSourceGroups.value, mediaPickerSourceType.value, mediaPickerSourceId.value, mediaPickerFolderPath.value))
 const coverPickerTitle = computed(() => buildPickerTitle(coverSourceGroups.value, coverPickerSourceType.value, coverPickerSourceId.value, coverPickerFolderPath.value))
+const isExternalCoverSelection = computed(() => isExternalPickerSelection(coverPickerSourceType.value, coverPickerSourceId.value))
+const mediaPickerHintText = computed(() => {
+  if (isExternalPickerSelection(mediaPickerSourceType.value, mediaPickerSourceId.value)) {
+    return '当前展示的是外部媒体源目录，可直接绑定到相册，播放时仍通过服务端代理访问。'
+  }
+  return '仅展示已处理完成的媒体'
+})
+const coverPickerHintText = computed(() => {
+  if (isExternalPickerSelection(coverPickerSourceType.value, coverPickerSourceId.value)) {
+    return '当前展示的是外部媒体源目录，仅支持选择图片作为相册封面，访问时仍通过服务端代理。'
+  }
+  return '可直接选择图片或视频缩略图作为相册封面'
+})
+
+const addMediaSubmitDisabled = computed(() => !selectedMediaRecord.value)
+const coverSubmitDisabled = computed(() => !selectedCoverMediaRecord.value)
 
 const columns = [
   { title: '预览', key: 'preview', width: 92 },
@@ -486,8 +517,7 @@ const columns = [
 ]
 
 onMounted(async () => {
-  await loadAlbum()
-  await loadContents()
+  await Promise.all([loadAlbum(), loadContents(), loadMediaSources()])
 })
 
 async function loadAlbum() {
@@ -512,9 +542,16 @@ async function loadContents() {
 }
 
 async function loadContentMedia(list) {
+  const nextMap = {}
+  ;(list || []).forEach(item => {
+    if (item?.id) {
+      nextMap[item.id] = { ...item }
+    }
+  })
+
   const mediaIds = [...new Set((list || []).map(item => item.mediaId).filter(Boolean))]
   if (!mediaIds.length) {
-    contentMediaMap.value = {}
+    contentMediaMap.value = nextMap
     return
   }
 
@@ -529,17 +566,27 @@ async function loadContentMedia(list) {
     })
   )
 
-  const nextMap = {}
   responses.forEach(item => {
     if (item?.id) {
-      nextMap[item.id] = item
+      const record = (list || []).find(content => content.mediaId === item.id)
+      nextMap[record?.id || item.id] = {
+        ...(record || {}),
+        ...item,
+        sourceId: item.sourceId ?? record?.sourceId,
+        sourceType: item.sourceType || record?.sourceType,
+        sourceName: item.sourceName || record?.sourceName,
+        path: record?.path,
+        url: record?.url || item.url,
+        thumbnailUrl: record?.thumbnailUrl || item.thumbnailUrl
+      }
     }
   })
+
   contentMediaMap.value = nextMap
 }
 
 function getContentMedia(record) {
-  return contentMediaMap.value[record.mediaId]
+  return contentMediaMap.value[record.id] || record
 }
 
 async function removeContent(id) {
@@ -549,14 +596,20 @@ async function removeContent(id) {
 }
 
 async function submitCover() {
-  if (!selectedCoverMediaRecord.value?.id) {
+  if (!selectedCoverMediaRecord.value) {
+    message.warning('请选择封面媒体')
+    return
+  }
+
+  const payload = buildCoverPayload(selectedCoverMediaRecord.value)
+  if (!payload) {
     message.warning('请选择封面媒体')
     return
   }
 
   saving.value = true
   try {
-    await albumApi.updateCover(albumId, { mediaId: selectedCoverMediaRecord.value.id })
+    await albumApi.updateCover(albumId, payload)
     message.success('封面已更新')
     coverModalOpen.value = false
     selectedCoverMediaRecord.value = null
@@ -580,12 +633,14 @@ async function submitBgm() {
 
 async function openCoverModal() {
   selectedCoverMediaRecord.value = null
+  sanitizeCoverFilterType()
   coverPickerPage.value = 1
   coverModalOpen.value = true
   await Promise.all([loadCoverGroups(), loadCoverSelectableMedia()])
 }
 
 async function reloadCoverPicker() {
+  sanitizeCoverFilterType()
   coverPickerPage.value = 1
   await Promise.all([loadCoverGroups(), loadCoverSelectableMedia()])
 }
@@ -609,9 +664,180 @@ async function loadCoverGroups() {
   }
 }
 
+async function loadMediaSources() {
+  const res = await mediaSourceApi.list()
+  mediaSources.value = Array.isArray(res.data) ? res.data : []
+}
+
+async function loadExternalMediaBrowseItems(sourceId, folderPath) {
+  if (!sourceId) {
+    return []
+  }
+  const res = await mediaSourceApi.browse(sourceId, {
+    path: folderPath ? normalizePath(folderPath) : undefined
+  })
+  const items = Array.isArray(res.data?.items) ? res.data.items : []
+  return items.filter(item => !item?.directory)
+}
+
+function toExternalPickerMediaItem(item) {
+  return {
+    id: null,
+    externalMediaKey: item.externalMediaKey,
+    sourceId: item.sourceId,
+    sourceType: item.sourceType,
+    sourceName: item.sourceName,
+    path: item.path,
+    folderPath: item.folderPath,
+    fileName: item.fileName || item.name,
+    mediaType: item.mediaType,
+    contentType: item.contentType,
+    fileSize: item.fileSize ?? item.size,
+    durationSec: null,
+    width: null,
+    height: null,
+    status: item.status || 'READY',
+    reviewStatus: null,
+    thumbnailUrl: item.thumbnailUrl,
+    url: item.url,
+    ingestMode: item.ingestMode || 'LINKED'
+  }
+}
+
+function mediaSourceGroupKey(source) {
+  return `${source?.sourceType || 'UNKNOWN'}#${source?.sourceId ?? 'default'}`
+}
+
+function sourceTypeOrderIndex(sourceType) {
+  const index = SOURCE_TYPE_ORDER.indexOf(sourceType)
+  return index === -1 ? SOURCE_TYPE_ORDER.length : index
+}
+
+function normalizePath(path) {
+  if (!path) {
+    return '/'
+  }
+  let normalized = String(path).trim().replace(/\\/g, '/')
+  if (!normalized.startsWith('/')) {
+    normalized = '/' + normalized
+  }
+  normalized = normalized.replace(/\/+/g, '/')
+  if (normalized.length > 1 && normalized.endsWith('/')) {
+    normalized = normalized.slice(0, -1)
+  }
+  return normalized || '/'
+}
+
+function mergePickerSourceGroups(baseGroups, sourceList) {
+  const sourceMap = new Map()
+
+  const ensureSource = source => {
+    const normalizedType = source?.sourceType || 'UPLOAD'
+    const key = mediaSourceGroupKey({ sourceType: normalizedType, sourceId: source?.sourceId ?? source?.id ?? null })
+    if (!sourceMap.has(key)) {
+      sourceMap.set(key, {
+        sourceType: normalizedType,
+        sourceId: source?.sourceId ?? source?.id ?? null,
+        sourceName: source?.sourceName || source?.name || (normalizedType === 'UPLOAD' ? '自行上传' : sourceTypeLabel(normalizedType)),
+        mediaCount: 0,
+        folders: []
+      })
+    }
+    const target = sourceMap.get(key)
+    if (source?.sourceName || source?.name) {
+      target.sourceName = source.sourceName || source.name
+    }
+    if (Array.isArray(source?.folders) && source.folders.length) {
+      target.folders = source.folders
+    }
+    if (source?.mediaCount !== undefined && source?.mediaCount !== null) {
+      target.mediaCount = source.mediaCount
+    }
+    return target
+  }
+
+  ensureSource({ sourceType: 'UPLOAD', sourceId: null, sourceName: '自行上传', mediaCount: 0, folders: [] })
+
+  ;(baseGroups || []).forEach(group => ensureSource(group))
+
+  ;(sourceList || []).forEach(source => {
+    if (source?.enabled === false) {
+      return
+    }
+    ensureSource({
+      sourceType: source.sourceType,
+      sourceId: source.id,
+      sourceName: source.name,
+      mediaCount: 0,
+      folders: source.boundPath
+        ? [{ folderPath: normalizePath(source.boundPath), title: source.boundPathName || normalizePath(source.boundPath), mediaCount: 0 }]
+        : []
+    })
+  })
+
+  return Array.from(sourceMap.values()).sort((a, b) => {
+    const typeDiff = sourceTypeOrderIndex(a.sourceType) - sourceTypeOrderIndex(b.sourceType)
+    if (typeDiff !== 0) {
+      return typeDiff
+    }
+    if ((a.sourceId ?? null) === (b.sourceId ?? null)) {
+      return 0
+    }
+    return String(a.sourceName || '').localeCompare(String(b.sourceName || ''), 'zh-CN')
+  })
+}
+
+function isExternalPickerSelection(sourceType, sourceId) {
+  return !!sourceType && sourceType !== 'UPLOAD' && sourceId !== undefined && sourceId !== null
+}
+
+function resolvePickerItemKey(item) {
+  if (!item) {
+    return ''
+  }
+  return item.id ?? item.externalMediaKey ?? `${item.sourceId || 'draft'}:${item.fileName || item.url || ''}`
+}
+
+function filterExternalPickerItems(items, { mediaType, keyword, coverOnly = false } = {}) {
+  return items
+    .map(toExternalPickerMediaItem)
+    .filter(item => !mediaType || item.mediaType === mediaType)
+    .filter(item => !coverOnly || item.mediaType === 'IMAGE')
+    .filter(item => {
+      if (!keyword) {
+        return true
+      }
+      const text = `${item.fileName || ''} ${item.sourceName || ''} ${item.folderPath || ''}`.toLowerCase()
+      return text.includes(String(keyword).toLowerCase())
+    })
+}
+
+function sanitizeCoverFilterType() {
+  if (isExternalCoverSelection.value && coverPickerFilterType.value === 'VIDEO') {
+    coverPickerFilterType.value = undefined
+  }
+}
+
+function paginatePickerItems(items, pageNo, pageSize) {
+  const start = Math.max(0, (pageNo - 1) * pageSize)
+  return items.slice(start, start + pageSize)
+}
+
 async function loadCoverSelectableMedia() {
   coverPickerLoading.value = true
   try {
+    if (isExternalPickerSelection(coverPickerSourceType.value, coverPickerSourceId.value)) {
+      const rawItems = await loadExternalMediaBrowseItems(coverPickerSourceId.value, coverPickerFolderPath.value)
+      const filtered = filterExternalPickerItems(rawItems, {
+        mediaType: coverPickerFilterType.value || undefined,
+        keyword: coverPickerKeyword.value || undefined,
+        coverOnly: true
+      })
+      coverPickerTotal.value = filtered.length
+      coverSelectableMedia.value = paginatePickerItems(filtered, coverPickerPage.value, coverPickerPageSize)
+      return
+    }
+
     const res = await mediaApi.list({
       page: coverPickerPage.value,
       size: coverPickerPageSize,
@@ -634,6 +860,7 @@ async function selectAllCoverSource() {
   coverPickerSourceType.value = undefined
   coverPickerSourceId.value = undefined
   coverPickerFolderPath.value = undefined
+  sanitizeCoverFilterType()
   coverPickerPage.value = 1
   await loadCoverSelectableMedia()
 }
@@ -642,6 +869,7 @@ async function selectCoverSource(source) {
   coverPickerSourceType.value = source.sourceType || undefined
   coverPickerSourceId.value = source.sourceId ?? undefined
   coverPickerFolderPath.value = undefined
+  sanitizeCoverFilterType()
   coverPickerPage.value = 1
   await loadCoverSelectableMedia()
 }
@@ -650,6 +878,7 @@ async function selectCoverFolder(source, folder) {
   coverPickerSourceType.value = source.sourceType || undefined
   coverPickerSourceId.value = source.sourceId ?? undefined
   coverPickerFolderPath.value = folder.folderPath || undefined
+  sanitizeCoverFilterType()
   coverPickerPage.value = 1
   await loadCoverSelectableMedia()
 }
@@ -659,12 +888,68 @@ function onCoverPickerPageChange(nextPage) {
   loadCoverSelectableMedia()
 }
 
+function buildExternalSelectionPayload(item) {
+  if (!item?.externalMediaKey || !item?.sourceId) {
+    return null
+  }
+  const rawPath = item.path || (item.folderPath && item.fileName ? `${item.folderPath}/${item.fileName}` : null)
+  if (!rawPath) {
+    return null
+  }
+  return {
+    sourceId: item.sourceId,
+    sourceType: item.sourceType,
+    sourceName: item.sourceName,
+    externalMediaKey: item.externalMediaKey,
+    path: normalizePath(rawPath),
+    fileName: item.fileName,
+    contentType: item.contentType,
+    mediaType: item.mediaType
+  }
+}
+
+function buildCoverPayload(item) {
+  if (!item) {
+    return null
+  }
+  if (isExternalPickerItem(item)) {
+    return buildExternalSelectionPayload(item)
+  }
+  if (!item.id) {
+    return null
+  }
+  return { mediaId: item.id }
+}
+
+function buildAddMediaPayload(item) {
+  if (!item) {
+    return null
+  }
+  const basePayload = isExternalPickerItem(item)
+    ? buildExternalSelectionPayload(item)
+    : item.id
+      ? { mediaId: item.id }
+      : null
+  if (!basePayload) {
+    return null
+  }
+  return {
+    ...basePayload,
+    sortOrder: addMediaForm.sortOrder,
+    duration: addMediaForm.duration
+  }
+}
+
+function isExternalPickerItem(item) {
+  return !item?.id && !!item?.externalMediaKey
+}
+
 function selectCoverMedia(item) {
   selectedCoverMediaRecord.value = item
 }
 
 function coverMediaCardStyle(item) {
-  const selected = selectedCoverMediaRecord.value?.id === item.id
+  const selected = resolvePickerItemKey(selectedCoverMediaRecord.value) === resolvePickerItemKey(item)
   return selected
     ? 'border:1px solid #1677ff; box-shadow:0 0 0 2px rgba(22,119,255,0.12)'
     : 'border:1px solid #f0f0f0'
@@ -711,6 +996,17 @@ async function loadMediaGroups() {
 async function loadSelectableMedia() {
   mediaPickerLoading.value = true
   try {
+    if (isExternalPickerSelection(mediaPickerSourceType.value, mediaPickerSourceId.value)) {
+      const rawItems = await loadExternalMediaBrowseItems(mediaPickerSourceId.value, mediaPickerFolderPath.value)
+      const filtered = filterExternalPickerItems(rawItems, {
+        mediaType: mediaPickerFilterType.value || undefined,
+        keyword: mediaPickerKeyword.value || undefined
+      })
+      mediaPickerTotal.value = filtered.length
+      selectableMedia.value = paginatePickerItems(filtered, mediaPickerPage.value, mediaPickerPageSize)
+      return
+    }
+
     const res = await mediaApi.list({
       page: mediaPickerPage.value,
       size: mediaPickerPageSize,
@@ -759,24 +1055,25 @@ function onMediaPickerPageChange(nextPage) {
 
 function selectMedia(item) {
   selectedMediaRecord.value = item
-  addMediaForm.mediaId = item.id
+  addMediaForm.mediaId = item?.id || null
 }
 
 function mediaCardStyle(item) {
-  const selected = selectedMediaRecord.value?.id === item.id
+  const selected = resolvePickerItemKey(selectedMediaRecord.value) === resolvePickerItemKey(item)
   return selected
     ? 'border:1px solid #1677ff; box-shadow:0 0 0 2px rgba(22,119,255,0.12)'
     : 'border:1px solid #f0f0f0'
 }
 
 async function submitAddMedia() {
-  if (!addMediaForm.mediaId) {
+  const payload = buildAddMediaPayload(selectedMediaRecord.value)
+  if (!payload) {
     message.warning('请选择媒体')
     return
   }
   saving.value = true
   try {
-    await albumApi.addContent(albumId, addMediaForm)
+    await albumApi.addContent(albumId, payload)
     message.success('已添加')
     addMediaModalOpen.value = false
     resetAddMediaState()
@@ -874,6 +1171,8 @@ function sourceTypeLabel(sourceType) {
   const map = {
     UPLOAD: '上传',
     SMB: 'SMB',
+    FTP: 'FTP',
+    SFTP: 'SFTP',
     WEBDAV: 'WebDAV',
     NAS: 'NAS'
   }

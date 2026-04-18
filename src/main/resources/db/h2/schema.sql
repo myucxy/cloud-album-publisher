@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS t_album_media (
     CONSTRAINT uk_album_media UNIQUE (album_id, media_id)
 );
 
-ALTER TABLE t_album_media ALTER COLUMN media_id BIGINT;
+ALTER TABLE t_album_media ALTER COLUMN media_id SET NULL;
 ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS source_id BIGINT;
 ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS source_type VARCHAR(20);
 ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS source_name VARCHAR(100);
@@ -94,6 +94,7 @@ ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS file_path VARCHAR(500);
 ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS file_name VARCHAR(255);
 ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS content_type VARCHAR(100);
 ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS media_type VARCHAR(20);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_album_external_media ON t_album_media (album_id, external_media_key);
 
 -- ===================== V2: 分发 / 审核 / 审计 =====================
 

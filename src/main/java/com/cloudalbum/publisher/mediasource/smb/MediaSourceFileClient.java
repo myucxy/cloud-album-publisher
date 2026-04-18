@@ -9,6 +9,8 @@ import java.util.List;
 
 public interface MediaSourceFileClient {
 
+    String getSourceType();
+
     List<Entry> list(MediaSourceConnection connection, String path) throws Exception;
 
     InputStream open(MediaSourceConnection connection, String path) throws Exception;
@@ -16,11 +18,15 @@ public interface MediaSourceFileClient {
     @Getter
     @Builder
     class MediaSourceConnection {
+        private final String sourceType;
         private final String host;
         private final Integer port;
         private final String shareName;
+        private final String rootPath;
         private final String username;
         private final String password;
+        private final Boolean secure;
+        private final String hostKeyFingerprint;
     }
 
     @Getter

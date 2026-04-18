@@ -86,6 +86,15 @@ public class DevicePullResponse {
         @Schema(description = "媒体ID")
         private Long id;
 
+        @Schema(description = "外部媒体引用Key")
+        private String externalMediaKey;
+
+        @Schema(description = "外部媒体源ID")
+        private Long sourceId;
+
+        @Schema(description = "外部媒体源类型")
+        private String sourceType;
+
         @Schema(description = "文件名")
         private String fileName;
 

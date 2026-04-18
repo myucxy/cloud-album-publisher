@@ -23,8 +23,12 @@ import com.cloudalbum.publisher.distribution.mapper.DistributionDeviceMapper;
 import com.cloudalbum.publisher.distribution.mapper.DistributionMapper;
 import com.cloudalbum.publisher.media.content.MediaContentResolverRegistry;
 import com.cloudalbum.publisher.media.content.MediaHttpWriter;
+import com.cloudalbum.publisher.media.content.ObjectStorageMediaContentResolver;
 import com.cloudalbum.publisher.media.entity.Media;
 import com.cloudalbum.publisher.media.mapper.MediaMapper;
+import com.cloudalbum.publisher.mediasource.dto.MediaSourceBrowseItemResponse;
+import com.cloudalbum.publisher.mediasource.dto.MediaSourceBrowseResponse;
+import com.cloudalbum.publisher.mediasource.service.MediaSourceService;
 import com.cloudalbum.publisher.review.entity.ReviewRecord;
 import com.cloudalbum.publisher.review.mapper.ReviewRecordMapper;
 import jakarta.servlet.http.HttpServletRequest;
@@ -37,6 +41,7 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import java.net.URI;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashMap;
@@ -65,7 +70,9 @@ public class DeviceServiceImpl implements DeviceService {
     private final ReviewRecordMapper reviewRecordMapper;
     private final MediaContentResolverRegistry mediaContentResolverRegistry;
     private final MediaHttpWriter mediaHttpWriter;
+    private final MediaSourceService mediaSourceService;
     private final JwtUtil jwtUtil;
+    private final ObjectStorageMediaContentResolver objectStorageMediaContentResolver;
 
     @Override
     public List<DeviceResponse> listDevices(Long userId) {
@@ -281,6 +288,66 @@ public class DeviceServiceImpl implements DeviceService {
                 "读取媒体内容失败");
     }
 
+    @Override
+    public void writeDeviceAlbumCover(Long deviceId,
+                                      Long albumId,
+                                      HttpServletRequest request,
+                                      HttpServletResponse response) {
+        Device device = getDevice(deviceId);
+        Album album = albumMapper.selectById(albumId);
+        if (album == null) {
+            throw new BusinessException(ResultCode.ALBUM_NOT_FOUND);
+        }
+        if (!Objects.equals(album.getUserId(), device.getUserId())) {
+            throw new BusinessException(ResultCode.ALBUM_ACCESS_DENIED);
+        }
+        if (!canDeviceAccessAlbum(album, true)) {
+            throw new BusinessException(ResultCode.ALBUM_ACCESS_DENIED);
+        }
+        if (hasExternalCover(album)) {
+            mediaSourceService.writeMediaContent(
+                    album.getCoverSourceId(),
+                    album.getUserId(),
+                    album.getCoverPath(),
+                    shouldUseExternalThumbnailForCover(album),
+                    request,
+                    response);
+            return;
+        }
+
+        Media coverMedia = resolveCoverMedia(album);
+        if (coverMedia != null) {
+            mediaHttpWriter.write(
+                    mediaContentResolverRegistry.resolve(coverMedia, shouldUseThumbnailForCover(coverMedia)),
+                    request,
+                    response,
+                    "读取相册封面失败");
+            return;
+        }
+
+        String objectKey = resolveCoverObjectKey(album.getCoverUrl());
+        if (!StringUtils.hasText(objectKey)) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "相册封面不存在");
+        }
+
+        mediaHttpWriter.write(
+                objectStorageMediaContentResolver.resolveObject(bucket, objectKey, "application/octet-stream", "相册封面不存在"),
+                request,
+                response,
+                "读取相册封面失败");
+    }
+
+    @Override
+    public void writeDeviceExternalMediaContent(Long deviceId,
+                                                Long sourceId,
+                                                String path,
+                                                boolean thumbnail,
+                                                HttpServletRequest request,
+                                                HttpServletResponse response) {
+        Device device = getDevice(deviceId);
+        resolveExternalMediaItem(sourceId, device.getUserId(), path, null);
+        mediaSourceService.writeMediaContent(sourceId, device.getUserId(), path, thumbnail, request, response);
+    }
 
     private DevicePullResponse buildPullResponse(Device device, boolean deviceTokenAccess) {
         LocalDateTime now = LocalDateTime.now();
@@ -364,16 +431,21 @@ public class DeviceServiceImpl implements DeviceService {
 
         List<Long> mediaIds = albumMediaList.stream()
                 .map(AlbumMedia::getMediaId)
+                .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-        List<Media> mediaList = mediaMapper.selectBatchIds(mediaIds);
-        Map<Long, Media> mediaMap = mediaList.stream()
+        Map<Long, Media> mediaMap = mediaIds.isEmpty()
+                ? Collections.emptyMap()
+                : mediaMapper.selectBatchIds(mediaIds).stream()
                 .collect(Collectors.toMap(Media::getId, Function.identity()));
         Map<Long, ReviewRecord> latestReviewMap = queryLatestReviewMap(mediaIds);
 
         List<DevicePullResponse.MediaItem> mediaItems = albumMediaList.stream()
-                .map(albumMedia -> toPullMediaItem(albumMedia, mediaMap.get(albumMedia.getMediaId()),
-                        latestReviewMap.get(albumMedia.getMediaId()), userId, distribution.getItemDuration()))
+                .map(albumMedia -> toPullMediaItem(albumMedia,
+                        mediaMap.get(albumMedia.getMediaId()),
+                        latestReviewMap.get(albumMedia.getMediaId()),
+                        userId,
+                        distribution.getItemDuration()))
                 .filter(Objects::nonNull)
                 .toList();
         if (CollectionUtils.isEmpty(mediaItems)) {
@@ -422,6 +494,17 @@ public class DeviceServiceImpl implements DeviceService {
                                                          ReviewRecord latestReview,
                                                          Long userId,
                                                          Integer distributionItemDuration) {
+        if (albumMedia.isExternal()) {
+            return toPullExternalMediaItem(albumMedia, userId, distributionItemDuration);
+        }
+        return toPullInternalMediaItem(albumMedia, media, latestReview, userId, distributionItemDuration);
+    }
+
+    private DevicePullResponse.MediaItem toPullInternalMediaItem(AlbumMedia albumMedia,
+                                                                 Media media,
+                                                                 ReviewRecord latestReview,
+                                                                 Long userId,
+                                                                 Integer distributionItemDuration) {
         if (media == null || !Objects.equals(media.getUserId(), userId)) {
             return null;
         }
@@ -434,6 +517,8 @@ public class DeviceServiceImpl implements DeviceService {
 
         DevicePullResponse.MediaItem item = new DevicePullResponse.MediaItem();
         item.setId(media.getId());
+        item.setSourceId(firstNonNull(media.getSourceId(), albumMedia.getSourceId()));
+        item.setSourceType(media.getSourceType());
         item.setFileName(media.getFileName());
         item.setMediaType(media.getMediaType());
         item.setContentType(media.getContentType());
@@ -442,6 +527,29 @@ public class DeviceServiceImpl implements DeviceService {
         item.setDurationSec(media.getDurationSec());
         item.setWidth(media.getWidth());
         item.setHeight(media.getHeight());
+        item.setSortOrder(albumMedia.getSortOrder());
+        item.setItemDuration(resolveItemDuration(albumMedia, distributionItemDuration));
+        return item;
+    }
+
+    private DevicePullResponse.MediaItem toPullExternalMediaItem(AlbumMedia albumMedia,
+                                                                 Long userId,
+                                                                 Integer distributionItemDuration) {
+        MediaSourceBrowseItemResponse externalItem = resolveExternalMediaItem(
+                albumMedia.getSourceId(),
+                userId,
+                albumMedia.getFilePath(),
+                albumMedia.getExternalMediaKey());
+        DevicePullResponse.MediaItem item = new DevicePullResponse.MediaItem();
+        item.setId(albumMedia.getId());
+        item.setExternalMediaKey(externalItem.getExternalMediaKey());
+        item.setSourceId(externalItem.getSourceId());
+        item.setSourceType(externalItem.getSourceType());
+        item.setFileName(firstText(externalItem.getFileName(), externalItem.getName(), albumMedia.getFileName()));
+        item.setMediaType(firstText(externalItem.getMediaType(), albumMedia.getMediaType(), albumMedia.getMediaType()));
+        item.setContentType(firstText(externalItem.getContentType(), albumMedia.getContentType(), albumMedia.getContentType()));
+        item.setUrl(buildDeviceExternalContentUrl(externalItem.getSourceId(), externalItem.getPath()));
+        item.setThumbnailUrl(buildDeviceExternalThumbnailUrl(externalItem.getSourceId(), externalItem.getPath(), externalItem.getMediaType()));
         item.setSortOrder(albumMedia.getSortOrder());
         item.setItemDuration(resolveItemDuration(albumMedia, distributionItemDuration));
         return item;
@@ -468,6 +576,65 @@ public class DeviceServiceImpl implements DeviceService {
             latestReviewMap.putIfAbsent(reviewRecord.getMediaId(), reviewRecord);
         }
         return latestReviewMap;
+    }
+
+    private MediaSourceBrowseItemResponse resolveExternalMediaItem(Long sourceId,
+                                                                   Long userId,
+                                                                   String path,
+                                                                   String externalMediaKey) {
+        if (sourceId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "媒体源不能为空");
+        }
+        String normalizedPath = normalizeExternalPath(path);
+        if (!StringUtils.hasText(normalizedPath)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "媒体路径不能为空");
+        }
+        String parentPath = parentPath(normalizedPath);
+        MediaSourceBrowseResponse browseResponse = mediaSourceService.browse(sourceId, userId, parentPath);
+        MediaSourceBrowseItemResponse item = browseResponse.getItems().stream()
+                .filter(candidate -> !Boolean.TRUE.equals(candidate.getDirectory()))
+                .filter(candidate -> normalizedPath.equals(normalizeExternalPath(candidate.getPath())))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "外部媒体不存在或不可访问"));
+        if (!StringUtils.hasText(item.getExternalMediaKey())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "当前外部文件不支持设备播放");
+        }
+        if (StringUtils.hasText(externalMediaKey) && !externalMediaKey.equals(item.getExternalMediaKey())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "外部媒体引用已失效，请重新选择");
+        }
+        if (!StringUtils.hasText(item.getMediaType()) || "OTHER".equals(item.getMediaType())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "仅支持播放图片、视频或音频文件");
+        }
+        return item;
+    }
+
+    private String normalizeExternalPath(String path) {
+        if (!StringUtils.hasText(path)) {
+            return null;
+        }
+        String normalized = path.trim().replace('\\', '/');
+        if (!normalized.startsWith("/")) {
+            normalized = "/" + normalized;
+        }
+        while (normalized.contains("//")) {
+            normalized = normalized.replace("//", "/");
+        }
+        if (normalized.length() > 1 && normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
+    }
+
+    private String parentPath(String path) {
+        String normalized = normalizeExternalPath(path);
+        if (!StringUtils.hasText(normalized) || "/".equals(normalized)) {
+            return "/";
+        }
+        int slashIndex = normalized.lastIndexOf('/');
+        if (slashIndex <= 0) {
+            return "/";
+        }
+        return normalized.substring(0, slashIndex);
     }
 
     private Device getOwnedDevice(Long userId, Long deviceId) {
@@ -552,15 +719,26 @@ public class DeviceServiceImpl implements DeviceService {
                 .toUriString();
     }
 
+    private String buildDeviceExternalContentUrl(Long sourceId, String path) {
+        if (sourceId == null || !StringUtils.hasText(path)) {
+            return null;
+        }
+        return ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/v1/devices/media-sources/{id}/content")
+                .queryParam("path", path)
+                .buildAndExpand(sourceId)
+                .toUriString();
+    }
+
     private String buildAlbumCoverUrl(Album album) {
         if (album == null) {
             return null;
         }
-        if (album.getCoverMediaId() == null && !StringUtils.hasText(album.getCoverUrl())) {
+        if (album.getCoverMediaId() == null && !StringUtils.hasText(album.getCoverUrl()) && album.getCoverSourceId() == null) {
             return null;
         }
         return ServletUriComponentsBuilder.fromCurrentContextPath()
-                .path("/api/v1/albums/{id}/cover")
+                .path("/api/v1/devices/albums/{id}/cover")
                 .buildAndExpand(album.getId())
                 .toUriString();
     }
@@ -573,5 +751,77 @@ public class DeviceServiceImpl implements DeviceService {
                 .path("/api/v1/devices/media/{id}/thumbnail")
                 .buildAndExpand(mediaId)
                 .toUriString();
+    }
+
+    private String buildDeviceExternalThumbnailUrl(Long sourceId, String path, String mediaType) {
+        if (sourceId == null || !StringUtils.hasText(path) || !"IMAGE".equals(mediaType)) {
+            return null;
+        }
+        return ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/v1/devices/media-sources/{id}/thumbnail")
+                .queryParam("path", path)
+                .buildAndExpand(sourceId)
+                .toUriString();
+    }
+
+    private Media resolveCoverMedia(Album album) {
+        if (album.getCoverMediaId() == null) {
+            return null;
+        }
+        Media media = mediaMapper.selectById(album.getCoverMediaId());
+        if (media == null || !Objects.equals(media.getUserId(), album.getUserId())) {
+            return null;
+        }
+        return media;
+    }
+
+    private boolean shouldUseThumbnailForCover(Media media) {
+        return media != null && StringUtils.hasText(media.getThumbnailKey());
+    }
+
+    private boolean shouldUseExternalThumbnailForCover(Album album) {
+        return "IMAGE".equals(album.getCoverMediaType());
+    }
+
+    private boolean hasExternalCover(Album album) {
+        return album.getCoverSourceId() != null && StringUtils.hasText(album.getCoverPath());
+    }
+
+    private String resolveCoverObjectKey(String coverUrl) {
+        if (!StringUtils.hasText(coverUrl)) {
+            return null;
+        }
+        if (!coverUrl.contains("://") && !coverUrl.startsWith("/")) {
+            return coverUrl;
+        }
+        try {
+            URI uri = URI.create(coverUrl);
+            String path = uri.getPath();
+            if (!StringUtils.hasText(path)) {
+                return null;
+            }
+            String normalizedPath = path.startsWith("/") ? path.substring(1) : path;
+            String bucketPrefix = bucket + "/";
+            if (normalizedPath.startsWith(bucketPrefix)) {
+                return normalizedPath.substring(bucketPrefix.length());
+            }
+            return null;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private String firstText(String first, String second, String fallback) {
+        if (StringUtils.hasText(first)) {
+            return first;
+        }
+        if (StringUtils.hasText(second)) {
+            return second;
+        }
+        return fallback;
+    }
+
+    private <T> T firstNonNull(T first, T fallback) {
+        return first != null ? first : fallback;
     }
 }

@@ -15,6 +15,14 @@ public class AlbumResponse {
     private String description;
     private String coverUrl;
     private Long coverMediaId;
+    private Long coverSourceId;
+    private String coverSourceType;
+    private String coverSourceName;
+    private String coverExternalMediaKey;
+    private String coverPath;
+    private String coverFileName;
+    private String coverContentType;
+    private String coverMediaType;
     private String bgmUrl;
     private Integer bgmVolume;
     private String visibility;

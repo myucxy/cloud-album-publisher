@@ -1,7 +1,6 @@
 package com.cloudalbum.publisher.album.controller;
 
 import com.cloudalbum.publisher.album.dto.*;
-import com.cloudalbum.publisher.album.entity.AlbumMedia;
 import com.cloudalbum.publisher.album.service.AlbumService;
 import com.cloudalbum.publisher.common.model.PageRequest;
 import com.cloudalbum.publisher.common.model.PageResult;
@@ -69,16 +68,16 @@ public class AlbumController {
 
     @Operation(summary = "获取相册内容列表")
     @GetMapping("/{id}/contents")
-    public Result<PageResult<AlbumMedia>> listContents(@PathVariable Long id,
-                                                       @Valid PageRequest pageRequest) {
+    public Result<PageResult<AlbumContentResponse>> listContents(@PathVariable Long id,
+                                                                 @Valid PageRequest pageRequest) {
         return Result.success(albumService.listContents(id, SecurityUtil.getCurrentUserId(), pageRequest));
     }
 
     @Operation(summary = "向相册添加媒体")
     @PostMapping("/{id}/contents")
     @ResponseStatus(HttpStatus.CREATED)
-    public Result<AlbumMedia> addContent(@PathVariable Long id,
-                                         @Valid @RequestBody AlbumAddContentRequest request) {
+    public Result<AlbumContentResponse> addContent(@PathVariable Long id,
+                                                   @Valid @RequestBody AlbumAddContentRequest request) {
         return Result.success(albumService.addContent(id, SecurityUtil.getCurrentUserId(), request));
     }
 

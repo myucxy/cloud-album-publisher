@@ -24,6 +24,22 @@ public class Album {
 
     private Long coverMediaId;
 
+    private Long coverSourceId;
+
+    private String coverSourceType;
+
+    private String coverSourceName;
+
+    private String coverExternalMediaKey;
+
+    private String coverPath;
+
+    private String coverFileName;
+
+    private String coverContentType;
+
+    private String coverMediaType;
+
     private String bgmUrl;
 
     /** 音量 0-100 */

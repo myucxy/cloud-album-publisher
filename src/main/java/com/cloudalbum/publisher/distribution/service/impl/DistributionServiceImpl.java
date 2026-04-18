@@ -26,6 +26,9 @@ import com.cloudalbum.publisher.distribution.mapper.DistributionMapper;
 import com.cloudalbum.publisher.distribution.service.DistributionService;
 import com.cloudalbum.publisher.media.entity.Media;
 import com.cloudalbum.publisher.media.mapper.MediaMapper;
+import com.cloudalbum.publisher.mediasource.dto.MediaSourceBrowseItemResponse;
+import com.cloudalbum.publisher.mediasource.dto.MediaSourceBrowseResponse;
+import com.cloudalbum.publisher.mediasource.service.MediaSourceService;
 import com.cloudalbum.publisher.review.entity.ReviewRecord;
 import com.cloudalbum.publisher.review.mapper.ReviewRecordMapper;
 import lombok.RequiredArgsConstructor;
@@ -54,6 +57,7 @@ public class DistributionServiceImpl implements DistributionService {
     private final DeviceGroupMapper deviceGroupMapper;
     private final DeviceGroupRelMapper deviceGroupRelMapper;
     private final ReviewRecordMapper reviewRecordMapper;
+    private final MediaSourceService mediaSourceService;
 
     @Override
     @Transactional
@@ -168,10 +172,6 @@ public class DistributionServiceImpl implements DistributionService {
                 .collect(Collectors.toList());
     }
 
-    // -------------------------------------------------------
-    // 私有辅助方法
-    // -------------------------------------------------------
-
     private Distribution getAndCheckOwner(Long id, Long userId) {
         Distribution dist = distributionMapper.selectById(id);
         if (dist == null) {
@@ -246,10 +246,19 @@ public class DistributionServiceImpl implements DistributionService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "相册中暂无可分发内容");
         }
 
+        validateInternalMediaBeforeActivate(albumMediaList, userId);
+        validateExternalMediaBeforeActivate(albumMediaList, userId);
+    }
+
+    private void validateInternalMediaBeforeActivate(List<AlbumMedia> albumMediaList, Long userId) {
         List<Long> mediaIds = albumMediaList.stream()
                 .map(AlbumMedia::getMediaId)
+                .filter(java.util.Objects::nonNull)
                 .distinct()
                 .toList();
+        if (CollectionUtils.isEmpty(mediaIds)) {
+            return;
+        }
         List<Media> mediaList = mediaMapper.selectBatchIds(mediaIds);
         Map<Long, Media> mediaMap = mediaList.stream()
                 .collect(Collectors.toMap(Media::getId, Function.identity()));
@@ -268,6 +277,77 @@ public class DistributionServiceImpl implements DistributionService {
             }
             validateMediaReviewApproved(media);
         }
+    }
+
+    private void validateExternalMediaBeforeActivate(List<AlbumMedia> albumMediaList, Long userId) {
+        List<AlbumMedia> externalItems = albumMediaList.stream()
+                .filter(AlbumMedia::isExternal)
+                .toList();
+        if (CollectionUtils.isEmpty(externalItems)) {
+            return;
+        }
+        for (AlbumMedia albumMedia : externalItems) {
+            resolveExternalMediaItem(albumMedia.getSourceId(), userId, albumMedia.getFilePath(), albumMedia.getExternalMediaKey());
+        }
+    }
+
+    private MediaSourceBrowseItemResponse resolveExternalMediaItem(Long sourceId,
+                                                                   Long userId,
+                                                                   String path,
+                                                                   String externalMediaKey) {
+        if (sourceId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "媒体源不能为空");
+        }
+        String normalizedPath = normalizeExternalPath(path);
+        if (!StringUtils.hasText(normalizedPath)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "媒体路径不能为空");
+        }
+        String parentPath = parentPath(normalizedPath);
+        MediaSourceBrowseResponse browseResponse = mediaSourceService.browse(sourceId, userId, parentPath);
+        MediaSourceBrowseItemResponse item = browseResponse.getItems().stream()
+                .filter(candidate -> !Boolean.TRUE.equals(candidate.getDirectory()))
+                .filter(candidate -> normalizedPath.equals(normalizeExternalPath(candidate.getPath())))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "外部媒体不存在或不可访问"));
+        if (!StringUtils.hasText(item.getExternalMediaKey())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "当前外部文件不支持分发");
+        }
+        if (StringUtils.hasText(externalMediaKey) && !externalMediaKey.equals(item.getExternalMediaKey())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "外部媒体引用已失效，请重新选择");
+        }
+        if (!StringUtils.hasText(item.getMediaType()) || "OTHER".equals(item.getMediaType())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "仅支持分发图片、视频或音频文件");
+        }
+        return item;
+    }
+
+    private String normalizeExternalPath(String path) {
+        if (!StringUtils.hasText(path)) {
+            return null;
+        }
+        String normalized = path.trim().replace('\\', '/');
+        if (!normalized.startsWith("/")) {
+            normalized = "/" + normalized;
+        }
+        while (normalized.contains("//")) {
+            normalized = normalized.replace("//", "/");
+        }
+        if (normalized.length() > 1 && normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
+    }
+
+    private String parentPath(String path) {
+        String normalized = normalizeExternalPath(path);
+        if (!StringUtils.hasText(normalized) || "/".equals(normalized)) {
+            return "/";
+        }
+        int slashIndex = normalized.lastIndexOf('/');
+        if (slashIndex <= 0) {
+            return "/";
+        }
+        return normalized.substring(0, slashIndex);
     }
 
     private void validateTargets(List<Long> deviceIds, List<Long> groupIds, Long userId) {

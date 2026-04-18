@@ -78,6 +78,15 @@ public class DeviceController {
         return Result.success(deviceService.pullContentByDevice(principal.getDeviceId()));
     }
 
+    @Operation(summary = "设备访问相册封面")
+    @GetMapping("/albums/{albumId}/cover")
+    public void getDeviceAlbumCover(@PathVariable Long albumId,
+                                    HttpServletRequest request,
+                                    HttpServletResponse response) {
+        DeviceAuthPrincipal principal = SecurityUtil.getCurrentDevicePrincipal();
+        deviceService.writeDeviceAlbumCover(principal.getDeviceId(), albumId, request, response);
+    }
+
     @Operation(summary = "设备访问媒体原文件")
     @GetMapping("/media/{mediaId}/content")
     public void getDeviceMediaContent(@PathVariable Long mediaId,
@@ -94,6 +103,26 @@ public class DeviceController {
                                         HttpServletResponse response) {
         DeviceAuthPrincipal principal = SecurityUtil.getCurrentDevicePrincipal();
         deviceService.writeDeviceMediaContent(principal.getDeviceId(), mediaId, true, request, response);
+    }
+
+    @Operation(summary = "设备访问外部媒体原文件")
+    @GetMapping("/media-sources/{sourceId}/content")
+    public void getDeviceExternalMediaContent(@PathVariable Long sourceId,
+                                              @RequestParam String path,
+                                              HttpServletRequest request,
+                                              HttpServletResponse response) {
+        DeviceAuthPrincipal principal = SecurityUtil.getCurrentDevicePrincipal();
+        deviceService.writeDeviceExternalMediaContent(principal.getDeviceId(), sourceId, path, false, request, response);
+    }
+
+    @Operation(summary = "设备访问外部媒体缩略图")
+    @GetMapping("/media-sources/{sourceId}/thumbnail")
+    public void getDeviceExternalMediaThumbnail(@PathVariable Long sourceId,
+                                                @RequestParam String path,
+                                                HttpServletRequest request,
+                                                HttpServletResponse response) {
+        DeviceAuthPrincipal principal = SecurityUtil.getCurrentDevicePrincipal();
+        deviceService.writeDeviceExternalMediaContent(principal.getDeviceId(), sourceId, path, true, request, response);
     }
 
     @Operation(summary = "获取设备分组列表")

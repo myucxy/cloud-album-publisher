@@ -39,4 +39,16 @@ public interface DeviceService {
     int markOfflineDevices(long offlineThresholdSeconds);
 
     void writeDeviceMediaContent(Long deviceId, Long mediaId, boolean thumbnail, HttpServletRequest request, HttpServletResponse response);
+
+    void writeDeviceAlbumCover(Long deviceId,
+                               Long albumId,
+                               HttpServletRequest request,
+                               HttpServletResponse response);
+
+    void writeDeviceExternalMediaContent(Long deviceId,
+                                         Long sourceId,
+                                         String path,
+                                         boolean thumbnail,
+                                         HttpServletRequest request,
+                                         HttpServletResponse response);
 }

@@ -20,6 +20,26 @@ function stableShuffle(list, seedValue) {
   return output
 }
 
+export function resolveMediaIdentity(media) {
+  if (!media) {
+    return ''
+  }
+
+  if (media.id !== undefined && media.id !== null) {
+    return `id:${media.id}`
+  }
+
+  if (media.externalMediaKey) {
+    return `external:${media.externalMediaKey}`
+  }
+
+  if (media.url) {
+    return `url:${media.url}`
+  }
+
+  return `${media.mediaType || 'media'}:${media.fileName || ''}:${media.sortOrder ?? ''}`
+}
+
 export const usePlayerStore = defineStore('player', () => {
   const distributions = ref([])
   const pulledAt = ref('')
@@ -65,7 +85,7 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
-  function restoreSelection(previousDistributionId, previousMediaId) {
+  function restoreSelection(previousDistributionId, previousMediaIdentity) {
     if (!previousDistributionId) {
       resetIndices()
       return
@@ -85,21 +105,21 @@ export const usePlayerStore = defineStore('player', () => {
       return
     }
 
-    const nextMediaIndex = list.findIndex(item => item.id === previousMediaId)
+    const nextMediaIndex = list.findIndex(item => resolveMediaIdentity(item) === previousMediaIdentity)
     currentMediaIndex.value = nextMediaIndex >= 0 ? nextMediaIndex : 0
   }
 
   async function pullContent() {
     syncStatus.value = 'loading'
     const previousDistributionId = currentDistribution.value?.id
-    const previousMediaId = currentMedia.value?.id
+    const previousMediaIdentity = resolveMediaIdentity(currentMedia.value)
 
     try {
       const res = await deviceApi.pullCurrent()
       distributions.value = res.data?.distributions || []
       pulledAt.value = res.data?.pulledAt || ''
       errorMessage.value = ''
-      restoreSelection(previousDistributionId, previousMediaId)
+      restoreSelection(previousDistributionId, previousMediaIdentity)
       syncStatus.value = 'ready'
       return res.data
     } catch (error) {
@@ -187,3 +207,4 @@ export const usePlayerStore = defineStore('player', () => {
     clearBgmError
   }
 })
+

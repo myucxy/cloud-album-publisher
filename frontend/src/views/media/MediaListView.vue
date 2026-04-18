@@ -633,9 +633,9 @@ import { useSecureObjectUrl } from '@/components/useSecureObjectUrl'
 
 const EXTERNAL_SOURCE_TYPE_OPTIONS = [
   { value: 'SMB', label: 'SMB', implemented: true, defaultPort: 445 },
-  { value: 'FTP', label: 'FTP', implemented: false, defaultPort: 21 },
-  { value: 'SFTP', label: 'SFTP', implemented: false, defaultPort: 22 },
-  { value: 'WEBDAV', label: 'WebDAV', implemented: false, defaultPort: 80 }
+  { value: 'FTP', label: 'FTP', implemented: true, defaultPort: 21 },
+  { value: 'SFTP', label: 'SFTP', implemented: true, defaultPort: 22 },
+  { value: 'WEBDAV', label: 'WebDAV', implemented: true, defaultPort: 80 }
 ]
 
 const SOURCE_TYPE_ORDER = ['UPLOAD', 'SMB', 'FTP', 'SFTP', 'WEBDAV']
