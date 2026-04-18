@@ -242,7 +242,7 @@
       </a-form>
     </a-modal>
 
-    <a-modal v-model:open="addMediaModalOpen" title="添加媒体到相册" @ok="submitAddMedia" :confirm-loading="saving" :width="860"
+    <a-modal v-model:open="addMediaModalOpen" title="添加媒体到相册" @ok="submitAddMedia" :confirm-loading="saving" :width="1180"
              ok-text="保存" cancel-text="取消"
              :ok-button-props="{ disabled: addMediaSubmitDisabled }"
              :body-style="{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto', padding: '16px 20px' }">
@@ -297,94 +297,117 @@
           </a-card>
         </div>
 
-        <div class="album-picker-modal-main">
-          <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:16px">
-            <a-space wrap>
-              <a-select v-model:value="mediaPickerFilterType" style="width:120px" allow-clear placeholder="媒体类型" @change="reloadMediaPicker">
-                <a-select-option value="IMAGE">图片</a-select-option>
-                <a-select-option value="VIDEO">视频</a-select-option>
-                <a-select-option value="AUDIO">音频</a-select-option>
-              </a-select>
-              <a-tag color="blue">{{ mediaPickerTitle }}</a-tag>
-              <a-tag v-if="mediaPickerKeyword">搜索：{{ mediaPickerKeyword }}</a-tag>
-            </a-space>
-            <span style="color:#8c8c8c; font-size:12px">{{ mediaPickerHintText }}</span>
-          </div>
+        <div class="album-picker-modal-content">
+          <div class="album-picker-modal-main">
+            <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:16px">
+              <a-space wrap>
+                <a-select v-model:value="mediaPickerFilterType" style="width:120px" allow-clear placeholder="媒体类型" @change="reloadMediaPicker">
+                  <a-select-option value="IMAGE">图片</a-select-option>
+                  <a-select-option value="VIDEO">视频</a-select-option>
+                  <a-select-option value="AUDIO">音频</a-select-option>
+                </a-select>
+                <a-tag color="blue">{{ mediaPickerTitle }}</a-tag>
+                <a-tag v-if="mediaPickerKeyword">搜索：{{ mediaPickerKeyword }}</a-tag>
+              </a-space>
+              <span style="color:#8c8c8c; font-size:12px">{{ mediaPickerHintText }}</span>
+            </div>
 
-          <a-spin :spinning="mediaPickerLoading || mediaGroupLoading">
-            <div v-if="selectableMedia.length" style="display:grid; grid-template-columns:1fr; gap:12px">
-              <a-card v-for="item in selectableMedia" :key="resolvePickerItemKey(item)" hoverable :body-style="{ padding: '12px' }" :style="mediaCardStyle(item)" @click="selectMedia(item)">
-                <div style="display:flex; gap:12px; align-items:flex-start">
-                  <div style="width:88px; height:88px; display:flex; align-items:center; justify-content:center; background:#fafafa; border-radius:8px; overflow:hidden; flex-shrink:0">
-                    <SecureImage
-                      v-if="item.thumbnailUrl"
-                      :src="item.thumbnailUrl"
-                      alt="thumbnail"
-                      img-style="width:100%; height:100%; object-fit:cover"
-                    />
-                    <SecureImage
-                      v-else-if="item.mediaType === 'IMAGE' && item.url"
-                      :src="item.url"
-                      alt="image"
-                      img-style="width:100%; height:100%; object-fit:cover"
-                    />
-                    <video-camera-outlined v-else-if="item.mediaType === 'VIDEO'" style="font-size:34px; color:#8c8c8c" />
-                    <customer-service-outlined v-else-if="item.mediaType === 'AUDIO'" style="font-size:34px; color:#8c8c8c" />
-                    <file-outlined v-else style="font-size:30px; color:#8c8c8c" />
-                  </div>
-                  <div class="album-picker-modal-main">
-                    <div style="font-weight:500; word-break:break-all">{{ item.fileName }}</div>
-                    <a-space size="small" wrap style="margin-top:8px">
-                      <a-tag>{{ item.mediaType }}</a-tag>
-                      <a-tag>{{ item.sourceName || sourceTypeLabel(item.sourceType) }}</a-tag>
-                      <a-tag v-if="item.folderPath">{{ item.folderPath }}</a-tag>
-                      <a-tag :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
-                      <a-tag :color="reviewStatusColor(item.reviewStatus, item.status)">
-                        {{ reviewStatusLabel(item.reviewStatus, item.status) }}
-                      </a-tag>
-                    </a-space>
-                    <div style="margin-top:8px; color:#8c8c8c; font-size:12px">
-                      {{ formatSize(item.fileSize) }}
-                      <span v-if="item.durationSec"> · {{ formatDuration(item.durationSec) }}</span>
-                      <span v-if="item.width && item.height"> · {{ item.width }} × {{ item.height }}</span>
+            <a-spin :spinning="mediaPickerLoading || mediaGroupLoading">
+              <div v-if="selectableMedia.length" style="display:grid; grid-template-columns:1fr; gap:12px">
+                <a-card v-for="item in selectableMedia" :key="resolvePickerItemKey(item)" hoverable :body-style="{ padding: '12px' }" :style="mediaCardStyle(item)" @click="selectMedia(item)">
+                  <div style="display:flex; gap:12px; align-items:flex-start">
+                    <div style="width:88px; height:88px; display:flex; align-items:center; justify-content:center; background:#fafafa; border-radius:8px; overflow:hidden; flex-shrink:0">
+                      <SecureImage
+                        v-if="item.thumbnailUrl"
+                        :src="item.thumbnailUrl"
+                        alt="thumbnail"
+                        img-style="width:100%; height:100%; object-fit:cover"
+                      />
+                      <SecureImage
+                        v-else-if="item.mediaType === 'IMAGE' && item.url"
+                        :src="item.url"
+                        alt="image"
+                        img-style="width:100%; height:100%; object-fit:cover"
+                      />
+                      <video-camera-outlined v-else-if="item.mediaType === 'VIDEO'" style="font-size:34px; color:#8c8c8c" />
+                      <customer-service-outlined v-else-if="item.mediaType === 'AUDIO'" style="font-size:34px; color:#8c8c8c" />
+                      <file-outlined v-else style="font-size:30px; color:#8c8c8c" />
+                    </div>
+                    <div class="album-picker-item-body">
+                      <div style="font-weight:500; word-break:break-all">{{ item.fileName }}</div>
+                      <a-space size="small" wrap style="margin-top:8px">
+                        <a-tag>{{ item.mediaType }}</a-tag>
+                        <a-tag>{{ item.sourceName || sourceTypeLabel(item.sourceType) }}</a-tag>
+                        <a-tag v-if="item.folderPath">{{ item.folderPath }}</a-tag>
+                        <a-tag :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
+                        <a-tag :color="reviewStatusColor(item.reviewStatus, item.status)">
+                          {{ reviewStatusLabel(item.reviewStatus, item.status) }}
+                        </a-tag>
+                      </a-space>
+                      <div style="margin-top:8px; color:#8c8c8c; font-size:12px">
+                        {{ formatSize(item.fileSize) }}
+                        <span v-if="item.durationSec"> · {{ formatDuration(item.durationSec) }}</span>
+                        <span v-if="item.width && item.height"> · {{ item.width }} × {{ item.height }}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </a-card>
-            </div>
-            <a-empty v-else description="暂无可选媒体" />
-          </a-spin>
+                </a-card>
+              </div>
+              <a-empty v-else description="暂无可选媒体" />
+            </a-spin>
 
-          <div style="margin-top:16px; text-align:right">
-            <a-pagination
-              :current="mediaPickerPage"
-              :total="mediaPickerTotal"
-              :page-size="mediaPickerPageSize"
-              @change="onMediaPickerPageChange"
-              show-less-items
-            />
+            <div style="margin-top:16px; text-align:right">
+              <a-pagination
+                :current="mediaPickerPage"
+                :total="mediaPickerTotal"
+                :page-size="mediaPickerPageSize"
+                @change="onMediaPickerPageChange"
+                show-less-items
+              />
+            </div>
           </div>
 
-          <div style="margin-top:16px; border:1px solid #f0f0f0; border-radius:8px; padding:16px; background:#fafafa">
+          <div class="album-picker-modal-selection">
             <div style="font-weight:500; margin-bottom:12px">已选媒体（{{ selectedMediaRecords.length }}）</div>
             <template v-if="selectedMediaRecords.length">
               <div style="display:flex; flex-direction:column; gap:12px">
-                <div v-for="item in selectedMediaRecords" :key="resolvePickerItemKey(item)" style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; background:#fff; border:1px solid #f0f0f0; border-radius:8px; padding:12px">
-                  <div style="min-width:0; flex:1">
-                    <div style="font-weight:500; word-break:break-all">{{ item.fileName }}</div>
-                    <div style="color:#8c8c8c; font-size:12px; margin-top:6px">来源：{{ item.sourceName || sourceTypeLabel(item.sourceType) }}</div>
-                    <div v-if="item.folderPath" style="color:#8c8c8c; font-size:12px; margin-top:4px">目录：{{ item.folderPath }}</div>
-                    <div style="color:#8c8c8c; font-size:12px; margin-top:4px">
+                <div v-for="item in selectedMediaRecords" :key="resolvePickerItemKey(item)" style="display:flex; flex-direction:column; gap:8px; background:#fff; border:1px solid #f0f0f0; border-radius:8px; padding:12px">
+                  <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start">
+                    <div style="display:flex; gap:10px; min-width:0; flex:1; align-items:center">
+                      <div style="width:44px; height:44px; display:flex; align-items:center; justify-content:center; background:#fafafa; border-radius:6px; overflow:hidden; flex-shrink:0; border:1px solid #f0f0f0">
+                        <SecureImage
+                          v-if="item.thumbnailUrl"
+                          :src="item.thumbnailUrl"
+                          alt="selected thumbnail"
+                          img-style="width:100%; height:100%; object-fit:cover"
+                        />
+                        <SecureImage
+                          v-else-if="item.mediaType === 'IMAGE' && item.url"
+                          :src="item.url"
+                          alt="selected image"
+                          img-style="width:100%; height:100%; object-fit:cover"
+                        />
+                        <video-camera-outlined v-else-if="item.mediaType === 'VIDEO'" style="font-size:18px; color:#8c8c8c" />
+                        <customer-service-outlined v-else-if="item.mediaType === 'AUDIO'" style="font-size:18px; color:#8c8c8c" />
+                        <file-outlined v-else style="font-size:16px; color:#8c8c8c" />
+                      </div>
+                      <div style="font-weight:500; min-width:0; flex:1; word-break:break-all">{{ item.fileName }}</div>
+                    </div>
+                    <a-button type="link" danger size="small" style="margin-right:-8px" @click="toggleMediaSelection(item)">取消</a-button>
+                  </div>
+                  <div style="color:#8c8c8c; font-size:12px; display:flex; flex-direction:column; gap:4px; line-height:1.5">
+                    <div>来源：{{ item.sourceName || sourceTypeLabel(item.sourceType) }}</div>
+                    <div v-if="item.folderPath">目录：{{ item.folderPath }}</div>
+                    <div>
                       {{ isExternalPickerItem(item)
                         ? '当前将直接绑定此外部媒体到相册，播放时通过服务端代理访问'
                         : '当前将添加该媒体到相册播放列表' }}
                     </div>
                   </div>
-                  <a-button type="link" danger size="small" @click="toggleMediaSelection(item)">取消</a-button>
                 </div>
               </div>
             </template>
-            <a-empty v-else description="请先从上方选择媒体" />
+            <a-empty v-else description="请先从左侧列表选择媒体" />
 
             <a-form layout="vertical" style="margin-top:16px">
               <a-form-item label="排序权重">
@@ -416,7 +439,6 @@ import { albumApi } from '@/api/album'
 import { mediaApi } from '@/api/media'
 import { mediaSourceApi } from '@/api/media-source'
 import SecureImage from '@/components/SecureImage.vue'
-import { useSecureObjectUrl } from '@/components/useSecureObjectUrl'
 
 const SOURCE_TYPE_ORDER = ['UPLOAD', 'SMB', 'FTP', 'SFTP', 'WEBDAV']
 
@@ -439,7 +461,7 @@ const addMediaModalOpen = ref(false)
 const coverUrl = ref('')
 const bgmUrl = ref(80)
 const bgmVolume = ref(80)
-const addMediaForm = reactive({ mediaId: null, sortOrder: 0, duration: 5 })
+const addMediaForm = reactive({ sortOrder: 0, duration: 5 })
 const selectableMedia = ref([])
 const selectedMediaRecords = ref([])
 const mediaPickerLoading = ref(false)
@@ -470,9 +492,6 @@ const coverPickerKeywordInput = ref('')
 const coverPickerKeyword = ref(undefined)
 const coverPickerGroups = ref({ sourceGroups: [], mediaTypeGroups: [] })
 const coverGroupLoading = ref(false)
-
-const selectedMediaRecordUrl = computed(() => selectedMediaRecords.value[0]?.url || '')
-const { resolvedSrc: selectedMediaRecordResolvedUrl } = useSecureObjectUrl(selectedMediaRecordUrl)
 
 const mediaSourceGroups = computed(() => mergePickerSourceGroups(mediaPickerGroups.value?.sourceGroups || [], mediaSources.value || []))
 const coverSourceGroups = computed(() => mergePickerSourceGroups(coverPickerGroups.value?.sourceGroups || [], mediaSources.value || []))
@@ -952,7 +971,6 @@ async function openAddMediaModal() {
 }
 
 function resetAddMediaState() {
-  addMediaForm.mediaId = null
   addMediaForm.sortOrder = 0
   addMediaForm.duration = 5
   selectedMediaRecords.value = []
@@ -1054,7 +1072,6 @@ function toggleMediaSelection(item) {
 
 function selectMedia(item) {
   toggleMediaSelection(item)
-  addMediaForm.mediaId = item?.id || null
 }
 
 function mediaCardStyle(item) {
@@ -1194,22 +1211,39 @@ function sourceTypeLabel(sourceType) {
   flex-shrink: 0;
 }
 
+.album-picker-modal-content {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+}
+
 .album-picker-modal-main {
   flex: 1;
   min-width: 0;
 }
 
+.album-picker-modal-selection {
+  width: 300px;
+  flex-shrink: 0;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fafafa;
+}
+
+.album-picker-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
 @media (max-width: 1200px) {
-  .album-picker-modal-layout {
+  .album-picker-modal-content {
     flex-direction: column;
-    min-height: auto;
   }
 
-  .album-picker-modal-sidebar {
-    width: 100%;
-  }
-
-  .album-picker-modal-main {
+  .album-picker-modal-selection {
     width: 100%;
   }
 }
