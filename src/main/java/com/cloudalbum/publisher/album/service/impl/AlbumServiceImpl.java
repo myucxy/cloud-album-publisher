@@ -31,10 +31,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -141,6 +138,36 @@ public class AlbumServiceImpl implements AlbumService {
                 : addInternalContent(albumId, userId, request);
         Media media = albumMedia.getMediaId() != null ? mediaMapper.selectById(albumMedia.getMediaId()) : null;
         return toContentResponse(albumMedia, media);
+    }
+
+    @Override
+    @Transactional
+    public List<AlbumContentResponse> addContents(Long albumId, Long userId, List<AlbumAddContentRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "待添加媒体不能为空");
+        }
+        Album album = getAlbumOrThrow(albumId);
+        checkOwner(album, userId);
+
+        Set<String> requestKeys = new HashSet<>();
+        for (AlbumAddContentRequest request : requests) {
+            String uniqueKey = request.isExternal()
+                    ? "external:" + request.getExternalMediaKey()
+                    : "internal:" + request.getMediaId();
+            if (!requestKeys.add(uniqueKey)) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "批量添加中存在重复媒体");
+            }
+        }
+
+        List<AlbumContentResponse> responses = new ArrayList<>();
+        for (AlbumAddContentRequest request : requests) {
+            AlbumMedia albumMedia = request.isExternal()
+                    ? addExternalContent(albumId, userId, request)
+                    : addInternalContent(albumId, userId, request);
+            Media media = albumMedia.getMediaId() != null ? mediaMapper.selectById(albumMedia.getMediaId()) : null;
+            responses.add(toContentResponse(albumMedia, media));
+        }
+        return responses;
     }
 
     @Override

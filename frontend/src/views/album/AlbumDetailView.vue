@@ -366,33 +366,22 @@
           </div>
 
           <div style="margin-top:16px; border:1px solid #f0f0f0; border-radius:8px; padding:16px; background:#fafafa">
-            <div style="font-weight:500; margin-bottom:12px">已选媒体</div>
-            <template v-if="selectedMediaRecord">
-              <div style="margin-bottom:16px; text-align:center; background:#fff; border-radius:8px; padding:12px">
-                <SecureImage
-                  v-if="selectedMediaRecord.thumbnailUrl"
-                  :src="selectedMediaRecord.thumbnailUrl"
-                  alt="selected thumbnail"
-                  img-style="max-width:100%; max-height:180px; object-fit:contain"
-                />
-                <SecureImage
-                  v-else-if="selectedMediaRecord.mediaType === 'IMAGE' && selectedMediaRecord.url"
-                  :src="selectedMediaRecord.url"
-                  alt="selected image"
-                  img-style="max-width:100%; max-height:180px; object-fit:contain"
-                />
-                <video v-else-if="selectedMediaRecord.mediaType === 'VIDEO' && selectedMediaRecordResolvedUrl" :src="selectedMediaRecordResolvedUrl" controls style="width:100%; max-height:180px" />
-                <audio v-else-if="selectedMediaRecord.mediaType === 'AUDIO' && selectedMediaRecordResolvedUrl" :src="selectedMediaRecordResolvedUrl" controls style="width:100%" />
-                <file-outlined v-else style="font-size:36px; color:#8c8c8c" />
-              </div>
-              <div style="font-weight:500; word-break:break-all">{{ selectedMediaRecord.fileName }}</div>
-              <div style="color:#8c8c8c; font-size:12px; margin-top:8px">{{ formatSize(selectedMediaRecord.fileSize) }}</div>
-              <div style="color:#8c8c8c; font-size:12px; margin-top:4px">来源：{{ selectedMediaRecord.sourceName || sourceTypeLabel(selectedMediaRecord.sourceType) }}</div>
-              <div v-if="selectedMediaRecord.folderPath" style="color:#8c8c8c; font-size:12px; margin-top:4px">目录：{{ selectedMediaRecord.folderPath }}</div>
-              <div style="color:#8c8c8c; font-size:12px; margin-top:4px">
-                {{ isExternalPickerItem(selectedMediaRecord)
-                  ? '当前将直接绑定此外部媒体到相册，播放时通过服务端代理访问'
-                  : '当前将添加该媒体到相册播放列表' }}
+            <div style="font-weight:500; margin-bottom:12px">已选媒体（{{ selectedMediaRecords.length }}）</div>
+            <template v-if="selectedMediaRecords.length">
+              <div style="display:flex; flex-direction:column; gap:12px">
+                <div v-for="item in selectedMediaRecords" :key="resolvePickerItemKey(item)" style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; background:#fff; border:1px solid #f0f0f0; border-radius:8px; padding:12px">
+                  <div style="min-width:0; flex:1">
+                    <div style="font-weight:500; word-break:break-all">{{ item.fileName }}</div>
+                    <div style="color:#8c8c8c; font-size:12px; margin-top:6px">来源：{{ item.sourceName || sourceTypeLabel(item.sourceType) }}</div>
+                    <div v-if="item.folderPath" style="color:#8c8c8c; font-size:12px; margin-top:4px">目录：{{ item.folderPath }}</div>
+                    <div style="color:#8c8c8c; font-size:12px; margin-top:4px">
+                      {{ isExternalPickerItem(item)
+                        ? '当前将直接绑定此外部媒体到相册，播放时通过服务端代理访问'
+                        : '当前将添加该媒体到相册播放列表' }}
+                    </div>
+                  </div>
+                  <a-button type="link" danger size="small" @click="toggleMediaSelection(item)">取消</a-button>
+                </div>
               </div>
             </template>
             <a-empty v-else description="请先从上方选择媒体" />
@@ -452,7 +441,7 @@ const bgmUrl = ref(80)
 const bgmVolume = ref(80)
 const addMediaForm = reactive({ mediaId: null, sortOrder: 0, duration: 5 })
 const selectableMedia = ref([])
-const selectedMediaRecord = ref(null)
+const selectedMediaRecords = ref([])
 const mediaPickerLoading = ref(false)
 const mediaPickerFilterType = ref(undefined)
 const mediaPickerPage = ref(1)
@@ -482,7 +471,7 @@ const coverPickerKeyword = ref(undefined)
 const coverPickerGroups = ref({ sourceGroups: [], mediaTypeGroups: [] })
 const coverGroupLoading = ref(false)
 
-const selectedMediaRecordUrl = computed(() => selectedMediaRecord.value?.url || '')
+const selectedMediaRecordUrl = computed(() => selectedMediaRecords.value[0]?.url || '')
 const { resolvedSrc: selectedMediaRecordResolvedUrl } = useSecureObjectUrl(selectedMediaRecordUrl)
 
 const mediaSourceGroups = computed(() => mergePickerSourceGroups(mediaPickerGroups.value?.sourceGroups || [], mediaSources.value || []))
@@ -505,7 +494,7 @@ const coverPickerHintText = computed(() => {
   return '可直接选择图片或视频缩略图作为相册封面'
 })
 
-const addMediaSubmitDisabled = computed(() => !selectedMediaRecord.value)
+const addMediaSubmitDisabled = computed(() => selectedMediaRecords.value.length === 0)
 const coverSubmitDisabled = computed(() => !selectedCoverMediaRecord.value)
 
 const columns = [
@@ -966,7 +955,7 @@ function resetAddMediaState() {
   addMediaForm.mediaId = null
   addMediaForm.sortOrder = 0
   addMediaForm.duration = 5
-  selectedMediaRecord.value = null
+  selectedMediaRecords.value = []
 }
 
 async function reloadMediaPicker() {
@@ -1053,27 +1042,39 @@ function onMediaPickerPageChange(nextPage) {
   loadSelectableMedia()
 }
 
+function toggleMediaSelection(item) {
+  const key = resolvePickerItemKey(item)
+  const index = selectedMediaRecords.value.findIndex(current => resolvePickerItemKey(current) === key)
+  if (index >= 0) {
+    selectedMediaRecords.value.splice(index, 1)
+    return
+  }
+  selectedMediaRecords.value.push(item)
+}
+
 function selectMedia(item) {
-  selectedMediaRecord.value = item
+  toggleMediaSelection(item)
   addMediaForm.mediaId = item?.id || null
 }
 
 function mediaCardStyle(item) {
-  const selected = resolvePickerItemKey(selectedMediaRecord.value) === resolvePickerItemKey(item)
+  const selected = selectedMediaRecords.value.some(current => resolvePickerItemKey(current) === resolvePickerItemKey(item))
   return selected
     ? 'border:1px solid #1677ff; box-shadow:0 0 0 2px rgba(22,119,255,0.12)'
     : 'border:1px solid #f0f0f0'
 }
 
 async function submitAddMedia() {
-  const payload = buildAddMediaPayload(selectedMediaRecord.value)
-  if (!payload) {
+  const payloadItems = selectedMediaRecords.value
+    .map(item => buildAddMediaPayload(item))
+    .filter(Boolean)
+  if (!payloadItems.length) {
     message.warning('请选择媒体')
     return
   }
   saving.value = true
   try {
-    await albumApi.addContent(albumId, payload)
+    await albumApi.addContents(albumId, { items: payloadItems })
     message.success('已添加')
     addMediaModalOpen.value = false
     resetAddMediaState()

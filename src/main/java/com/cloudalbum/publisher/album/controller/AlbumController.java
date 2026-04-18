@@ -15,6 +15,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @Tag(name = "相册管理")
 @RestController
 @RequestMapping("/api/v1/albums")
@@ -79,6 +81,14 @@ public class AlbumController {
     public Result<AlbumContentResponse> addContent(@PathVariable Long id,
                                                    @Valid @RequestBody AlbumAddContentRequest request) {
         return Result.success(albumService.addContent(id, SecurityUtil.getCurrentUserId(), request));
+    }
+
+    @Operation(summary = "批量向相册添加媒体")
+    @PostMapping("/{id}/contents/batch")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Result<List<AlbumContentResponse>> addContents(@PathVariable Long id,
+                                                          @Valid @RequestBody AlbumBatchAddContentRequest request) {
+        return Result.success(albumService.addContents(id, SecurityUtil.getCurrentUserId(), request.getItems()));
     }
 
     @Operation(summary = "移除相册中的媒体")

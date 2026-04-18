@@ -9,6 +9,7 @@ export const albumApi = {
 
   listContents: (id, params) => request.get(`/albums/${id}/contents`, { params }),
   addContent: (id, data) => request.post(`/albums/${id}/contents`, data),
+  addContents: (id, data) => request.post(`/albums/${id}/contents/batch`, data),
   removeContent: (id, contentId) => request.delete(`/albums/${id}/contents/${contentId}`),
   updateCover: (id, data) => request.patch(`/albums/${id}/cover`, data),
   updateBgm: (id, data) => request.patch(`/albums/${id}/bgm`, data)

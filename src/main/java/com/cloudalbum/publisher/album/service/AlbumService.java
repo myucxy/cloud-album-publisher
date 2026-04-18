@@ -6,6 +6,8 @@ import com.cloudalbum.publisher.common.model.PageResult;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+import java.util.List;
+
 public interface AlbumService {
 
     PageResult<AlbumResponse> listAlbums(Long userId, PageRequest pageRequest, String visibility);
@@ -21,6 +23,8 @@ public interface AlbumService {
     PageResult<AlbumContentResponse> listContents(Long albumId, Long userId, PageRequest pageRequest);
 
     AlbumContentResponse addContent(Long albumId, Long userId, AlbumAddContentRequest request);
+
+    List<AlbumContentResponse> addContents(Long albumId, Long userId, List<AlbumAddContentRequest> requests);
 
     void removeContent(Long albumId, Long contentId, Long userId);
 
