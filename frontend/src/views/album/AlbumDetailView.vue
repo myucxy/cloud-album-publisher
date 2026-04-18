@@ -334,13 +334,17 @@
                       <file-outlined v-else style="font-size:30px; color:#8c8c8c" />
                     </div>
                     <div class="album-picker-item-body">
-                      <div style="font-weight:500; word-break:break-all">{{ item.fileName }}</div>
+                      <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start">
+                        <div style="font-weight:500; word-break:break-all; min-width:0; flex:1">{{ item.fileName }}</div>
+                        <a-tag v-if="isExistingAlbumContent(item)" color="default" style="margin-inline-end:0; flex-shrink:0">已在当前相册</a-tag>
+                      </div>
                       <a-space size="small" wrap style="margin-top:8px">
                         <a-tag>{{ item.mediaType }}</a-tag>
                         <a-tag>{{ item.sourceName || sourceTypeLabel(item.sourceType) }}</a-tag>
                         <a-tag v-if="item.folderPath">{{ item.folderPath }}</a-tag>
-                        <a-tag :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
-                        <a-tag :color="reviewStatusColor(item.reviewStatus, item.status)">
+                        <a-tag v-if="isExistingAlbumContent(item)" color="orange">不可重复添加</a-tag>
+                        <a-tag v-else :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
+                        <a-tag v-if="!isExistingAlbumContent(item)" :color="reviewStatusColor(item.reviewStatus, item.status)">
                           {{ reviewStatusLabel(item.reviewStatus, item.status) }}
                         </a-tag>
                       </a-space>
@@ -348,6 +352,7 @@
                         {{ formatSize(item.fileSize) }}
                         <span v-if="item.durationSec"> · {{ formatDuration(item.durationSec) }}</span>
                         <span v-if="item.width && item.height"> · {{ item.width }} × {{ item.height }}</span>
+                        <span v-if="isExistingAlbumContent(item)"> · 当前相册已包含此媒体</span>
                       </div>
                     </div>
                   </div>
@@ -464,6 +469,7 @@ const bgmVolume = ref(80)
 const addMediaForm = reactive({ sortOrder: 0, duration: 5 })
 const selectableMedia = ref([])
 const selectedMediaRecords = ref([])
+const existingAlbumContentKeys = ref(new Set())
 const mediaPickerLoading = ref(false)
 const mediaPickerFilterType = ref(undefined)
 const mediaPickerPage = ref(1)
@@ -502,9 +508,9 @@ const coverPickerTitle = computed(() => buildPickerTitle(coverSourceGroups.value
 const isExternalCoverSelection = computed(() => isExternalPickerSelection(coverPickerSourceType.value, coverPickerSourceId.value))
 const mediaPickerHintText = computed(() => {
   if (isExternalPickerSelection(mediaPickerSourceType.value, mediaPickerSourceId.value)) {
-    return '当前展示的是外部媒体源目录，可直接绑定到相册，播放时仍通过服务端代理访问。'
+    return '当前展示的是外部媒体源目录，可直接绑定到相册，播放时仍通过服务端代理访问；已在当前相册中的媒体会标记为不可重复添加。'
   }
-  return '仅展示已处理完成的媒体'
+  return '仅展示已处理完成的媒体；已在当前相册中的媒体会标记为不可重复添加。'
 })
 const coverPickerHintText = computed(() => {
   if (isExternalPickerSelection(coverPickerSourceType.value, coverPickerSourceId.value)) {
@@ -547,6 +553,49 @@ async function loadContents() {
   } finally {
     loading.value = false
   }
+}
+
+async function loadAllAlbumContentKeys() {
+  const size = 100
+  let pageNo = 1
+  const keys = new Set()
+
+  while (true) {
+    const res = await albumApi.listContents(albumId, { page: pageNo, size })
+    const list = Array.isArray(res.data?.list) ? res.data.list : []
+    list.forEach(item => {
+      const key = resolveAlbumContentKey(item)
+      if (key) {
+        keys.add(key)
+      }
+    })
+
+    const totalCount = Number(res.data?.total || 0)
+    if (!list.length || pageNo * size >= totalCount) {
+      break
+    }
+    pageNo += 1
+  }
+
+  existingAlbumContentKeys.value = keys
+}
+
+function resolveAlbumContentKey(item) {
+  if (!item) {
+    return ''
+  }
+  if (item.externalMediaKey) {
+    return `external:${item.externalMediaKey}`
+  }
+  const mediaId = item.mediaId ?? item.id
+  if (mediaId) {
+    return `internal:${mediaId}`
+  }
+  return ''
+}
+
+function isExistingAlbumContent(item) {
+  return existingAlbumContentKeys.value.has(resolveAlbumContentKey(item))
 }
 
 async function loadContentMedia(list) {
@@ -967,7 +1016,7 @@ async function openAddMediaModal() {
   resetAddMediaState()
   addMediaModalOpen.value = true
   mediaPickerPage.value = 1
-  await Promise.all([loadMediaGroups(), loadSelectableMedia()])
+  await Promise.all([loadAllAlbumContentKeys(), loadMediaGroups(), loadSelectableMedia()])
 }
 
 function resetAddMediaState() {
@@ -1061,6 +1110,9 @@ function onMediaPickerPageChange(nextPage) {
 }
 
 function toggleMediaSelection(item) {
+  if (isExistingAlbumContent(item)) {
+    return
+  }
   const key = resolvePickerItemKey(item)
   const index = selectedMediaRecords.value.findIndex(current => resolvePickerItemKey(current) === key)
   if (index >= 0) {
@@ -1071,10 +1123,17 @@ function toggleMediaSelection(item) {
 }
 
 function selectMedia(item) {
+  if (isExistingAlbumContent(item)) {
+    return
+  }
   toggleMediaSelection(item)
 }
 
 function mediaCardStyle(item) {
+  const exists = isExistingAlbumContent(item)
+  if (exists) {
+    return 'border:1px solid #d9d9d9; background:#fafafa; opacity:0.72; cursor:not-allowed'
+  }
   const selected = selectedMediaRecords.value.some(current => resolvePickerItemKey(current) === resolvePickerItemKey(item))
   return selected
     ? 'border:1px solid #1677ff; box-shadow:0 0 0 2px rgba(22,119,255,0.12)'
@@ -1095,7 +1154,7 @@ async function submitAddMedia() {
     message.success('已添加')
     addMediaModalOpen.value = false
     resetAddMediaState()
-    await loadContents()
+    await Promise.all([loadContents(), loadAllAlbumContentKeys()])
   } finally {
     saving.value = false
   }
