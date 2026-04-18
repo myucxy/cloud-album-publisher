@@ -253,7 +253,7 @@
       <a-alert style="margin-bottom:16px" type="info" show-icon>
         <template #message>统一来源入口</template>
         <template #description>
-          上传媒体会作为“自行上传”来源展示；外部媒体源先选择类型，再配置连接并绑定目录。当前已打通 SMB，FTP / SFTP / WebDAV 入口已预留。
+          上传媒体会作为“自行上传”来源展示；外部媒体源可配置 SMB、FTP、SFTP、WebDAV，并绑定目录后统一浏览、预览与接入相册。
         </template>
       </a-alert>
 
@@ -319,26 +319,46 @@
           <a-input v-model:value="mediaSourceForm.name" placeholder="例如：家用 NAS" />
         </a-form-item>
 
+        <a-form-item label="主机地址" required>
+          <a-input v-model:value="mediaSourceForm.config.host" placeholder="例如：192.168.1.10" />
+        </a-form-item>
+        <a-form-item label="端口">
+          <a-input-number v-model:value="mediaSourceForm.config.port" :min="1" :max="65535" style="width:100%" />
+        </a-form-item>
+
         <template v-if="mediaSourceForm.sourceType === 'SMB'">
-          <a-form-item label="主机地址" required>
-            <a-input v-model:value="mediaSourceForm.config.host" placeholder="例如：192.168.1.10" />
-          </a-form-item>
-          <a-form-item label="端口">
-            <a-input-number v-model:value="mediaSourceForm.config.port" :min="1" :max="65535" style="width:100%" />
-          </a-form-item>
-          <a-form-item label="共享名称" required>
-            <a-input v-model:value="mediaSourceForm.config.shareName" placeholder="例如：media" />
-          </a-form-item>
-          <a-form-item label="根目录">
-            <a-input v-model:value="mediaSourceForm.config.rootPath" placeholder="默认为 /" />
-          </a-form-item>
-          <a-form-item :label="editingMediaSourceId ? '用户名（留空则保持不变）' : '用户名'" :required="!editingMediaSourceId">
-            <a-input v-model:value="mediaSourceForm.credentials.username" placeholder="请输入用户名" />
-          </a-form-item>
-          <a-form-item :label="editingMediaSourceId ? '密码（留空则保持不变）' : '密码'" :required="!editingMediaSourceId">
-            <a-input-password v-model:value="mediaSourceForm.credentials.password" placeholder="请输入密码" />
+          <a-form-item label="共享名称" required extra="仅填写共享名（例如 other），不要包含目录分隔符；目录层级请填在“根目录”中。">
+            <a-input v-model:value="mediaSourceForm.config.shareName" placeholder="例如：other" />
           </a-form-item>
         </template>
+
+        <template v-if="mediaSourceForm.sourceType === 'FTP'">
+          <a-form-item label="安全连接">
+            <a-switch v-model:checked="mediaSourceForm.config.secure" checked-children="FTPS" un-checked-children="FTP" />
+          </a-form-item>
+        </template>
+
+        <template v-if="mediaSourceForm.sourceType === 'SFTP'">
+          <a-form-item label="主机指纹（可选）">
+            <a-input v-model:value="mediaSourceForm.config.hostKeyFingerprint" placeholder="例如：SHA256:xxxx" />
+          </a-form-item>
+        </template>
+
+        <template v-if="mediaSourceForm.sourceType === 'WEBDAV'">
+          <a-form-item label="安全连接">
+            <a-switch v-model:checked="mediaSourceForm.config.secure" checked-children="HTTPS" un-checked-children="HTTP" />
+          </a-form-item>
+        </template>
+
+        <a-form-item label="根目录">
+          <a-input v-model:value="mediaSourceForm.config.rootPath" placeholder="默认为 /" />
+        </a-form-item>
+        <a-form-item :label="editingMediaSourceId ? '用户名（留空则保持不变）' : '用户名'" :required="!editingMediaSourceId">
+          <a-input v-model:value="mediaSourceForm.credentials.username" placeholder="请输入用户名" />
+        </a-form-item>
+        <a-form-item :label="editingMediaSourceId ? '密码（留空则保持不变）' : '密码'" :required="!editingMediaSourceId">
+          <a-input-password v-model:value="mediaSourceForm.credentials.password" placeholder="请输入密码" />
+        </a-form-item>
 
         <a-form-item label="绑定目录" required>
           <div style="display:flex; flex-direction:column; gap:12px">
@@ -904,7 +924,9 @@ function createDefaultSourceConfig(sourceType) {
     host: '',
     port: option?.defaultPort || 445,
     shareName: '',
-    rootPath: '/'
+    rootPath: '/',
+    secure: sourceType === 'WEBDAV',
+    hostKeyFingerprint: ''
   }
 }
 
@@ -1121,15 +1143,36 @@ function resetBoundPath() {
 }
 
 function buildSourceConfigPayload() {
+  const basePayload = {
+    host: mediaSourceForm.value.config.host?.trim(),
+    port: mediaSourceForm.value.config.port,
+    rootPath: normalizePath(mediaSourceForm.value.config.rootPath || '/')
+  }
   if (mediaSourceForm.value.sourceType === 'SMB') {
     return {
-      host: mediaSourceForm.value.config.host?.trim(),
-      port: mediaSourceForm.value.config.port || 445,
-      shareName: mediaSourceForm.value.config.shareName?.trim(),
-      rootPath: normalizePath(mediaSourceForm.value.config.rootPath || '/')
+      ...basePayload,
+      shareName: mediaSourceForm.value.config.shareName?.trim()
     }
   }
-  return {}
+  if (mediaSourceForm.value.sourceType === 'FTP') {
+    return {
+      ...basePayload,
+      secure: !!mediaSourceForm.value.config.secure
+    }
+  }
+  if (mediaSourceForm.value.sourceType === 'SFTP') {
+    return {
+      ...basePayload,
+      hostKeyFingerprint: mediaSourceForm.value.config.hostKeyFingerprint?.trim() || undefined
+    }
+  }
+  if (mediaSourceForm.value.sourceType === 'WEBDAV') {
+    return {
+      ...basePayload,
+      secure: !!mediaSourceForm.value.config.secure
+    }
+  }
+  return basePayload
 }
 
 function buildSourceCredentialsPayload() {
@@ -1159,15 +1202,21 @@ function validateMediaSourceForm({ requireCredentials, forBrowse = false } = {})
   const config = buildSourceConfigPayload()
   const credentials = buildSourceCredentialsPayload()
 
-  if (mediaSourceForm.value.sourceType === 'SMB') {
-    if (!config.host || !config.shareName) {
-      message.warning('请完整填写 SMB 连接信息')
-      return false
-    }
-    if (requireCredentials && (!credentials.username || !credentials.password)) {
-      message.warning(forBrowse ? '浏览目录前请填写账号和密码' : '请填写用户名和密码')
-      return false
-    }
+  if (!config.host) {
+    message.warning('请填写主机地址')
+    return false
+  }
+  if (mediaSourceForm.value.sourceType === 'SMB' && !config.shareName) {
+    message.warning('请完整填写 SMB 连接信息')
+    return false
+  }
+  if (mediaSourceForm.value.sourceType === 'SMB' && /[\\/]/.test(config.shareName)) {
+    message.warning('共享名称仅填写共享名，不要包含目录分隔符；目录层级请填写在根目录')
+    return false
+  }
+  if (requireCredentials && (!credentials.username || !credentials.password)) {
+    message.warning(forBrowse ? '浏览目录前请填写账号和密码' : '请填写用户名和密码')
+    return false
   }
 
   if (!forBrowse && !mediaSourceForm.value.boundPath) {
@@ -1482,26 +1531,38 @@ function sourceSummaryText(source) {
     return '系统内上传来源'
   }
   const summary = source.configSummary || source.config || {}
-  const host = summary.host || '-'
-  const port = summary.port || '-'
-  const shareName = summary.shareName || '-'
-  return `${host}:${port} / ${shareName}`
+  if (source.sourceType === 'SMB') {
+    return `${summary.host || '-'}:${summary.port || '-'} / ${summary.shareName || '-'}`
+  }
+  return `${summary.host || '-'}:${summary.port || '-'} / ${normalizePath(summary.rootPath || '/')}`
 }
 
 function sourceConnectionSummary(source) {
   const summary = source.configSummary || source.config || {}
-  const host = summary.host || '-'
-  const port = summary.port || '-'
-  const shareName = summary.shareName || '-'
-  return `连接：${host}:${port} / ${shareName}`
+  if (source.sourceType === 'SMB') {
+    return `连接：${summary.host || '-'}:${summary.port || '-'} / ${summary.shareName || '-'}`
+  }
+  if (source.sourceType === 'WEBDAV') {
+    return `连接：${summary.secure ? 'https' : 'http'}://${summary.host || '-'}:${summary.port || '-'}`
+  }
+  return `连接：${summary.host || '-'}:${summary.port || '-'} / ${normalizePath(summary.rootPath || '/')}`
 }
 
 function draftSourceSummary(form) {
+  const host = form.config.host?.trim() || '-'
+  const port = form.config.port || EXTERNAL_SOURCE_TYPE_OPTIONS.find(item => item.value === form.sourceType)?.defaultPort || '-'
   if (form.sourceType === 'SMB') {
-    const host = form.config.host?.trim() || '-'
-    const port = form.config.port || 445
     const shareName = form.config.shareName?.trim() || '-'
     return `SMB / ${host}:${port} / ${shareName}`
+  }
+  if (form.sourceType === 'WEBDAV') {
+    return `${form.config.secure ? 'HTTPS' : 'HTTP'} / ${host}:${port}`
+  }
+  if (form.sourceType === 'SFTP') {
+    return `SFTP / ${host}:${port}`
+  }
+  if (form.sourceType === 'FTP') {
+    return `${form.config.secure ? 'FTPS' : 'FTP'} / ${host}:${port}`
   }
   return sourceTypeLabel(form.sourceType)
 }

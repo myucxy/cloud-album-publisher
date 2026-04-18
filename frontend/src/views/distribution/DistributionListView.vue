@@ -85,6 +85,13 @@
                 <a-tag>{{ selectedAlbum.visibility }}</a-tag>
                 <a-tag :color="selectedAlbum.status === 'PUBLISHED' ? 'green' : 'default'">{{ selectedAlbum.status }}</a-tag>
               </a-space>
+              <a-alert
+                v-if="selectedAlbum.visibility === 'PRIVATE'"
+                type="warning"
+                show-icon
+                message="私有相册不能下发到设备"
+                description="请将相册可见性改为 PUBLIC 或 DEVICE_ONLY 后，再激活分发。"
+              />
             </div>
             <a-empty v-else description="请选择相册" />
             <a-button @click="openAlbumPicker" :disabled="!!editingId">{{ editingId ? '编辑时不支持更换相册' : '选择相册' }}</a-button>
