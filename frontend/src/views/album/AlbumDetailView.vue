@@ -242,12 +242,12 @@
       </a-form>
     </a-modal>
 
-    <a-modal v-model:open="addMediaModalOpen" title="添加媒体到相册" @ok="submitAddMedia" :confirm-loading="saving" :width="1180"
+    <a-modal v-model:open="addMediaModalOpen" title="添加媒体到相册" @ok="submitAddMedia" :confirm-loading="saving" :width="1320"
              ok-text="保存" cancel-text="取消"
              :ok-button-props="{ disabled: addMediaSubmitDisabled }"
-             :body-style="{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto', padding: '16px 20px' }">
-      <div class="album-picker-modal-layout">
-        <div class="album-picker-modal-sidebar">
+             :body-style="{ padding: '16px 20px' }">
+      <div class="album-picker-modal-layout album-picker-modal-layout-fixed">
+        <div class="album-picker-modal-sidebar album-picker-pane-scroll">
           <a-card size="small" title="来源 / 目录">
             <template #extra>
               <a-button type="link" size="small" @click="reloadMediaPicker" :loading="mediaPickerLoading || mediaGroupLoading">刷新</a-button>
@@ -299,69 +299,74 @@
 
         <div class="album-picker-modal-content">
           <div class="album-picker-modal-main">
-            <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:16px">
-              <a-space wrap>
-                <a-select v-model:value="mediaPickerFilterType" style="width:120px" allow-clear placeholder="媒体类型" @change="reloadMediaPicker">
-                  <a-select-option value="IMAGE">图片</a-select-option>
-                  <a-select-option value="VIDEO">视频</a-select-option>
-                  <a-select-option value="AUDIO">音频</a-select-option>
-                </a-select>
-                <a-tag color="blue">{{ mediaPickerTitle }}</a-tag>
-                <a-tag v-if="mediaPickerKeyword">搜索：{{ mediaPickerKeyword }}</a-tag>
-              </a-space>
-              <span style="color:#8c8c8c; font-size:12px">{{ mediaPickerHintText }}</span>
+            <div class="album-picker-main-sticky">
+              <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:16px; flex-wrap:wrap">
+                <a-space wrap>
+                  <a-select v-model:value="mediaPickerFilterType" style="width:120px" allow-clear placeholder="媒体类型" @change="reloadMediaPicker">
+                    <a-select-option value="IMAGE">图片</a-select-option>
+                    <a-select-option value="VIDEO">视频</a-select-option>
+                    <a-select-option value="AUDIO">音频</a-select-option>
+                  </a-select>
+                  <a-tag color="blue">{{ mediaPickerTitle }}</a-tag>
+                  <a-tag v-if="mediaPickerKeyword">搜索：{{ mediaPickerKeyword }}</a-tag>
+                  <span style="color:#8c8c8c; font-size:12px">{{ mediaPickerHintText }}</span>
+                </a-space>
+                <a-button size="small" @click="selectAllVisibleMedia">全选</a-button>
+              </div>
             </div>
 
-            <a-spin :spinning="mediaPickerLoading || mediaGroupLoading">
-              <div v-if="selectableMedia.length" style="display:grid; grid-template-columns:1fr; gap:12px">
-                <a-card v-for="item in selectableMedia" :key="resolvePickerItemKey(item)" hoverable :body-style="{ padding: '12px' }" :style="mediaCardStyle(item)" @click="selectMedia(item)">
-                  <div style="display:flex; gap:12px; align-items:flex-start">
-                    <div style="width:88px; height:88px; display:flex; align-items:center; justify-content:center; background:#fafafa; border-radius:8px; overflow:hidden; flex-shrink:0">
-                      <SecureImage
-                        v-if="item.thumbnailUrl"
-                        :src="item.thumbnailUrl"
-                        alt="thumbnail"
-                        img-style="width:100%; height:100%; object-fit:cover"
-                      />
-                      <SecureImage
-                        v-else-if="item.mediaType === 'IMAGE' && item.url"
-                        :src="item.url"
-                        alt="image"
-                        img-style="width:100%; height:100%; object-fit:cover"
-                      />
-                      <video-camera-outlined v-else-if="item.mediaType === 'VIDEO'" style="font-size:34px; color:#8c8c8c" />
-                      <customer-service-outlined v-else-if="item.mediaType === 'AUDIO'" style="font-size:34px; color:#8c8c8c" />
-                      <file-outlined v-else style="font-size:30px; color:#8c8c8c" />
-                    </div>
-                    <div class="album-picker-item-body">
-                      <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start">
-                        <div style="font-weight:500; word-break:break-all; min-width:0; flex:1">{{ item.fileName }}</div>
-                        <a-tag v-if="isExistingAlbumContent(item)" color="default" style="margin-inline-end:0; flex-shrink:0">已在当前相册</a-tag>
+            <div class="album-picker-main-list album-picker-pane-scroll">
+              <a-spin :spinning="mediaPickerLoading || mediaGroupLoading">
+                <div v-if="selectableMedia.length" class="album-picker-media-grid">
+                  <a-card v-for="item in selectableMedia" :key="resolvePickerItemKey(item)" hoverable :body-style="{ padding: '12px' }" :style="mediaCardStyle(item)" @click="selectMedia(item)">
+                    <div style="display:flex; gap:12px; align-items:flex-start">
+                      <div style="width:76px; height:76px; display:flex; align-items:center; justify-content:center; background:#fafafa; border-radius:8px; overflow:hidden; flex-shrink:0">
+                        <SecureImage
+                          v-if="item.thumbnailUrl"
+                          :src="item.thumbnailUrl"
+                          alt="thumbnail"
+                          img-style="width:100%; height:100%; object-fit:cover"
+                        />
+                        <SecureImage
+                          v-else-if="item.mediaType === 'IMAGE' && item.url"
+                          :src="item.url"
+                          alt="image"
+                          img-style="width:100%; height:100%; object-fit:cover"
+                        />
+                        <video-camera-outlined v-else-if="item.mediaType === 'VIDEO'" style="font-size:34px; color:#8c8c8c" />
+                        <customer-service-outlined v-else-if="item.mediaType === 'AUDIO'" style="font-size:34px; color:#8c8c8c" />
+                        <file-outlined v-else style="font-size:30px; color:#8c8c8c" />
                       </div>
-                      <a-space size="small" wrap style="margin-top:8px">
-                        <a-tag>{{ item.mediaType }}</a-tag>
-                        <a-tag>{{ item.sourceName || sourceTypeLabel(item.sourceType) }}</a-tag>
-                        <a-tag v-if="item.folderPath">{{ item.folderPath }}</a-tag>
-                        <a-tag v-if="isExistingAlbumContent(item)" color="orange">不可重复添加</a-tag>
-                        <a-tag v-else :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
-                        <a-tag v-if="!isExistingAlbumContent(item)" :color="reviewStatusColor(item.reviewStatus, item.status)">
-                          {{ reviewStatusLabel(item.reviewStatus, item.status) }}
-                        </a-tag>
-                      </a-space>
-                      <div style="margin-top:8px; color:#8c8c8c; font-size:12px">
-                        {{ formatSize(item.fileSize) }}
-                        <span v-if="item.durationSec"> · {{ formatDuration(item.durationSec) }}</span>
-                        <span v-if="item.width && item.height"> · {{ item.width }} × {{ item.height }}</span>
-                        <span v-if="isExistingAlbumContent(item)"> · 当前相册已包含此媒体</span>
+                      <div class="album-picker-item-body">
+                        <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start">
+                          <div style="font-weight:500; word-break:break-all; min-width:0; flex:1">{{ item.fileName }}</div>
+                          <a-tag v-if="isExistingAlbumContent(item)" color="default" style="margin-inline-end:0; flex-shrink:0">已在当前相册</a-tag>
+                        </div>
+                        <a-space size="small" wrap style="margin-top:8px">
+                          <a-tag>{{ item.mediaType }}</a-tag>
+                          <a-tag>{{ item.sourceName || sourceTypeLabel(item.sourceType) }}</a-tag>
+                          <a-tag v-if="item.folderPath">{{ item.folderPath }}</a-tag>
+                          <a-tag v-if="isExistingAlbumContent(item)" color="orange">不可重复添加</a-tag>
+                          <a-tag v-else :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
+                          <a-tag v-if="!isExistingAlbumContent(item)" :color="reviewStatusColor(item.reviewStatus, item.status)">
+                            {{ reviewStatusLabel(item.reviewStatus, item.status) }}
+                          </a-tag>
+                        </a-space>
+                        <div style="margin-top:8px; color:#8c8c8c; font-size:12px">
+                          {{ formatSize(item.fileSize) }}
+                          <span v-if="item.durationSec"> · {{ formatDuration(item.durationSec) }}</span>
+                          <span v-if="item.width && item.height"> · {{ item.width }} × {{ item.height }}</span>
+                          <span v-if="isExistingAlbumContent(item)"> · 当前相册已包含此媒体</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </a-card>
-              </div>
-              <a-empty v-else description="暂无可选媒体" />
-            </a-spin>
+                  </a-card>
+                </div>
+                <a-empty v-else description="暂无可选媒体" />
+              </a-spin>
+            </div>
 
-            <div style="margin-top:16px; text-align:right">
+            <div class="album-picker-main-sticky album-picker-main-footer">
               <a-pagination
                 :current="mediaPickerPage"
                 :total="mediaPickerTotal"
@@ -372,7 +377,7 @@
             </div>
           </div>
 
-          <div class="album-picker-modal-selection">
+          <div class="album-picker-modal-selection album-picker-pane-scroll">
             <div style="font-weight:500; margin-bottom:12px">已选媒体（{{ selectedMediaRecords.length }}）</div>
             <template v-if="selectedMediaRecords.length">
               <div style="display:flex; flex-direction:column; gap:12px">
@@ -506,12 +511,9 @@ const coverTotalMediaCount = computed(() => coverSourceGroups.value.reduce((sum,
 const mediaPickerTitle = computed(() => buildPickerTitle(mediaSourceGroups.value, mediaPickerSourceType.value, mediaPickerSourceId.value, mediaPickerFolderPath.value))
 const coverPickerTitle = computed(() => buildPickerTitle(coverSourceGroups.value, coverPickerSourceType.value, coverPickerSourceId.value, coverPickerFolderPath.value))
 const isExternalCoverSelection = computed(() => isExternalPickerSelection(coverPickerSourceType.value, coverPickerSourceId.value))
-const mediaPickerHintText = computed(() => {
-  if (isExternalPickerSelection(mediaPickerSourceType.value, mediaPickerSourceId.value)) {
-    return '当前展示的是外部媒体源目录，可直接绑定到相册，播放时仍通过服务端代理访问；已在当前相册中的媒体会标记为不可重复添加。'
-  }
-  return '仅展示已处理完成的媒体；已在当前相册中的媒体会标记为不可重复添加。'
-})
+const mediaPickerHintText = computed(() => isExternalPickerSelection(mediaPickerSourceType.value, mediaPickerSourceId.value)
+  ? '外部源直连，已存在项不可重复添加'
+  : '已存在项不可重复添加')
 const coverPickerHintText = computed(() => {
   if (isExternalPickerSelection(coverPickerSourceType.value, coverPickerSourceId.value)) {
     return '当前展示的是外部媒体源目录，仅支持选择图片作为相册封面，访问时仍通过服务端代理。'
@@ -1129,6 +1131,17 @@ function selectMedia(item) {
   toggleMediaSelection(item)
 }
 
+function selectAllVisibleMedia() {
+  const existingSelectionKeys = new Set(selectedMediaRecords.value.map(item => resolvePickerItemKey(item)))
+  const candidates = selectableMedia.value.filter(item => !isExistingAlbumContent(item))
+  const additions = candidates.filter(item => !existingSelectionKeys.has(resolvePickerItemKey(item)))
+  if (!additions.length) {
+    message.info('当前页没有可新增的媒体')
+    return
+  }
+  selectedMediaRecords.value = [...selectedMediaRecords.value, ...additions]
+}
+
 function mediaCardStyle(item) {
   const exists = isExistingAlbumContent(item)
   if (exists) {
@@ -1265,6 +1278,13 @@ function sourceTypeLabel(sourceType) {
   min-height: 420px;
 }
 
+.album-picker-modal-layout-fixed {
+  height: calc(100vh - 260px);
+  min-height: 520px;
+  max-height: calc(100vh - 260px);
+  align-items: stretch;
+}
+
 .album-picker-modal-sidebar {
   width: 240px;
   flex-shrink: 0;
@@ -1278,9 +1298,15 @@ function sourceTypeLabel(sourceType) {
   min-width: 0;
 }
 
+.album-picker-modal-layout-fixed .album-picker-modal-content {
+  align-items: stretch;
+}
+
 .album-picker-modal-main {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .album-picker-modal-selection {
@@ -1290,20 +1316,60 @@ function sourceTypeLabel(sourceType) {
   border-radius: 8px;
   padding: 16px;
   background: #fafafa;
+  display: flex;
+  flex-direction: column;
 }
 
-.album-picker-item-body {
+.album-picker-pane-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.album-picker-main-sticky {
+  flex-shrink: 0;
+}
+
+.album-picker-main-footer {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+  background: #fff;
+  text-align: right;
+}
+
+.album-picker-main-list {
   flex: 1;
-  min-width: 0;
+  min-height: 0;
+}
+
+.album-picker-media-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 @media (max-width: 1200px) {
+  .album-picker-modal-layout-fixed {
+    height: auto;
+    min-height: auto;
+    max-height: none;
+  }
+
   .album-picker-modal-content {
     flex-direction: column;
   }
 
   .album-picker-modal-selection {
     width: 100%;
+  }
+
+  .album-picker-media-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .album-picker-pane-scroll {
+    overflow: visible;
   }
 }
 </style>
