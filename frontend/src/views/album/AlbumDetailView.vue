@@ -63,12 +63,12 @@
       </template>
     </a-table>
 
-    <a-modal v-model:open="coverModalOpen" title="从媒体库选择相册封面" @ok="submitCover" :confirm-loading="saving" :width="860"
+    <a-modal v-model:open="coverModalOpen" title="从媒体库选择相册封面" @ok="submitCover" :confirm-loading="saving" :width="1320"
              ok-text="保存" cancel-text="取消"
              :ok-button-props="{ disabled: coverSubmitDisabled }"
-             :body-style="{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto', padding: '16px 20px' }">
-      <div class="album-picker-modal-layout">
-        <div class="album-picker-modal-sidebar">
+             :body-style="{ padding: '16px 20px' }">
+      <div class="album-picker-modal-layout album-picker-modal-layout-fixed">
+        <div class="album-picker-modal-sidebar album-picker-pane-scroll">
           <a-card size="small" title="来源 / 目录">
             <template #extra>
               <a-button type="link" size="small" @click="reloadCoverPicker" :loading="coverPickerLoading || coverGroupLoading">刷新</a-button>
@@ -118,73 +118,79 @@
           </a-card>
         </div>
 
-        <div class="album-picker-modal-main">
-          <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:16px">
-            <a-space wrap>
-              <a-select v-model:value="coverPickerFilterType" style="width:120px" allow-clear placeholder="媒体类型" @change="reloadCoverPicker">
-                <a-select-option value="IMAGE">图片</a-select-option>
-                <a-select-option v-if="!isExternalCoverSelection" value="VIDEO">视频</a-select-option>
-              </a-select>
-              <a-tag color="blue">{{ coverPickerTitle }}</a-tag>
-              <a-tag v-if="coverPickerKeyword">搜索：{{ coverPickerKeyword }}</a-tag>
-            </a-space>
-            <span style="color:#8c8c8c; font-size:12px">{{ coverPickerHintText }}</span>
-          </div>
-
-          <a-spin :spinning="coverPickerLoading || coverGroupLoading">
-            <div v-if="coverSelectableMedia.length" style="display:grid; grid-template-columns:1fr; gap:12px">
-              <a-card v-for="item in coverSelectableMedia" :key="resolvePickerItemKey(item)" hoverable :body-style="{ padding: '12px' }" :style="coverMediaCardStyle(item)" @click="selectCoverMedia(item)">
-                <div style="display:flex; gap:12px; align-items:flex-start">
-                  <div style="width:88px; height:88px; display:flex; align-items:center; justify-content:center; background:#fafafa; border-radius:8px; overflow:hidden; flex-shrink:0">
-                    <SecureImage
-                      v-if="item.thumbnailUrl"
-                      :src="item.thumbnailUrl"
-                      alt="cover thumbnail"
-                      img-style="width:100%; height:100%; object-fit:cover"
-                    />
-                    <SecureImage
-                      v-else-if="item.mediaType === 'IMAGE' && item.url"
-                      :src="item.url"
-                      alt="cover image"
-                      img-style="width:100%; height:100%; object-fit:cover"
-                    />
-                    <video-camera-outlined v-else-if="item.mediaType === 'VIDEO'" style="font-size:34px; color:#8c8c8c" />
-                    <file-outlined v-else style="font-size:30px; color:#8c8c8c" />
-                  </div>
-                  <div class="album-picker-modal-main">
-                    <div style="font-weight:500; word-break:break-all">{{ item.fileName }}</div>
-                    <a-space size="small" wrap style="margin-top:8px">
-                      <a-tag>{{ item.mediaType }}</a-tag>
-                      <a-tag>{{ item.sourceName || sourceTypeLabel(item.sourceType) }}</a-tag>
-                      <a-tag v-if="item.folderPath">{{ item.folderPath }}</a-tag>
-                      <a-tag :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
-                      <a-tag :color="reviewStatusColor(item.reviewStatus, item.status)">
-                        {{ reviewStatusLabel(item.reviewStatus, item.status) }}
-                      </a-tag>
-                    </a-space>
-                    <div style="margin-top:8px; color:#8c8c8c; font-size:12px">
-                      {{ formatSize(item.fileSize) }}
-                      <span v-if="item.durationSec"> · {{ formatDuration(item.durationSec) }}</span>
-                      <span v-if="item.width && item.height"> · {{ item.width }} × {{ item.height }}</span>
-                    </div>
-                  </div>
-                </div>
-              </a-card>
+        <div class="album-picker-modal-content">
+          <div class="album-picker-modal-main">
+            <div class="album-picker-main-sticky">
+              <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:16px; flex-wrap:wrap">
+                <a-space wrap>
+                  <a-select v-model:value="coverPickerFilterType" style="width:120px" allow-clear placeholder="媒体类型" @change="reloadCoverPicker">
+                    <a-select-option value="IMAGE">图片</a-select-option>
+                    <a-select-option v-if="!isExternalCoverSelection" value="VIDEO">视频</a-select-option>
+                  </a-select>
+                  <a-tag color="blue">{{ coverPickerTitle }}</a-tag>
+                  <a-tag v-if="coverPickerKeyword">搜索：{{ coverPickerKeyword }}</a-tag>
+                  <span style="color:#8c8c8c; font-size:12px">{{ coverPickerHintText }}</span>
+                </a-space>
+              </div>
             </div>
-            <a-empty v-else description="暂无可选封面媒体" />
-          </a-spin>
 
-          <div style="margin-top:16px; text-align:right">
-            <a-pagination
-              :current="coverPickerPage"
-              :total="coverPickerTotal"
-              :page-size="coverPickerPageSize"
-              @change="onCoverPickerPageChange"
-              show-less-items
-            />
+            <div class="album-picker-main-list album-picker-pane-scroll">
+              <a-spin :spinning="coverPickerLoading || coverGroupLoading">
+                <div v-if="coverSelectableMedia.length" class="album-picker-media-grid">
+                  <a-card v-for="item in coverSelectableMedia" :key="resolvePickerItemKey(item)" hoverable :body-style="{ padding: '12px' }" :style="coverMediaCardStyle(item)" @click="selectCoverMedia(item)">
+                    <div style="display:flex; gap:12px; align-items:flex-start">
+                      <div style="width:76px; height:76px; display:flex; align-items:center; justify-content:center; background:#fafafa; border-radius:8px; overflow:hidden; flex-shrink:0">
+                        <SecureImage
+                          v-if="item.thumbnailUrl"
+                          :src="item.thumbnailUrl"
+                          alt="cover thumbnail"
+                          img-style="width:100%; height:100%; object-fit:cover"
+                        />
+                        <SecureImage
+                          v-else-if="item.mediaType === 'IMAGE' && item.url"
+                          :src="item.url"
+                          alt="cover image"
+                          img-style="width:100%; height:100%; object-fit:cover"
+                        />
+                        <video-camera-outlined v-else-if="item.mediaType === 'VIDEO'" style="font-size:34px; color:#8c8c8c" />
+                        <file-outlined v-else style="font-size:30px; color:#8c8c8c" />
+                      </div>
+                      <div class="album-picker-item-body">
+                        <div style="font-weight:500; word-break:break-all">{{ item.fileName }}</div>
+                        <a-space size="small" wrap style="margin-top:8px">
+                          <a-tag>{{ item.mediaType }}</a-tag>
+                          <a-tag>{{ item.sourceName || sourceTypeLabel(item.sourceType) }}</a-tag>
+                          <a-tag v-if="item.folderPath">{{ item.folderPath }}</a-tag>
+                          <a-tag :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
+                          <a-tag :color="reviewStatusColor(item.reviewStatus, item.status)">
+                            {{ reviewStatusLabel(item.reviewStatus, item.status) }}
+                          </a-tag>
+                        </a-space>
+                        <div style="margin-top:8px; color:#8c8c8c; font-size:12px">
+                          {{ formatSize(item.fileSize) }}
+                          <span v-if="item.durationSec"> · {{ formatDuration(item.durationSec) }}</span>
+                          <span v-if="item.width && item.height"> · {{ item.width }} × {{ item.height }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </a-card>
+                </div>
+                <a-empty v-else description="暂无可选封面媒体" />
+              </a-spin>
+            </div>
+
+            <div class="album-picker-main-sticky album-picker-main-footer">
+              <a-pagination
+                :current="coverPickerPage"
+                :total="coverPickerTotal"
+                :page-size="coverPickerPageSize"
+                @change="onCoverPickerPageChange"
+                show-less-items
+              />
+            </div>
           </div>
 
-          <div style="margin-top:16px; border:1px solid #f0f0f0; border-radius:8px; padding:16px; background:#fafafa">
+          <div class="album-picker-modal-selection album-picker-pane-scroll">
             <div style="font-weight:500; margin-bottom:12px">封面预览</div>
             <template v-if="selectedCoverMediaRecord">
               <div style="margin-bottom:16px; text-align:center; background:#fff; border-radius:8px; padding:12px">
