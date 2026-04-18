@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+<body>
+<div id="app"></div>
+<script>
+localStorage.setItem('access_token', "eyJhbGciOiJIUzUxMiJ9.eyJqdGkiOiI5ZTNkY2Y4OS1jZTk5LTQwMmMtYTFmNi0yY2E3YTgyZjg3NjkiLCJzdWIiOiIzIiwidWlkIjozLCJ1c2VybmFtZSI6ImFkbWluIiwicm9sZXMiOlsiUk9MRV9BRE1JTiJdLCJ0eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzc1OTI5NTcwLCJleHAiOjE3NzU5MzA0NzB9.2NAtMeA20QblgM6IxzUVrdY38GdalhIPjr70tU6TuuJgeYUuOc8Cshv1gAUtB2C1YkS7ZT6VvorVJF8EOneRTQ");
+localStorage.setItem('refresh_token', "eyJhbGciOiJIUzUxMiJ9.eyJqdGkiOiI3OWQ3YTJiNS01YjJlLTQzNmQtOGQ0Ni0zZWI0OTA2MTU4NGYiLCJzdWIiOiIzIiwidWlkIjozLCJ0eXBlIjoicmVmcmVzaCIsImlhdCI6MTc3NTkyOTU3MCwiZXhwIjoxNzc2NTM0MzcwfQ.p9K2pL25w8iQ96ZTV3tSAK-EiifZU9jV3iGEcjMXu4AjtWh6nVN36L2t1OQOa38vKGSBqaTuD4NbXnKqwh4n2w");
+localStorage.setItem('user_id', "3");
+localStorage.setItem('username', "admin");
+localStorage.setItem('roles', "[\"ROLE_ADMIN\"]");
+</script>
+<script type="module">
+import { createApp, defineComponent } from '/node_modules/vue/dist/vue.esm-browser.js'
+import { useSecureObjectUrl } from '/src/components/useSecureObjectUrl.js'
+const App = defineComponent({
+  setup() {
+    const { resolvedSrc, error } = useSecureObjectUrl(() => 'http://localhost:8080/api/v1/media/6/thumbnail')
+    return { resolvedSrc, error }
+  },
+  template: `
+    <div>
+      <div id="resolved">{{ resolvedSrc }}</div>
+      <div id="error">{{ error ? (error.message || String(error)) : '' }}</div>
+      <img v-if="resolvedSrc" :src="resolvedSrc" style="width:200px;height:200px;object-fit:contain;border:1px solid red" />
+    </div>
+  `
+})
+createApp(App).mount('#app')
+</script>
+</body>
+</html>

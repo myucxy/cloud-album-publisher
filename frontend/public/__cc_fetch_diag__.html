@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<body>
+<div id="status">start</div>
+<img id="img" style="width:200px;height:200px;object-fit:contain;border:1px solid red" />
+<script>
+localStorage.setItem('access_token', "eyJhbGciOiJIUzUxMiJ9.eyJqdGkiOiI3ZDM0ZWQyOC03NmM5LTQzNzQtODM2Ny1jNDZkYjk5NDFiYmEiLCJzdWIiOiIzIiwidWlkIjozLCJ1c2VybmFtZSI6ImFkbWluIiwicm9sZXMiOlsiUk9MRV9BRE1JTiJdLCJ0eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzc1OTI5OTU1LCJleHAiOjE3NzU5MzA4NTV9.zLmo5d0Fw-tQkkdWRHCwQ44takmENoQTBho7ov-a3NkvHL2u-PDI6AKwDnnWvWP6VQbR61gX39kXAsoXw4LQ5Q");
+(async () => {
+  const status = document.getElementById('status')
+  const img = document.getElementById('img')
+  try {
+    const res = await fetch('/api/v1/media/6/thumbnail', {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('access_token') }
+    })
+    status.textContent = 'fetch status=' + res.status + ' type=' + res.headers.get('content-type')
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    img.onload = () => status.textContent += ' loaded'
+    img.onerror = () => status.textContent += ' imgerror'
+    img.src = url
+  } catch (err) {
+    status.textContent = 'failed: ' + (err?.message || err)
+  }
+})()
+</script>
+</body>
+</html>

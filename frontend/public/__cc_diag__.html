@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+<body>
+<div id="status">starting</div>
+<div id="images"></div>
+<script type="module">
+  import request from '/src/api/request.js'
+  const status = document.getElementById('status')
+  const images = document.getElementById('images')
+  try {
+    status.textContent = 'requesting media list'
+    const listRes = await request.get('/media', { params: { page: 1, size: 5 } })
+    const item = listRes.data.list[0]
+    status.textContent = 'requesting blob: ' + item.thumbnailUrl
+    const url = new URL(item.thumbnailUrl, window.location.origin)
+    const pathWithQuery = `${url.pathname}${url.search || ''}`
+    const requestUrl = pathWithQuery.startsWith('/api/v1/') ? pathWithQuery.slice('/api/v1'.length) : pathWithQuery
+    const blob = await request.get(requestUrl, { responseType: 'blob' })
+    const objectUrl = URL.createObjectURL(blob)
+    const img = document.createElement('img')
+    img.src = objectUrl
+    img.style.width = '200px'
+    img.style.height = '200px'
+    img.style.objectFit = 'contain'
+    img.onload = () => status.textContent = 'loaded ok: ' + blob.type + ' size=' + blob.size
+    img.onerror = () => status.textContent = 'img error: ' + blob.type + ' size=' + blob.size
+    images.appendChild(img)
+  } catch (err) {
+    status.textContent = 'failed: ' + (err?.message || err)
+    console.error(err)
+  }
+</script>
+</body>
+</html>
