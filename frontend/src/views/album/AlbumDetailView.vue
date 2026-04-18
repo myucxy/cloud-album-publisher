@@ -79,43 +79,21 @@
               <a-button type="primary" size="small" @click="openBgmModal">添加 BGM</a-button>
             </a-space>
           </template>
-          <audio
-            ref="bgmPreviewAudioRef"
-            :src="activeBgmPreviewResolvedUrl"
-            style="display:none"
-            @timeupdate="handleBgmPreviewTimeUpdate"
-            @loadedmetadata="handleBgmPreviewLoadedMetadata"
-            @ended="handleBgmPreviewEnded"
-            @pause="handleBgmPreviewPause"
-            @error="handleBgmPreviewError"
-          />
-          <a-table :data-source="bgms" :columns="bgmColumns" row-key="id" :pagination="false" :loading="bgmListLoading">
+          <a-table :data-source="bgms" :columns="bgmColumns" row-key="id" :pagination="false" :loading="bgmListLoading" :row-class-name="() => 'album-bgm-row'">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'index'">
                 {{ (record.sortOrder ?? 0) + 1 }}
               </template>
               <template v-if="column.key === 'file'">
-                <div>{{ record.fileName }}</div>
-                <div style="color:#8c8c8c; font-size:12px; margin-top:4px">{{ record.sourceName || sourceTypeLabel(record.sourceType) }}</div>
+                <div style="padding:4px 0">
+                  <div>{{ record.fileName }}</div>
+                  <div style="color:#8c8c8c; font-size:12px; margin-top:4px">{{ record.sourceName || sourceTypeLabel(record.sourceType) }}</div>
+                </div>
               </template>
               <template v-if="column.key === 'preview'">
-                <div style="display:flex; flex-direction:column; gap:8px; min-width:0">
-                  <div style="display:flex; align-items:center; gap:8px">
-                    <a-button size="small" @click="toggleBgmPreview(record)">
-                      {{ activeBgmPreviewId === record.id && bgmPreviewPlaying ? '暂停' : activeBgmPreviewId === record.id ? '继续' : '播放' }}
-                    </a-button>
-                    <span style="color:#8c8c8c; font-size:12px; white-space:nowrap">
-                      {{ formatDuration(activeBgmPreviewId === record.id ? bgmPreviewPosition : 0) }} / {{ formatDuration(activeBgmPreviewId === record.id ? bgmPreviewDuration : 0) }}
-                    </span>
-                  </div>
-                  <a-slider
-                    :min="0"
-                    :max="Math.max(activeBgmPreviewId === record.id ? bgmPreviewDuration : 0, 0)"
-                    :step="0.1"
-                    :value="activeBgmPreviewId === record.id ? bgmPreviewPosition : 0"
-                    :disabled="activeBgmPreviewId !== record.id || !bgmPreviewDuration"
-                    @change="value => seekBgmPreview(record, value)"
-                  />
+                <div style="background:#fafafa; border-radius:8px; padding:10px 12px; min-width:0; min-height:60px; display:flex; align-items:center">
+                  <SecureAudio v-if="record.url" :src="record.url" audio-style="width:100%" />
+                  <div v-else style="color:#8c8c8c">当前音频暂不可试听</div>
                 </div>
               </template>
               <template v-if="column.key === 'type'">
@@ -636,7 +614,7 @@
 </template>
 
 <script setup>
-import { computed, ref, reactive, onMounted, watch, nextTick } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
@@ -650,6 +628,7 @@ import { albumApi } from '@/api/album'
 import { mediaApi } from '@/api/media'
 import { mediaSourceApi } from '@/api/media-source'
 import SecureImage from '@/components/SecureImage.vue'
+import SecureAudio from '@/components/SecureAudio.vue'
 import { useSecureObjectUrl } from '@/components/useSecureObjectUrl'
 
 const SOURCE_TYPE_ORDER = ['UPLOAD', 'SMB', 'FTP', 'SFTP', 'WEBDAV']
@@ -676,18 +655,10 @@ const bgmUrl = ref('')
 const bgmVolume = ref(80)
 const bgms = ref([])
 const bgmListLoading = ref(false)
-const activeBgmPreviewId = ref(null)
-const bgmPreviewPosition = ref(0)
-const bgmPreviewDuration = ref(0)
-const bgmPreviewSeeking = ref(false)
-const bgmPreviewPlaying = ref(false)
-const bgmPreviewAudioRef = ref(null)
-const activeBgmPreviewUrl = computed(() => bgms.value.find(item => item.id === activeBgmPreviewId.value)?.url || '')
-const { resolvedSrc: activeBgmPreviewResolvedUrl } = useSecureObjectUrl(activeBgmPreviewUrl)
 const bgmColumns = [
   { title: '#', key: 'index', width: 60 },
   { title: '音频', key: 'file' },
-  { title: '试听', key: 'preview', width: 320 },
+  { title: '试听', key: 'preview', width: 480 },
   { title: '类型', key: 'type', width: 120 },
   { title: '操作', key: 'action', width: 220 }
 ]
@@ -784,35 +755,6 @@ const columns = [
   { title: '操作', key: 'action', width: 100 }
 ]
 
-watch(activeBgmPreviewResolvedUrl, async url => {
-  const audio = bgmPreviewAudioRef.value
-  if (!audio) {
-    return
-  }
-  if (!url) {
-    audio.pause()
-    audio.removeAttribute('src')
-    audio.load()
-    bgmPreviewPlaying.value = false
-    return
-  }
-  await nextTick()
-  try {
-    audio.currentTime = 0
-    await audio.play()
-    bgmPreviewPlaying.value = true
-  } catch {
-    bgmPreviewPlaying.value = false
-    message.warning('当前 BGM 暂不可试听')
-  }
-})
-
-watch(activeBgmPreviewId, id => {
-  if (!id) {
-    bgmPreviewPlaying.value = false
-  }
-})
-
 onMounted(async () => {
   await Promise.all([loadAlbum(), loadBgms(), loadContents(), loadMediaSources()])
 })
@@ -822,12 +764,6 @@ async function loadBgms() {
   try {
     const res = await albumApi.listBgms(albumId)
     bgms.value = Array.isArray(res.data) ? res.data : []
-    if (activeBgmPreviewId.value && !bgms.value.some(item => item.id === activeBgmPreviewId.value)) {
-      activeBgmPreviewId.value = null
-      bgmPreviewPosition.value = 0
-      bgmPreviewDuration.value = 0
-      bgmPreviewPlaying.value = false
-    }
   } finally {
     bgmListLoading.value = false
   }
@@ -959,79 +895,7 @@ async function openCoverModal() {
   await Promise.all([loadCoverGroups(), loadCoverSelectableMedia()])
 }
 
-async function toggleBgmPreview(record) {
-  if (!record?.id || !record.url) {
-    message.warning('当前 BGM 暂不可试听')
-    return
-  }
-  const audio = bgmPreviewAudioRef.value
-  if (activeBgmPreviewId.value === record.id) {
-    if (bgmPreviewPlaying.value) {
-      audio?.pause()
-      bgmPreviewPlaying.value = false
-    } else {
-      try {
-        await audio?.play()
-        bgmPreviewPlaying.value = true
-      } catch {
-        message.warning('当前 BGM 暂不可试听')
-      }
-    }
-    return
-  }
-  activeBgmPreviewId.value = record.id
-  bgmPreviewPosition.value = 0
-  bgmPreviewDuration.value = 0
-}
-
-function handleBgmPreviewLoadedMetadata() {
-  const duration = Number(bgmPreviewAudioRef.value?.duration || 0)
-  bgmPreviewDuration.value = Number.isFinite(duration) ? duration : 0
-}
-
-function handleBgmPreviewTimeUpdate() {
-  if (bgmPreviewSeeking.value) {
-    return
-  }
-  bgmPreviewPosition.value = Number(bgmPreviewAudioRef.value?.currentTime || 0)
-}
-
-function handleBgmPreviewEnded() {
-  activeBgmPreviewId.value = null
-  bgmPreviewPosition.value = 0
-  bgmPreviewDuration.value = 0
-  bgmPreviewPlaying.value = false
-}
-
-function handleBgmPreviewPause() {
-  bgmPreviewPlaying.value = false
-}
-
-function handleBgmPreviewError() {
-  bgmPreviewPlaying.value = false
-  activeBgmPreviewId.value = null
-  bgmPreviewPosition.value = 0
-  bgmPreviewDuration.value = 0
-}
-
-function seekBgmPreview(record, value) {
-  if (activeBgmPreviewId.value !== record?.id || !bgmPreviewAudioRef.value) {
-    return
-  }
-  bgmPreviewSeeking.value = true
-  bgmPreviewAudioRef.value.currentTime = Number(value || 0)
-  bgmPreviewPosition.value = Number(value || 0)
-  bgmPreviewSeeking.value = false
-}
-
 async function removeBgmItem(id) {
-  if (activeBgmPreviewId.value === id) {
-    bgmPreviewAudioRef.value?.pause()
-    activeBgmPreviewId.value = null
-    bgmPreviewPosition.value = 0
-    bgmPreviewDuration.value = 0
-    bgmPreviewPlaying.value = false
-  }
   await albumApi.removeBgm(albumId, id)
   message.success('已删除')
   await Promise.all([loadBgms(), loadAlbum()])
@@ -1876,6 +1740,7 @@ function sourceTypeLabel(sourceType) {
   gap: 12px;
 }
 
+
 @media (max-width: 1200px) {
   .album-picker-modal-layout-fixed {
     height: auto;
@@ -1899,4 +1764,11 @@ function sourceTypeLabel(sourceType) {
     overflow: visible;
   }
 }
+
+:deep(.album-bgm-row > td) {
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+  vertical-align: middle;
+}
 </style>
+
