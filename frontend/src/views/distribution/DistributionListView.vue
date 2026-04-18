@@ -134,54 +134,125 @@
       </a-form>
     </a-modal>
 
-    <a-modal v-model:open="albumPickerOpen" title="选择相册" :footer="null" :width="640"
-             :body-style="{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }">
-      <div style="display:flex; flex-direction:column; align-items:flex-start; margin-bottom:16px; gap:12px">
-        <a-space wrap>
-          <a-select v-model:value="albumPickerVisibility" style="width:140px" allow-clear placeholder="可见性" @change="reloadAlbumPicker">
-            <a-select-option value="PUBLIC">公开</a-select-option>
-            <a-select-option value="PRIVATE">私有</a-select-option>
-            <a-select-option value="DEVICE_ONLY">设备专属</a-select-option>
-          </a-select>
-          <a-button @click="loadAlbumOptions" :loading="albumPickerLoading">刷新</a-button>
-        </a-space>
-        <span style="color:#8c8c8c; font-size:12px">点击卡片即可选中相册</span>
-      </div>
-
-      <a-spin :spinning="albumPickerLoading">
-        <div v-if="albumOptions.length" class="distribution-album-picker-grid">
-          <a-card v-for="albumItem in albumOptions" :key="albumItem.id" hoverable :body-style="{ padding: '12px' }" :style="albumCardStyle(albumItem)" @click="chooseAlbum(albumItem)">
-            <template #cover>
-              <SecureImage
-                v-if="albumItem.coverUrl"
-                :src="albumItem.coverUrl"
-                alt="album cover"
-                img-style="width:100%; height:160px; object-fit:cover"
-              />
-              <div v-else style="height:160px; background:#f0f2f5; display:flex; align-items:center; justify-content:center; color:#bbb">
-                <picture-outlined style="font-size:40px" />
-              </div>
+    <a-modal v-model:open="albumPickerOpen" title="选择相册" :footer="null" :width="1320"
+             :body-style="{ padding: '16px 20px' }">
+      <div class="distribution-album-picker-layout distribution-album-picker-layout-fixed">
+        <div class="distribution-album-picker-sidebar distribution-album-picker-pane-scroll">
+          <a-card size="small" title="筛选 / 视图">
+            <template #extra>
+              <a-button type="link" size="small" @click="reloadAlbumPicker" :loading="albumPickerLoading">刷新</a-button>
             </template>
-            <a-card-meta :title="albumItem.title" :description="albumItem.description || '暂无描述'" />
-            <div style="margin-top:12px">
-              <a-space size="small" wrap>
-                <a-tag>{{ albumItem.visibility }}</a-tag>
-                <a-tag :color="albumItem.status === 'PUBLISHED' ? 'green' : 'default'">{{ albumItem.status }}</a-tag>
-              </a-space>
+
+            <div style="display:flex; flex-direction:column; gap:8px">
+              <div
+                v-for="option in ALBUM_PICKER_VISIBILITY_OPTIONS"
+                :key="option.key"
+                :style="distributionAlbumPickerFilterStyle(option.value)"
+                @click="selectAlbumPickerVisibility(option.value)"
+              >
+                <div style="font-weight:500">{{ option.label }}</div>
+                <div style="color:#8c8c8c; font-size:12px; margin-top:4px">{{ option.description }}</div>
+              </div>
             </div>
           </a-card>
         </div>
-        <a-empty v-else description="暂无相册" />
-      </a-spin>
 
-      <div style="margin-top:16px; text-align:right">
-        <a-pagination
-          :current="albumPickerPage"
-          :total="albumPickerTotal"
-          :page-size="albumPickerPageSize"
-          @change="onAlbumPickerPageChange"
-          show-less-items
-        />
+        <div class="distribution-album-picker-content">
+          <div class="distribution-album-picker-main">
+            <div class="distribution-album-picker-main-sticky">
+              <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:16px; flex-wrap:wrap">
+                <a-space wrap>
+                  <a-tag color="blue">{{ albumPickerVisibilityLabel }}</a-tag>
+                  <span style="color:#8c8c8c; font-size:12px">点击卡片预览，右侧确认选择</span>
+                </a-space>
+              </div>
+            </div>
+
+            <div class="distribution-album-picker-main-list distribution-album-picker-pane-scroll">
+              <a-spin :spinning="albumPickerLoading">
+                <div v-if="albumOptions.length" class="distribution-album-picker-grid">
+                  <a-card v-for="albumItem in albumOptions" :key="albumItem.id" hoverable :body-style="{ padding: '12px' }" :style="albumCardStyle(albumItem)" @click="chooseAlbum(albumItem)">
+                    <template #cover>
+                      <SecureImage
+                        v-if="albumItem.coverUrl"
+                        :src="albumItem.coverUrl"
+                        alt="album cover"
+                        img-style="width:100%; height:160px; object-fit:cover"
+                      />
+                      <div v-else style="height:160px; background:#f0f2f5; display:flex; align-items:center; justify-content:center; color:#bbb">
+                        <picture-outlined style="font-size:40px" />
+                      </div>
+                    </template>
+                    <a-card-meta :title="albumItem.title" :description="albumItem.description || '暂无描述'" />
+                    <div style="margin-top:12px">
+                      <a-space size="small" wrap>
+                        <a-tag>{{ albumItem.visibility }}</a-tag>
+                        <a-tag :color="albumItem.status === 'PUBLISHED' ? 'green' : 'default'">{{ albumItem.status }}</a-tag>
+                      </a-space>
+                    </div>
+                  </a-card>
+                </div>
+                <a-empty v-else description="暂无相册" />
+              </a-spin>
+            </div>
+
+            <div class="distribution-album-picker-main-sticky distribution-album-picker-main-footer">
+              <a-pagination
+                :current="albumPickerPage"
+                :total="albumPickerTotal"
+                :page-size="albumPickerPageSize"
+                @change="onAlbumPickerPageChange"
+                show-less-items
+              />
+            </div>
+          </div>
+
+          <div class="distribution-album-picker-selection distribution-album-picker-pane-scroll">
+            <div style="font-weight:500; margin-bottom:12px">相册预览</div>
+            <template v-if="albumPickerDraftAlbum">
+              <div style="margin-bottom:16px; text-align:center; background:#fff; border-radius:8px; padding:12px">
+                <SecureImage
+                  v-if="albumPickerDraftAlbum.coverUrl"
+                  :src="albumPickerDraftAlbum.coverUrl"
+                  alt="selected album cover"
+                  img-style="max-width:100%; max-height:220px; object-fit:contain"
+                />
+                <picture-outlined v-else style="font-size:42px; color:#bfbfbf" />
+              </div>
+              <div style="font-weight:500; word-break:break-all">{{ albumPickerDraftAlbum.title }}</div>
+              <div style="color:#8c8c8c; font-size:12px; margin-top:8px">{{ albumPickerDraftAlbum.description || '暂无描述' }}</div>
+              <a-space size="small" wrap style="margin-top:12px">
+                <a-tag>{{ albumPickerDraftAlbum.visibility }}</a-tag>
+                <a-tag :color="albumPickerDraftAlbum.status === 'PUBLISHED' ? 'green' : 'default'">{{ albumPickerDraftAlbum.status }}</a-tag>
+              </a-space>
+              <a-alert
+                v-if="albumPickerDraftAlbum.visibility === 'PRIVATE'"
+                style="margin-top:12px"
+                type="warning"
+                show-icon
+                message="私有相册不能下发到设备"
+                description="请将相册可见性改为 PUBLIC 或 DEVICE_ONLY 后，再激活分发。"
+              />
+              <div style="margin-top:16px; display:flex; justify-content:flex-end">
+                <a-button type="primary" @click="confirmChooseAlbum">确认选择</a-button>
+              </div>
+            </template>
+            <template v-else-if="selectedAlbum">
+              <div style="margin-bottom:16px; text-align:center; background:#fff; border-radius:8px; padding:12px">
+                <SecureImage
+                  v-if="selectedAlbum.coverUrl"
+                  :src="selectedAlbum.coverUrl"
+                  alt="current selected album cover"
+                  img-style="max-width:100%; max-height:220px; object-fit:contain"
+                />
+                <picture-outlined v-else style="font-size:42px; color:#bfbfbf" />
+              </div>
+              <div style="font-weight:500; word-break:break-all">{{ selectedAlbum.title }}</div>
+              <div style="color:#8c8c8c; font-size:12px; margin-top:8px">当前已选相册</div>
+            </template>
+            <a-empty v-else description="请选择相册" />
+          </div>
+        </div>
       </div>
     </a-modal>
   </div>
@@ -215,6 +286,7 @@ const albumPickerPageSize = 12
 const albumPickerTotal = ref(0)
 const albumPickerVisibility = ref(undefined)
 const albumOptions = ref([])
+const albumPickerDraftAlbumId = ref(null)
 const devices = ref([])
 const groups = ref([])
 const form = reactive({
@@ -226,6 +298,13 @@ const form = reactive({
   deviceIds: [],
   groupIds: []
 })
+
+const ALBUM_PICKER_VISIBILITY_OPTIONS = [
+  { key: 'all', value: undefined, label: '全部相册', description: '显示全部可选相册' },
+  { key: 'public', value: 'PUBLIC', label: '公开', description: '优先推荐给公开展示场景' },
+  { key: 'device-only', value: 'DEVICE_ONLY', label: '设备专属', description: '适合仅设备端可见内容' },
+  { key: 'private', value: 'PRIVATE', label: '私有', description: '可选择但激活时不可下发' }
+]
 
 const columns = [
   { title: '名称', dataIndex: 'name' },
@@ -240,6 +319,18 @@ const deviceSelectOptions = computed(() => devices.value.map(item => ({ value: i
 const groupSelectOptions = computed(() => groups.value.map(item => ({ value: item.id, label: item.name || `设备组 #${item.id}` })))
 const deviceNameMap = computed(() => Object.fromEntries(devices.value.map(item => [item.id, item.name || `设备 #${item.id}`])))
 const groupNameMap = computed(() => Object.fromEntries(groups.value.map(item => [item.id, item.name || `设备组 #${item.id}`])))
+const albumPickerDraftAlbum = computed(() => {
+  if (!albumPickerDraftAlbumId.value) {
+    return null
+  }
+  return albumOptions.value.find(item => item.id === albumPickerDraftAlbumId.value)
+    || albumMetaMap.value[albumPickerDraftAlbumId.value]
+    || null
+})
+const albumPickerVisibilityLabel = computed(() => {
+  const current = ALBUM_PICKER_VISIBILITY_OPTIONS.find(option => option.value === albumPickerVisibility.value)
+  return current?.label || '全部相册'
+})
 
 const expandedRowRender = (record) => {
   const deviceText = (record.deviceIds || []).length
@@ -339,8 +430,21 @@ async function openEdit(record) {
   modalOpen.value = true
 }
 
+function selectAlbumPickerVisibility(visibility) {
+  albumPickerVisibility.value = visibility
+  reloadAlbumPicker()
+}
+
+function distributionAlbumPickerFilterStyle(visibility) {
+  const selected = (albumPickerVisibility.value || undefined) === (visibility || undefined)
+  return selected
+    ? 'border:1px solid #1677ff; border-radius:8px; padding:10px 12px; background:#e6f4ff; cursor:pointer'
+    : 'border:1px solid #f0f0f0; border-radius:8px; padding:10px 12px; background:#fff; cursor:pointer'
+}
+
 function openAlbumPicker() {
   if (editingId.value) return
+  albumPickerDraftAlbumId.value = form.albumId || null
   albumPickerOpen.value = true
   albumPickerPage.value = 1
   loadAlbumOptions()
@@ -377,13 +481,21 @@ function onAlbumPickerPageChange(nextPage) {
 }
 
 function chooseAlbum(albumItem) {
-  form.albumId = albumItem.id
-  selectedAlbum.value = albumItem
+  albumPickerDraftAlbumId.value = albumItem.id
+}
+
+function confirmChooseAlbum() {
+  if (!albumPickerDraftAlbum.value) {
+    message.warning('请选择相册')
+    return
+  }
+  form.albumId = albumPickerDraftAlbum.value.id
+  selectedAlbum.value = albumPickerDraftAlbum.value
   albumPickerOpen.value = false
 }
 
 function albumCardStyle(albumItem) {
-  const selected = form.albumId === albumItem.id
+  const selected = albumPickerDraftAlbumId.value === albumItem.id
   return selected
     ? 'border:1px solid #1677ff; box-shadow:0 0 0 2px rgba(22,119,255,0.12)'
     : 'border:1px solid #f0f0f0'
@@ -449,15 +561,101 @@ function statusLabel(status) {
 </script>
 
 <style scoped>
+.distribution-album-picker-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  min-height: 420px;
+}
+
+.distribution-album-picker-layout-fixed {
+  height: calc(100vh - 260px);
+  min-height: 520px;
+  max-height: calc(100vh - 260px);
+  align-items: stretch;
+}
+
+.distribution-album-picker-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+}
+
+.distribution-album-picker-content {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+}
+
+.distribution-album-picker-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.distribution-album-picker-selection {
+  width: 300px;
+  flex-shrink: 0;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+}
+
+.distribution-album-picker-pane-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.distribution-album-picker-main-sticky {
+  flex-shrink: 0;
+}
+
+.distribution-album-picker-main-footer {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+  background: #fff;
+  text-align: right;
+}
+
+.distribution-album-picker-main-list {
+  flex: 1;
+  min-height: 0;
+}
+
 .distribution-album-picker-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1200px) {
+  .distribution-album-picker-layout-fixed {
+    height: auto;
+    min-height: auto;
+    max-height: none;
+  }
+
+  .distribution-album-picker-content {
+    flex-direction: column;
+  }
+
+  .distribution-album-picker-selection {
+    width: 100%;
+  }
+
   .distribution-album-picker-grid {
     grid-template-columns: 1fr;
+  }
+
+  .distribution-album-picker-pane-scroll {
+    overflow: visible;
   }
 }
 </style>
