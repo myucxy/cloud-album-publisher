@@ -71,11 +71,50 @@ public class DevicePullResponse {
         @Schema(description = "背景音乐地址")
         private String bgmUrl;
 
+        @Schema(description = "背景音乐列表")
+        private List<BgmItem> bgmList;
+
         @Schema(description = "背景音乐音量")
         private Integer bgmVolume;
 
         @Schema(description = "可见性")
         private String visibility;
+    }
+
+    @Getter
+    @Setter
+    @Schema(description = "设备拉取到的BGM项")
+    public static class BgmItem {
+
+        @Schema(description = "BGM项ID")
+        private Long id;
+
+        @Schema(description = "媒体ID")
+        private Long mediaId;
+
+        @Schema(description = "外部媒体引用Key")
+        private String externalMediaKey;
+
+        @Schema(description = "外部媒体源ID")
+        private Long sourceId;
+
+        @Schema(description = "外部媒体源类型")
+        private String sourceType;
+
+        @Schema(description = "文件名")
+        private String fileName;
+
+        @Schema(description = "媒体类型")
+        private String mediaType;
+
+        @Schema(description = "MIME 类型")
+        private String contentType;
+
+        @Schema(description = "播放地址")
+        private String url;
+
+        @Schema(description = "排序")
+        private Integer sortOrder;
     }
 
     @Getter

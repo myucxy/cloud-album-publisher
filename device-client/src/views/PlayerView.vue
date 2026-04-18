@@ -5,7 +5,7 @@
     @mousemove="revealSidebarHandle"
     @mouseleave="hideSidebarHandle"
   >
-    <audio ref="bgmRef" hidden loop @error="handleBgmError" />
+    <audio ref="bgmRef" hidden @error="handleBgmError" @ended="handleBgmEnded" />
 
     <div class="sidebar-panel">
       <PlaylistSidebar
@@ -62,7 +62,7 @@ const deviceAuth = useDeviceAuthStore()
 const player = usePlayerStore()
 const bgmRef = ref()
 const sidebarVisible = ref(true)
-const showSidebarHandle = ref(false)
+const bgmIndex = ref(0)
 
 let imageTimer = null
 let syncTimer = null
@@ -72,7 +72,9 @@ let sidebarHandleTimer = null
 const currentDistribution = computed(() => player.currentDistribution)
 const currentMedia = computed(() => player.currentMedia)
 const sidebarErrorMessage = computed(() => player.errorMessage || player.mediaErrorMessage || player.bgmErrorMessage)
-const bgmUrl = computed(() => currentDistribution.value?.album?.bgmUrl || '')
+const bgmList = computed(() => currentDistribution.value?.album?.bgmList || [])
+const currentBgm = computed(() => bgmList.value[bgmIndex.value] || null)
+const bgmUrl = computed(() => currentBgm.value?.url || currentDistribution.value?.album?.bgmUrl || '')
 const { resolvedSrc: resolvedBgmUrl, error: bgmResolveError } = useSecureObjectUrl(bgmUrl)
 
 const deviceSummary = computed(() => ({
@@ -154,9 +156,16 @@ function handleMediaError(message) {
   scheduleMediaErrorAdvance()
 }
 
-function handleBgmError() {
-  const source = bgmUrl.value
-  player.setBgmError(source ? `BGM 加载失败：${source}` : 'BGM 加载失败')
+function moveToNextBgm() {
+  if (!bgmList.value.length) {
+    bgmIndex.value = 0
+    return
+  }
+  bgmIndex.value = (bgmIndex.value + 1) % bgmList.value.length
+}
+
+function handleBgmEnded() {
+  moveToNextBgm()
 }
 
 async function refresh() {
@@ -179,17 +188,20 @@ watch(
   () => {
     clearMediaErrorAdvanceTimer()
     player.clearMediaError()
+    player.clearBgmError()
+    bgmIndex.value = 0
     scheduleImageAdvance()
   },
   { immediate: true }
 )
 
 watch(
-  () => currentDistribution.value?.album?.bgmUrl,
+  () => currentDistribution.value?.album?.bgmList,
   () => {
     player.clearBgmError()
+    bgmIndex.value = 0
   },
-  { immediate: true }
+  { immediate: true, deep: true }
 )
 
 watch(bgmResolveError, value => {
@@ -199,7 +211,7 @@ watch(bgmResolveError, value => {
 })
 
 watch(
-  () => [resolvedBgmUrl.value, currentDistribution.value?.album?.bgmVolume, currentMedia.value?.mediaType],
+  () => [resolvedBgmUrl.value, currentDistribution.value?.album?.bgmVolume, currentMedia.value?.mediaType, bgmIndex.value],
   async () => {
     const audio = bgmRef.value
     if (!audio) {

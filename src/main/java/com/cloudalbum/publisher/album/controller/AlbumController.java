@@ -107,6 +107,52 @@ public class AlbumController {
         return Result.success();
     }
 
+    @Operation(summary = "获取相册BGM列表")
+    @GetMapping("/{id}/bgms")
+    public Result<List<AlbumBgmItemResponse>> listBgms(@PathVariable Long id) {
+        return Result.success(albumService.listBgms(id, SecurityUtil.getCurrentUserId()));
+    }
+
+    @Operation(summary = "向相册添加BGM")
+    @PostMapping("/{id}/bgms")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Result<AlbumBgmItemResponse> addBgm(@PathVariable Long id,
+                                               @Valid @RequestBody AlbumBgmRequest request) {
+        return Result.success(albumService.addBgm(id, SecurityUtil.getCurrentUserId(), request));
+    }
+
+    @Operation(summary = "批量向相册添加BGM")
+    @PostMapping("/{id}/bgms/batch")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Result<List<AlbumBgmItemResponse>> addBgms(@PathVariable Long id,
+                                                      @Valid @RequestBody AlbumBatchBgmRequest request) {
+        return Result.success(albumService.addBgms(id, SecurityUtil.getCurrentUserId(), request.getItems()));
+    }
+
+    @Operation(summary = "更新相册BGM项")
+    @PatchMapping("/{id}/bgms/{bgmId}")
+    public Result<AlbumBgmItemResponse> updateBgmItem(@PathVariable Long id,
+                                                      @PathVariable Long bgmId,
+                                                      @Valid @RequestBody AlbumBgmRequest request) {
+        return Result.success(albumService.updateBgmItem(id, bgmId, SecurityUtil.getCurrentUserId(), request));
+    }
+
+    @Operation(summary = "删除相册BGM项")
+    @DeleteMapping("/{id}/bgms/{bgmId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public Result<Void> removeBgm(@PathVariable Long id, @PathVariable Long bgmId) {
+        albumService.removeBgm(id, bgmId, SecurityUtil.getCurrentUserId());
+        return Result.success();
+    }
+
+    @Operation(summary = "调整相册BGM顺序")
+    @PutMapping("/{id}/bgms/order")
+    public Result<Void> reorderBgms(@PathVariable Long id,
+                                    @Valid @RequestBody AlbumBgmOrderRequest request) {
+        albumService.reorderBgms(id, SecurityUtil.getCurrentUserId(), request);
+        return Result.success();
+    }
+
     @Operation(summary = "更新相册封面")
     @PatchMapping("/{id}/cover")
     public Result<AlbumResponse> updateCover(@PathVariable Long id,

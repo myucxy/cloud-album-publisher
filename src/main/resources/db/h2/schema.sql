@@ -112,7 +112,37 @@ ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS file_path VARCHAR(500);
 ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS file_name VARCHAR(255);
 ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS content_type VARCHAR(100);
 ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS media_type VARCHAR(20);
-CREATE UNIQUE INDEX IF NOT EXISTS uk_album_external_media ON t_album_media (album_id, external_media_key);
+
+CREATE TABLE IF NOT EXISTS t_album_bgm (
+    id                 BIGINT AUTO_INCREMENT PRIMARY KEY,
+    album_id           BIGINT NOT NULL,
+    media_id           BIGINT,
+    source_id          BIGINT,
+    source_type        VARCHAR(20),
+    source_name        VARCHAR(100),
+    external_media_key VARCHAR(255),
+    file_path          VARCHAR(500),
+    file_name          VARCHAR(255),
+    content_type       VARCHAR(100),
+    media_type         VARCHAR(20),
+    sort_order         INT DEFAULT 0,
+    created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE t_album_bgm ADD COLUMN IF NOT EXISTS source_id BIGINT;
+ALTER TABLE t_album_bgm ADD COLUMN IF NOT EXISTS source_type VARCHAR(20);
+ALTER TABLE t_album_bgm ADD COLUMN IF NOT EXISTS source_name VARCHAR(100);
+ALTER TABLE t_album_bgm ADD COLUMN IF NOT EXISTS external_media_key VARCHAR(255);
+ALTER TABLE t_album_bgm ADD COLUMN IF NOT EXISTS file_path VARCHAR(500);
+ALTER TABLE t_album_bgm ADD COLUMN IF NOT EXISTS file_name VARCHAR(255);
+ALTER TABLE t_album_bgm ADD COLUMN IF NOT EXISTS content_type VARCHAR(100);
+ALTER TABLE t_album_bgm ADD COLUMN IF NOT EXISTS media_type VARCHAR(20);
+ALTER TABLE t_album_bgm ADD COLUMN IF NOT EXISTS sort_order INT DEFAULT 0;
+ALTER TABLE t_album_bgm ADD COLUMN IF NOT EXISTS updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_album_bgm_media ON t_album_bgm (album_id, media_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_album_bgm_external ON t_album_bgm (album_id, external_media_key);
+CREATE INDEX IF NOT EXISTS idx_album_bgm_album_sort ON t_album_bgm (album_id, sort_order, id);
 
 -- ===================== V2: 分发 / 审核 / 审计 =====================
 

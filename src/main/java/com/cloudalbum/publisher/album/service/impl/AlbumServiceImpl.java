@@ -1,11 +1,14 @@
 package com.cloudalbum.publisher.album.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cloudalbum.publisher.album.dto.*;
 import com.cloudalbum.publisher.album.entity.Album;
+import com.cloudalbum.publisher.album.entity.AlbumBgm;
 import com.cloudalbum.publisher.album.entity.AlbumMedia;
+import com.cloudalbum.publisher.album.mapper.AlbumBgmMapper;
 import com.cloudalbum.publisher.album.mapper.AlbumMapper;
 import com.cloudalbum.publisher.album.mapper.AlbumMediaMapper;
 import com.cloudalbum.publisher.album.service.AlbumService;
@@ -41,6 +44,7 @@ import java.util.stream.Collectors;
 public class AlbumServiceImpl implements AlbumService {
 
     private final AlbumMapper albumMapper;
+    private final AlbumBgmMapper albumBgmMapper;
     private final AlbumMediaMapper albumMediaMapper;
     private final MediaMapper mediaMapper;
     private final MediaSourceService mediaSourceService;
@@ -109,6 +113,8 @@ public class AlbumServiceImpl implements AlbumService {
         albumMapper.deleteById(albumId);
         albumMediaMapper.delete(new LambdaQueryWrapper<AlbumMedia>()
                 .eq(AlbumMedia::getAlbumId, albumId));
+        albumBgmMapper.delete(new LambdaQueryWrapper<AlbumBgm>()
+                .eq(AlbumBgm::getAlbumId, albumId));
     }
 
     @Override
@@ -239,236 +245,122 @@ public class AlbumServiceImpl implements AlbumService {
     public AlbumResponse updateBgm(Long albumId, Long userId, AlbumBgmRequest request) {
         Album album = getAlbumOrThrow(albumId);
         checkOwner(album, userId);
-
-        if (Boolean.TRUE.equals(request.getClear())) {
-            clearBgm(album);
-        } else if (request.getSourceId() != null || StringUtils.hasText(request.getExternalMediaKey()) || StringUtils.hasText(request.getPath())) {
-            MediaSourceBrowseItemResponse externalItem = resolveExternalMediaItem(
-                    request.getSourceId(),
-                    userId,
-                    request.getPath(),
-                    request.getExternalMediaKey());
-            if (!isAudioMediaType(externalItem.getMediaType())) {
-                throw new BusinessException(ResultCode.BAD_REQUEST, "BGM 仅支持音频");
-            }
-            applyExternalBgm(album, externalItem);
-        } else if (request.getMediaId() != null) {
-            Media media = getOwnedReadyMedia(request.getMediaId(), userId);
-            if (!isAudioMediaType(media.getMediaType())) {
-                throw new BusinessException(ResultCode.BAD_REQUEST, "BGM 仅支持音频");
-            }
-            applyInternalBgm(album, media);
-        }
-
         if (request.getBgmVolume() != null) {
             album.setBgmVolume(request.getBgmVolume());
-        }
-
-        if (Boolean.TRUE.equals(request.getClear())) {
-            Album update = new Album();
-            update.setId(album.getId());
-            update.setBgmUrl(null);
-            update.setBgmMediaId(null);
-            update.setBgmSourceId(null);
-            update.setBgmSourceType(null);
-            update.setBgmSourceName(null);
-            update.setBgmExternalMediaKey(null);
-            update.setBgmPath(null);
-            update.setBgmFileName(null);
-            update.setBgmContentType(null);
-            update.setBgmMediaType(null);
-            update.setBgmVolume(album.getBgmVolume());
-            albumMapper.updateById(update);
-        } else {
             albumMapper.updateById(album);
         }
-        return toResponse(albumMapper.selectById(album.getId()));
-    }
-    @Override
-    public void writeAlbumCover(Long albumId, Long userId, HttpServletRequest request, HttpServletResponse response) {
-        Album album = getAlbumOrThrow(albumId);
-        checkAccess(album, userId);
-        if (hasExternalCover(album)) {
-            mediaSourceService.writeMediaContent(
-                    album.getCoverSourceId(),
-                    album.getUserId(),
-                    album.getCoverPath(),
-                    shouldUseExternalThumbnailForCover(album),
-                    request,
-                    response);
-            return;
+        if (Boolean.TRUE.equals(request.getClear())) {
+            albumBgmMapper.delete(new LambdaQueryWrapper<AlbumBgm>()
+                    .eq(AlbumBgm::getAlbumId, albumId));
+            syncLegacyBgm(albumId);
+        } else if (request.getMediaId() != null
+                || request.getSourceId() != null
+                || StringUtils.hasText(request.getExternalMediaKey())
+                || StringUtils.hasText(request.getPath())) {
+            albumBgmMapper.delete(new LambdaQueryWrapper<AlbumBgm>()
+                    .eq(AlbumBgm::getAlbumId, albumId));
+            addBgm(albumId, userId, request);
         }
-
-        Media coverMedia = resolveCoverMedia(album);
-        if (coverMedia != null) {
-            mediaHttpWriter.write(
-                    objectStorageMediaContentResolver.resolve(coverMedia, shouldUseThumbnailForCover(coverMedia)),
-                    request,
-                    response,
-                    "读取相册封面失败");
-            return;
-        }
-
-        String objectKey = resolveCoverObjectKey(album.getCoverUrl());
-        if (!StringUtils.hasText(objectKey)) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "相册封面不存在");
-        }
-
-        mediaHttpWriter.write(
-                objectStorageMediaContentResolver.resolveObject(bucket, objectKey, "application/octet-stream", "相册封面不存在"),
-                request,
-                response,
-                "读取相册封面失败");
+        return toResponse(albumMapper.selectById(albumId));
     }
 
     @Override
-    public void writeAlbumBgm(Long albumId, Long userId, HttpServletRequest request, HttpServletResponse response) {
+    public List<AlbumBgmItemResponse> listBgms(Long albumId, Long userId) {
         Album album = getAlbumOrThrow(albumId);
-        checkAccess(album, userId);
-        if (hasExternalBgm(album)) {
-            mediaSourceService.writeMediaContent(
-                    album.getBgmSourceId(),
-                    album.getUserId(),
-                    album.getBgmPath(),
-                    false,
-                    request,
-                    response);
-            return;
-        }
-
-        Media bgmMedia = resolveBgmMedia(album);
-        if (bgmMedia != null) {
-            mediaHttpWriter.write(
-                    objectStorageMediaContentResolver.resolve(bgmMedia, false),
-                    request,
-                    response,
-                    "读取相册BGM失败");
-            return;
-        }
-
-        if (!StringUtils.hasText(album.getBgmUrl())) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "相册BGM不存在");
-        }
-
-        throw new BusinessException(ResultCode.NOT_FOUND, "相册BGM不存在");
+        checkOwner(album, userId);
+        return loadAlbumBgms(albumId).stream().map(this::toBgmItemResponse).toList();
     }
 
-    private AlbumMedia addInternalContent(Long albumId, Long userId, AlbumAddContentRequest request) {
-        if (request.getMediaId() == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "媒体ID不能为空");
-        }
-        Media media = getOwnedReadyMedia(request.getMediaId(), userId);
-        if (albumMediaMapper.selectCount(new LambdaQueryWrapper<AlbumMedia>()
-                .eq(AlbumMedia::getAlbumId, albumId)
-                .eq(AlbumMedia::getMediaId, request.getMediaId())) > 0) {
-            throw new BusinessException(ResultCode.CONFLICT, "该媒体已在相册中");
-        }
-        AlbumMedia albumMedia = new AlbumMedia();
-        albumMedia.setAlbumId(albumId);
-        albumMedia.setMediaId(request.getMediaId());
-        albumMedia.setSortOrder(defaultSortOrder(request.getSortOrder()));
-        albumMedia.setDuration(defaultDuration(request.getDuration()));
-        albumMedia.setFileName(media.getFileName());
-        albumMedia.setContentType(media.getContentType());
-        albumMedia.setMediaType(media.getMediaType());
-        albumMediaMapper.insert(albumMedia);
-        return albumMedia;
+    @Override
+    @Transactional
+    public AlbumBgmItemResponse addBgm(Long albumId, Long userId, AlbumBgmRequest request) {
+        Album album = getAlbumOrThrow(albumId);
+        checkOwner(album, userId);
+        AlbumBgm bgm = buildAlbumBgm(albumId, userId, request, null);
+        bgm.setSortOrder(nextBgmSortOrder(albumId));
+        albumBgmMapper.insert(bgm);
+        syncLegacyBgm(albumId);
+        return toBgmItemResponse(bgm);
     }
 
-    private AlbumMedia addExternalContent(Long albumId, Long userId, AlbumAddContentRequest request) {
-        MediaSourceBrowseItemResponse externalItem = resolveExternalMediaItem(
-                request.getSourceId(),
-                userId,
-                request.getPath(),
-                request.getExternalMediaKey());
-        if (albumMediaMapper.selectCount(new LambdaQueryWrapper<AlbumMedia>()
-                .eq(AlbumMedia::getAlbumId, albumId)
-                .eq(AlbumMedia::getExternalMediaKey, externalItem.getExternalMediaKey())) > 0) {
-            throw new BusinessException(ResultCode.CONFLICT, "该媒体已在相册中");
+
+    @Override
+    @Transactional
+    public List<AlbumBgmItemResponse> addBgms(Long albumId, Long userId, List<AlbumBgmRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "待添加BGM不能为空");
         }
-        AlbumMedia albumMedia = new AlbumMedia();
-        albumMedia.setAlbumId(albumId);
-        albumMedia.setSourceId(externalItem.getSourceId());
-        albumMedia.setSourceType(externalItem.getSourceType());
-        albumMedia.setSourceName(externalItem.getSourceName());
-        albumMedia.setExternalMediaKey(externalItem.getExternalMediaKey());
-        albumMedia.setFilePath(externalItem.getPath());
-        albumMedia.setFileName(firstText(externalItem.getFileName(), externalItem.getName()));
-        albumMedia.setContentType(externalItem.getContentType());
-        albumMedia.setMediaType(externalItem.getMediaType());
-        albumMedia.setSortOrder(defaultSortOrder(request.getSortOrder()));
-        albumMedia.setDuration(defaultDuration(request.getDuration()));
-        albumMediaMapper.insert(albumMedia);
-        return albumMedia;
+        Album album = getAlbumOrThrow(albumId);
+        checkOwner(album, userId);
+        Set<String> requestKeys = new HashSet<>();
+        List<AlbumBgmItemResponse> responses = new ArrayList<>();
+        for (AlbumBgmRequest request : requests) {
+            String uniqueKey = StringUtils.hasText(request.getExternalMediaKey())
+                    ? "external:" + request.getExternalMediaKey()
+                    : "internal:" + request.getMediaId();
+            if (!requestKeys.add(uniqueKey)) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "批量添加中存在重复BGM");
+            }
+            AlbumBgm bgm = buildAlbumBgm(albumId, userId, request, null);
+            bgm.setSortOrder(nextBgmSortOrder(albumId) + responses.size());
+            albumBgmMapper.insert(bgm);
+            responses.add(toBgmItemResponse(bgm));
+        }
+        syncLegacyBgm(albumId);
+        return responses;
     }
 
-    private MediaSourceBrowseItemResponse resolveExternalMediaItem(Long sourceId,
-                                                                   Long userId,
-                                                                   String path,
-                                                                   String externalMediaKey) {
-        if (sourceId == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "媒体源不能为空");
-        }
-        String normalizedPath = normalizeExternalPath(path);
-        if (!StringUtils.hasText(normalizedPath)) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "媒体路径不能为空");
-        }
-        String parentPath = parentPath(normalizedPath);
-        MediaSourceBrowseResponse browseResponse = mediaSourceService.browse(sourceId, userId, parentPath);
-        MediaSourceBrowseItemResponse item = browseResponse.getItems().stream()
-                .filter(candidate -> !Boolean.TRUE.equals(candidate.getDirectory()))
-                .filter(candidate -> Objects.equals(normalizeExternalPath(candidate.getPath()), normalizedPath))
-                .findFirst()
-                .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "外部媒体不存在或不可访问"));
-        if (!StringUtils.hasText(item.getExternalMediaKey())) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "当前外部文件不支持绑定到相册");
-        }
-        if (StringUtils.hasText(externalMediaKey) && !Objects.equals(externalMediaKey, item.getExternalMediaKey())) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "外部媒体引用已失效，请重新选择");
-        }
-        if (!StringUtils.hasText(item.getMediaType()) || "OTHER".equals(item.getMediaType())) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "仅支持添加图片、视频或音频文件");
-        }
-        return item;
+    @Override
+    @Transactional
+    public AlbumBgmItemResponse updateBgmItem(Long albumId, Long bgmId, Long userId, AlbumBgmRequest request) {
+        Album album = getAlbumOrThrow(albumId);
+        checkOwner(album, userId);
+        AlbumBgm existing = getAlbumBgmOrThrow(albumId, bgmId);
+        AlbumBgm replacement = buildAlbumBgm(albumId, userId, request, existing.getId());
+        existing.setMediaId(replacement.getMediaId());
+        existing.setSourceId(replacement.getSourceId());
+        existing.setSourceType(replacement.getSourceType());
+        existing.setSourceName(replacement.getSourceName());
+        existing.setExternalMediaKey(replacement.getExternalMediaKey());
+        existing.setFilePath(replacement.getFilePath());
+        existing.setFileName(replacement.getFileName());
+        existing.setContentType(replacement.getContentType());
+        existing.setMediaType(replacement.getMediaType());
+        albumBgmMapper.updateById(existing);
+        syncLegacyBgm(albumId);
+        return toBgmItemResponse(existing);
     }
 
-    private void clearBgm(Album album) {
-        album.setBgmUrl(null);
-        album.setBgmMediaId(null);
-        album.setBgmSourceId(null);
-        album.setBgmSourceType(null);
-        album.setBgmSourceName(null);
-        album.setBgmExternalMediaKey(null);
-        album.setBgmPath(null);
-        album.setBgmFileName(null);
-        album.setBgmContentType(null);
-        album.setBgmMediaType(null);
+    @Override
+    @Transactional
+    public void removeBgm(Long albumId, Long bgmId, Long userId) {
+        Album album = getAlbumOrThrow(albumId);
+        checkOwner(album, userId);
+        AlbumBgm existing = getAlbumBgmOrThrow(albumId, bgmId);
+        albumBgmMapper.deleteById(existing.getId());
+        normalizeBgmSortOrders(albumId);
+        syncLegacyBgm(albumId);
     }
-
-    private void applyInternalBgm(Album album, Media media) {
-        clearBgm(album);
-        album.setBgmMediaId(media.getId());
-        album.setBgmFileName(media.getFileName());
-        album.setBgmContentType(media.getContentType());
-        album.setBgmMediaType(media.getMediaType());
-        album.setBgmUrl(buildContentUrl(media.getId()));
-    }
-
-    private void applyExternalBgm(Album album, MediaSourceBrowseItemResponse externalItem) {
-        clearBgm(album);
-        album.setBgmSourceId(externalItem.getSourceId());
-        album.setBgmSourceType(externalItem.getSourceType());
-        album.setBgmSourceName(externalItem.getSourceName());
-        album.setBgmExternalMediaKey(externalItem.getExternalMediaKey());
-        album.setBgmPath(externalItem.getPath());
-        album.setBgmFileName(firstText(externalItem.getFileName(), externalItem.getName()));
-        album.setBgmContentType(externalItem.getContentType());
-        album.setBgmMediaType(externalItem.getMediaType());
-        album.setBgmUrl(buildExternalContentUrl(externalItem.getSourceId(), externalItem.getPath()));
-    }
-
-    private boolean isAudioMediaType(String mediaType) {
-        return "AUDIO".equals(mediaType);
+    @Override
+    @Transactional
+    public void reorderBgms(Long albumId, Long userId, AlbumBgmOrderRequest request) {
+        Album album = getAlbumOrThrow(albumId);
+        checkOwner(album, userId);
+        List<AlbumBgm> bgms = loadAlbumBgms(albumId);
+        if (bgms.size() != request.getIds().size()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "排序列表不完整");
+        }
+        Set<Long> currentIds = bgms.stream().map(AlbumBgm::getId).collect(Collectors.toSet());
+        if (!currentIds.equals(new LinkedHashSet<>(request.getIds()))) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "排序列表与当前BGM不匹配");
+        }
+        for (int i = 0; i < request.getIds().size(); i += 1) {
+            AlbumBgm update = new AlbumBgm();
+            update.setId(request.getIds().get(i));
+            update.setSortOrder(i);
+            albumBgmMapper.updateById(update);
+        }
+        syncLegacyBgm(albumId);
     }
 
     private Album getAlbumOrThrow(Long albumId) {
@@ -480,13 +372,13 @@ public class AlbumServiceImpl implements AlbumService {
     }
 
     private void checkOwner(Album album, Long userId) {
-        if (!album.getUserId().equals(userId)) {
+        if (!Objects.equals(album.getUserId(), userId)) {
             throw new BusinessException(ResultCode.ALBUM_ACCESS_DENIED);
         }
     }
 
     private void checkAccess(Album album, Long userId) {
-        if (album.getUserId().equals(userId)) {
+        if (Objects.equals(album.getUserId(), userId)) {
             return;
         }
         if ("PUBLIC".equals(album.getVisibility())) {
@@ -566,35 +458,220 @@ public class AlbumServiceImpl implements AlbumService {
         return response;
     }
 
+
+    private AlbumBgm buildAlbumBgm(Long albumId, Long userId, AlbumBgmRequest request, Long ignoreId) {
+        if (request.getSourceId() != null || StringUtils.hasText(request.getExternalMediaKey()) || StringUtils.hasText(request.getPath())) {
+            MediaSourceBrowseItemResponse externalItem = resolveExternalMediaItem(
+                    request.getSourceId(),
+                    userId,
+                    request.getPath(),
+                    request.getExternalMediaKey());
+            if (!isAudioMediaType(externalItem.getMediaType())) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "BGM 仅支持音频");
+            }
+            ensureExternalBgmNotExists(albumId, externalItem.getExternalMediaKey(), ignoreId);
+            AlbumBgm bgm = new AlbumBgm();
+            bgm.setAlbumId(albumId);
+            bgm.setSourceId(externalItem.getSourceId());
+            bgm.setSourceType(externalItem.getSourceType());
+            bgm.setSourceName(externalItem.getSourceName());
+            bgm.setExternalMediaKey(externalItem.getExternalMediaKey());
+            bgm.setFilePath(externalItem.getPath());
+            bgm.setFileName(firstText(externalItem.getFileName(), externalItem.getName()));
+            bgm.setContentType(externalItem.getContentType());
+            bgm.setMediaType(externalItem.getMediaType());
+            return bgm;
+        }
+        if (request.getMediaId() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "BGM 媒体不能为空");
+        }
+        Media media = getOwnedReadyMedia(request.getMediaId(), userId);
+        if (!isAudioMediaType(media.getMediaType())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "BGM 仅支持音频");
+        }
+        ensureInternalBgmNotExists(albumId, media.getId(), ignoreId);
+        AlbumBgm bgm = new AlbumBgm();
+        bgm.setAlbumId(albumId);
+        bgm.setMediaId(media.getId());
+        bgm.setFileName(media.getFileName());
+        bgm.setContentType(media.getContentType());
+        bgm.setMediaType(media.getMediaType());
+        return bgm;
+    }
+
+    private void ensureInternalBgmNotExists(Long albumId, Long mediaId, Long ignoreId) {
+        LambdaQueryWrapper<AlbumBgm> query = new LambdaQueryWrapper<AlbumBgm>()
+                .eq(AlbumBgm::getAlbumId, albumId)
+                .eq(AlbumBgm::getMediaId, mediaId);
+        if (ignoreId != null) {
+            query.ne(AlbumBgm::getId, ignoreId);
+        }
+        if (albumBgmMapper.selectCount(query) > 0) {
+            throw new BusinessException(ResultCode.CONFLICT, "该音频已在 BGM 列表中");
+        }
+    }
+
+    private void ensureExternalBgmNotExists(Long albumId, String externalMediaKey, Long ignoreId) {
+        LambdaQueryWrapper<AlbumBgm> query = new LambdaQueryWrapper<AlbumBgm>()
+                .eq(AlbumBgm::getAlbumId, albumId)
+                .eq(AlbumBgm::getExternalMediaKey, externalMediaKey);
+        if (ignoreId != null) {
+            query.ne(AlbumBgm::getId, ignoreId);
+        }
+        if (albumBgmMapper.selectCount(query) > 0) {
+            throw new BusinessException(ResultCode.CONFLICT, "该音频已在 BGM 列表中");
+        }
+    }
+
+    private List<AlbumBgm> loadAlbumBgms(Long albumId) {
+        return albumBgmMapper.selectList(new LambdaQueryWrapper<AlbumBgm>()
+                .eq(AlbumBgm::getAlbumId, albumId)
+                .orderByAsc(AlbumBgm::getSortOrder)
+                .orderByAsc(AlbumBgm::getId));
+    }
+
+    private AlbumBgm getFirstAlbumBgm(Long albumId) {
+        return loadAlbumBgms(albumId).stream().findFirst().orElse(null);
+    }
+
+    private AlbumBgm getAlbumBgmOrThrow(Long albumId, Long bgmId) {
+        AlbumBgm bgm = albumBgmMapper.selectById(bgmId);
+        if (bgm == null || !Objects.equals(bgm.getAlbumId(), albumId)) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "BGM 不存在");
+        }
+        return bgm;
+    }
+
+    private int nextBgmSortOrder(Long albumId) {
+        return loadAlbumBgms(albumId).size();
+    }
+
+    private void normalizeBgmSortOrders(Long albumId) {
+        List<AlbumBgm> bgms = loadAlbumBgms(albumId);
+        for (int i = 0; i < bgms.size(); i += 1) {
+            AlbumBgm update = new AlbumBgm();
+            update.setId(bgms.get(i).getId());
+            update.setSortOrder(i);
+            albumBgmMapper.updateById(update);
+        }
+    }
+
+    private void syncLegacyBgm(Long albumId) {
+        AlbumBgm first = getFirstAlbumBgm(albumId);
+        LambdaUpdateWrapper<Album> update = new LambdaUpdateWrapper<Album>()
+                .eq(Album::getId, albumId)
+                .set(Album::getBgmMediaId, first != null ? first.getMediaId() : null)
+                .set(Album::getBgmSourceId, first != null ? first.getSourceId() : null)
+                .set(Album::getBgmSourceType, first != null ? first.getSourceType() : null)
+                .set(Album::getBgmSourceName, first != null ? first.getSourceName() : null)
+                .set(Album::getBgmExternalMediaKey, first != null ? first.getExternalMediaKey() : null)
+                .set(Album::getBgmPath, first != null ? first.getFilePath() : null)
+                .set(Album::getBgmFileName, first != null ? first.getFileName() : null)
+                .set(Album::getBgmContentType, first != null ? first.getContentType() : null)
+                .set(Album::getBgmMediaType, first != null ? first.getMediaType() : null)
+                .set(Album::getBgmUrl, first != null ? toBgmItemResponse(first).getUrl() : null);
+        albumMapper.update(null, update);
+    }
+
+    private void writeAlbumBgmItem(AlbumBgm bgm, Long userId, HttpServletRequest request, HttpServletResponse response) {
+        if (bgm.isExternal()) {
+            resolveExternalMediaItem(bgm.getSourceId(), userId, bgm.getFilePath(), bgm.getExternalMediaKey());
+            mediaSourceService.writeMediaContent(bgm.getSourceId(), userId, bgm.getFilePath(), false, request, response);
+            return;
+        }
+        Media media = getOwnedReadyMedia(bgm.getMediaId(), userId);
+        mediaHttpWriter.write(
+                objectStorageMediaContentResolver.resolve(media, false),
+                request,
+                response,
+                "读取相册BGM失败");
+    }
+
+    private AlbumBgmItemResponse toBgmItemResponse(AlbumBgm bgm) {
+        AlbumBgmItemResponse response = new AlbumBgmItemResponse();
+        response.setId(bgm.getId());
+        response.setMediaId(bgm.getMediaId());
+        response.setExternalMediaKey(bgm.getExternalMediaKey());
+        response.setSourceId(bgm.getSourceId());
+        response.setSourceType(bgm.getSourceType());
+        response.setSourceName(bgm.getSourceName());
+        response.setPath(bgm.getFilePath());
+        response.setFileName(bgm.getFileName());
+        response.setContentType(bgm.getContentType());
+        response.setMediaType(bgm.getMediaType());
+        response.setSortOrder(bgm.getSortOrder());
+        response.setUrl(bgm.getMediaId() != null ? buildContentUrl(bgm.getMediaId()) : buildExternalContentUrl(bgm.getSourceId(), bgm.getFilePath()));
+        return response;
+    }
+
+
+    @Override
+    public void writeAlbumBgm(Long albumId, Long userId, HttpServletRequest request, HttpServletResponse response) {
+        Album album = getAlbumOrThrow(albumId);
+        checkAccess(album, userId);
+        AlbumBgm firstBgm = getFirstAlbumBgm(albumId);
+        if (firstBgm != null) {
+            writeAlbumBgmItem(firstBgm, album.getUserId(), request, response);
+            return;
+        }
+        throw new BusinessException(ResultCode.NOT_FOUND, "相册BGM不存在");
+    }
+
+    private AlbumMedia addInternalContent(Long albumId, Long userId, AlbumAddContentRequest request) {
+        if (request.getMediaId() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "媒体ID不能为空");
+        }
+        Media media = getOwnedReadyMedia(request.getMediaId(), userId);
+        if (albumMediaMapper.selectCount(new LambdaQueryWrapper<AlbumMedia>()
+                .eq(AlbumMedia::getAlbumId, albumId)
+                .eq(AlbumMedia::getMediaId, request.getMediaId())) > 0) {
+            throw new BusinessException(ResultCode.CONFLICT, "该媒体已在相册中");
+        }
+        AlbumMedia albumMedia = new AlbumMedia();
+        albumMedia.setAlbumId(albumId);
+        albumMedia.setMediaId(request.getMediaId());
+        albumMedia.setSortOrder(defaultSortOrder(request.getSortOrder()));
+        albumMedia.setDuration(defaultDuration(request.getDuration()));
+        albumMedia.setFileName(media.getFileName());
+        albumMedia.setContentType(media.getContentType());
+        albumMedia.setMediaType(media.getMediaType());
+        albumMediaMapper.insert(albumMedia);
+        return albumMedia;
+    }
+
+    private AlbumMedia addExternalContent(Long albumId, Long userId, AlbumAddContentRequest request) {
+        MediaSourceBrowseItemResponse externalItem = resolveExternalMediaItem(
+                request.getSourceId(),
+                userId,
+                request.getPath(),
+                request.getExternalMediaKey());
+        if (albumMediaMapper.selectCount(new LambdaQueryWrapper<AlbumMedia>()
+                .eq(AlbumMedia::getAlbumId, albumId)
+                .eq(AlbumMedia::getExternalMediaKey, externalItem.getExternalMediaKey())) > 0) {
+            throw new BusinessException(ResultCode.CONFLICT, "该媒体已在相册中");
+        }
+        AlbumMedia albumMedia = new AlbumMedia();
+        albumMedia.setAlbumId(albumId);
+        albumMedia.setSourceId(externalItem.getSourceId());
+        albumMedia.setSourceType(externalItem.getSourceType());
+        albumMedia.setSourceName(externalItem.getSourceName());
+        albumMedia.setExternalMediaKey(externalItem.getExternalMediaKey());
+        albumMedia.setFilePath(externalItem.getPath());
+        albumMedia.setFileName(firstText(externalItem.getFileName(), externalItem.getName()));
+        albumMedia.setContentType(externalItem.getContentType());
+        albumMedia.setMediaType(externalItem.getMediaType());
+        albumMedia.setSortOrder(defaultSortOrder(request.getSortOrder()));
+        albumMedia.setDuration(defaultDuration(request.getDuration()));
+        albumMediaMapper.insert(albumMedia);
+        return albumMedia;
+    }
+
     private String buildBgmUrl(Album album) {
-        if (hasExternalBgm(album) || resolveBgmMedia(album) != null) {
-            return buildAlbumBgmUrl(album.getId());
+        AlbumBgm firstBgm = getFirstAlbumBgm(album.getId());
+        if (firstBgm != null) {
+            return toBgmItemResponse(firstBgm).getUrl();
         }
         return StringUtils.hasText(album.getBgmUrl()) ? album.getBgmUrl() : null;
-    }
-
-    private String buildAlbumBgmUrl(Long albumId) {
-        return ServletUriComponentsBuilder.fromCurrentContextPath()
-                .path("/api/v1/albums/{id}/bgm")
-                .buildAndExpand(albumId)
-                .toUriString();
-    }
-
-    private Media resolveBgmMedia(Album album) {
-        if (album.getBgmMediaId() == null) {
-            return null;
-        }
-        Media media = mediaMapper.selectById(album.getBgmMediaId());
-        if (media == null || !Objects.equals(media.getUserId(), album.getUserId())) {
-            return null;
-        }
-        return media;
-    }
-
-    private boolean hasExternalBgm(Album album) {
-        return album.getBgmSourceId() != null
-                && StringUtils.hasText(album.getBgmExternalMediaKey())
-                && StringUtils.hasText(album.getBgmPath());
     }
 
     private String buildCoverUrl(Album album) {
@@ -652,6 +729,10 @@ public class AlbumServiceImpl implements AlbumService {
 
     private boolean isExternalCoverEligible(MediaSourceBrowseItemResponse item) {
         return item != null && "IMAGE".equals(item.getMediaType());
+    }
+
+    private boolean isAudioMediaType(String mediaType) {
+        return "AUDIO".equals(mediaType);
     }
 
     private boolean shouldUseThumbnailForCover(Media media) {
@@ -794,7 +875,75 @@ public class AlbumServiceImpl implements AlbumService {
         return StringUtils.hasText(first) ? first : fallback;
     }
 
+    @Override
+    public void writeAlbumCover(Long albumId, Long userId, HttpServletRequest request, HttpServletResponse response) {
+        Album album = getAlbumOrThrow(albumId);
+        checkAccess(album, userId);
+        if (hasExternalCover(album)) {
+            mediaSourceService.writeMediaContent(
+                    album.getCoverSourceId(),
+                    album.getUserId(),
+                    album.getCoverPath(),
+                    shouldUseExternalThumbnailForCover(album),
+                    request,
+                    response);
+            return;
+        }
+
+        Media coverMedia = resolveCoverMedia(album);
+        if (coverMedia != null) {
+            mediaHttpWriter.write(
+                    objectStorageMediaContentResolver.resolve(coverMedia, shouldUseThumbnailForCover(coverMedia)),
+                    request,
+                    response,
+                    "读取相册封面失败");
+            return;
+        }
+
+        String objectKey = resolveCoverObjectKey(album.getCoverUrl());
+        if (!StringUtils.hasText(objectKey)) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "相册封面不存在");
+        }
+
+        mediaHttpWriter.write(
+                objectStorageMediaContentResolver.resolveObject(bucket, objectKey, "application/octet-stream", "相册封面不存在"),
+                request,
+                response,
+                "读取相册封面失败");
+    }
+
+    private MediaSourceBrowseItemResponse resolveExternalMediaItem(Long sourceId,
+                                                                   Long userId,
+                                                                   String path,
+                                                                   String externalMediaKey) {
+        if (sourceId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "媒体源不能为空");
+        }
+        String normalizedPath = normalizeExternalPath(path);
+        if (!StringUtils.hasText(normalizedPath)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "媒体路径不能为空");
+        }
+        String parentPath = parentPath(normalizedPath);
+        MediaSourceBrowseResponse browseResponse = mediaSourceService.browse(sourceId, userId, parentPath);
+        MediaSourceBrowseItemResponse item = browseResponse.getItems().stream()
+                .filter(candidate -> !Boolean.TRUE.equals(candidate.getDirectory()))
+                .filter(candidate -> Objects.equals(normalizeExternalPath(candidate.getPath()), normalizedPath))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "外部媒体不存在或不可访问"));
+        if (!StringUtils.hasText(item.getExternalMediaKey())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "当前外部文件不支持绑定到相册");
+        }
+        if (StringUtils.hasText(externalMediaKey) && !Objects.equals(externalMediaKey, item.getExternalMediaKey())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "外部媒体引用已失效，请重新选择");
+        }
+        if (!StringUtils.hasText(item.getMediaType()) || "OTHER".equals(item.getMediaType())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "仅支持添加图片、视频或音频文件");
+        }
+        return item;
+    }
+
     private <T> T firstNonNull(T first, T fallback) {
         return first != null ? first : fallback;
     }
+
 }

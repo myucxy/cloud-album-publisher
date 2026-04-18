@@ -2,7 +2,9 @@ package com.cloudalbum.publisher.device.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.cloudalbum.publisher.album.entity.Album;
+import com.cloudalbum.publisher.album.entity.AlbumBgm;
 import com.cloudalbum.publisher.album.entity.AlbumMedia;
+import com.cloudalbum.publisher.album.mapper.AlbumBgmMapper;
 import com.cloudalbum.publisher.album.mapper.AlbumMapper;
 import com.cloudalbum.publisher.album.mapper.AlbumMediaMapper;
 import com.cloudalbum.publisher.common.enums.DeviceStatus;
@@ -65,6 +67,7 @@ public class DeviceServiceImpl implements DeviceService {
     private final DistributionMapper distributionMapper;
     private final DistributionDeviceMapper distributionDeviceMapper;
     private final AlbumMapper albumMapper;
+    private final AlbumBgmMapper albumBgmMapper;
     private final AlbumMediaMapper albumMediaMapper;
     private final MediaMapper mediaMapper;
     private final ReviewRecordMapper reviewRecordMapper;
@@ -523,13 +526,67 @@ public class DeviceServiceImpl implements DeviceService {
         item.setTitle(album.getTitle());
         item.setDescription(album.getDescription());
         item.setCoverUrl(buildAlbumCoverUrl(album));
-        item.setBgmUrl(buildAlbumBgmUrl(album));
+        List<DevicePullResponse.BgmItem> bgmList = loadAlbumBgms(album.getId()).stream()
+                .map(bgm -> toPullBgmItem(bgm, album.getUserId()))
+                .filter(Objects::nonNull)
+                .toList();
+        item.setBgmList(bgmList);
+        item.setBgmUrl(!bgmList.isEmpty() ? bgmList.get(0).getUrl() : buildAlbumBgmUrl(album));
         item.setBgmVolume(album.getBgmVolume());
         item.setVisibility(album.getVisibility());
         return item;
     }
 
+    private DevicePullResponse.BgmItem toPullBgmItem(AlbumBgm bgm, Long userId) {
+        if (bgm.isExternal()) {
+            MediaSourceBrowseItemResponse externalItem = resolveExternalMediaItem(
+                    bgm.getSourceId(),
+                    userId,
+                    bgm.getFilePath(),
+                    bgm.getExternalMediaKey());
+            DevicePullResponse.BgmItem item = new DevicePullResponse.BgmItem();
+            item.setId(bgm.getId());
+            item.setExternalMediaKey(externalItem.getExternalMediaKey());
+            item.setSourceId(externalItem.getSourceId());
+            item.setSourceType(externalItem.getSourceType());
+            item.setFileName(firstText(externalItem.getFileName(), externalItem.getName(), bgm.getFileName()));
+            item.setMediaType(firstText(externalItem.getMediaType(), bgm.getMediaType(), bgm.getMediaType()));
+            item.setContentType(firstText(externalItem.getContentType(), bgm.getContentType(), bgm.getContentType()));
+            item.setUrl(buildDeviceExternalContentUrl(externalItem.getSourceId(), externalItem.getPath()));
+            item.setSortOrder(bgm.getSortOrder());
+            return item;
+        }
+
+        Media media = mediaMapper.selectById(bgm.getMediaId());
+        if (media == null || !Objects.equals(media.getUserId(), userId) || !"READY".equals(media.getStatus()) || !"AUDIO".equals(media.getMediaType())) {
+            return null;
+        }
+        DevicePullResponse.BgmItem item = new DevicePullResponse.BgmItem();
+        item.setId(bgm.getId());
+        item.setMediaId(media.getId());
+        item.setSourceId(firstNonNull(media.getSourceId(), bgm.getSourceId()));
+        item.setSourceType(media.getSourceType());
+        item.setFileName(media.getFileName());
+        item.setMediaType(media.getMediaType());
+        item.setContentType(media.getContentType());
+        item.setUrl(buildDeviceContentUrl(media.getId()));
+        item.setSortOrder(bgm.getSortOrder());
+        return item;
+    }
+
+    private List<AlbumBgm> loadAlbumBgms(Long albumId) {
+        return albumBgmMapper.selectList(new LambdaQueryWrapper<AlbumBgm>()
+                .eq(AlbumBgm::getAlbumId, albumId)
+                .orderByAsc(AlbumBgm::getSortOrder)
+                .orderByAsc(AlbumBgm::getId));
+    }
+
     private String buildAlbumBgmUrl(Album album) {
+        List<AlbumBgm> bgms = loadAlbumBgms(album.getId());
+        if (!bgms.isEmpty()) {
+            DevicePullResponse.BgmItem first = toPullBgmItem(bgms.get(0), album.getUserId());
+            return first != null ? first.getUrl() : null;
+        }
         if (hasExternalBgm(album) || resolveBgmMedia(album) != null) {
             return ServletUriComponentsBuilder.fromCurrentContextPath()
                     .path("/api/v1/devices/albums/{id}/bgm")

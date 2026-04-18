@@ -1,67 +1,141 @@
 <template>
   <div>
-    <a-page-header :title="album?.title" @back="router.push('/albums')" style="background:#fff; margin-bottom:16px; padding:16px">
-      <template #extra>
-        <a-space>
-          <a-button @click="openCoverModal"><picture-outlined /> 更新封面</a-button>
-          <a-button @click="openBgmModal"><customer-service-outlined /> 设置 BGM</a-button>
-          <a-button type="primary" @click="openAddMediaModal"><plus-outlined /> 添加媒体</a-button>
-        </a-space>
-      </template>
-      <a-descriptions :column="3" size="small">
-        <a-descriptions-item label="状态">
+    <a-page-header @back="router.push('/albums')" style="background:#fff; margin-bottom:16px; padding:16px">
+      <template #title>
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; min-width:0">
+          <span style="font-weight:600">{{ album?.title }}</span>
           <a-tag :color="album?.status === 'PUBLISHED' ? 'green' : 'default'">{{ album?.status }}</a-tag>
-        </a-descriptions-item>
-        <a-descriptions-item label="可见性">{{ album?.visibility }}</a-descriptions-item>
-        <a-descriptions-item label="描述">{{ album?.description || '-' }}</a-descriptions-item>
-      </a-descriptions>
-    </a-page-header>
-
-    <a-table :data-source="contents" :columns="columns" row-key="id" :loading="loading"
-             :pagination="{ total, current: page, pageSize: 12, onChange: p => { page = p; loadContents() } }">
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'preview'">
-          <div style="width:64px; height:64px; display:flex; align-items:center; justify-content:center; background:#fafafa; border-radius:8px; overflow:hidden">
-            <SecureImage
-              v-if="getContentMedia(record)?.thumbnailUrl"
-              :src="getContentMedia(record).thumbnailUrl"
-              alt="thumbnail"
-              img-style="width:100%; height:100%; object-fit:cover"
-            />
-            <SecureImage
-              v-else-if="getContentMedia(record)?.mediaType === 'IMAGE' && getContentMedia(record)?.url"
-              :src="getContentMedia(record).url"
-              alt="image"
-              img-style="width:100%; height:100%; object-fit:cover"
-            />
-            <video-camera-outlined v-else-if="getContentMedia(record)?.mediaType === 'VIDEO'" style="font-size:30px; color:#8c8c8c" />
-            <customer-service-outlined v-else-if="getContentMedia(record)?.mediaType === 'AUDIO'" style="font-size:30px; color:#8c8c8c" />
-            <file-outlined v-else style="font-size:28px; color:#8c8c8c" />
-          </div>
-        </template>
-        <template v-if="column.key === 'media'">
-          <div>{{ getContentMedia(record)?.fileName || `媒体 #${record.mediaId}` }}</div>
-          <a-space size="small" style="margin-top:4px" wrap>
-            <a-tag>{{ getContentMedia(record)?.mediaType || '未知类型' }}</a-tag>
-            <a-tag v-if="getContentMedia(record)?.sourceName">{{ getContentMedia(record).sourceName }}</a-tag>
-            <a-tag v-if="getContentMedia(record)?.status" :color="statusColor(getContentMedia(record).status)">
-              {{ statusLabel(getContentMedia(record).status) }}
-            </a-tag>
-          </a-space>
-          <div v-if="getContentMedia(record)?.folderPath" style="color:#8c8c8c; font-size:12px; margin-top:4px">
-            {{ getContentMedia(record).folderPath }}
-          </div>
-        </template>
-        <template v-if="column.key === 'duration'">
-          {{ record.duration ? `${record.duration}s` : '-' }}
-        </template>
-        <template v-if="column.key === 'action'">
-          <a-popconfirm title="从相册中移除？" @confirm="removeContent(record.id)">
-            <a-button type="link" danger size="small">移除</a-button>
-          </a-popconfirm>
-        </template>
+          <a-tag>{{ album?.visibility }}</a-tag>
+        </div>
       </template>
-    </a-table>
+      <template #extra>
+        <a-button type="primary" size="small" @click="openCoverModal"><picture-outlined /> 更新封面</a-button>
+      </template>
+      <div style="color:#8c8c8c; margin-top:8px">{{ album?.description || '-' }}</div>
+    </a-page-header>
+    <a-tabs v-model:activeKey="activeTabKey">
+      <a-tab-pane key="media" tab="相册媒体">
+        <a-card title="相册媒体" style="margin-bottom:16px">
+          <template #extra>
+            <a-space>
+              <a-button size="small" @click="loadContents">刷新</a-button>
+              <a-button type="primary" size="small" @click="openAddMediaModal">添加媒体</a-button>
+            </a-space>
+          </template>
+          <a-table :data-source="contents" :columns="columns" row-key="id" :loading="loading"
+                   :pagination="{ total, current: page, pageSize: 12, onChange: p => { page = p; loadContents() } }">
+
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'preview'">
+              <div style="width:64px; height:64px; display:flex; align-items:center; justify-content:center; background:#fafafa; border-radius:8px; overflow:hidden">
+                <SecureImage
+                  v-if="getContentMedia(record)?.thumbnailUrl"
+                  :src="getContentMedia(record).thumbnailUrl"
+                  alt="thumbnail"
+                  img-style="width:100%; height:100%; object-fit:cover"
+                />
+                <SecureImage
+                  v-else-if="getContentMedia(record)?.mediaType === 'IMAGE' && getContentMedia(record)?.url"
+                  :src="getContentMedia(record).url"
+                  alt="image"
+                  img-style="width:100%; height:100%; object-fit:cover"
+                />
+                <video-camera-outlined v-else-if="getContentMedia(record)?.mediaType === 'VIDEO'" style="font-size:30px; color:#8c8c8c" />
+                <customer-service-outlined v-else-if="getContentMedia(record)?.mediaType === 'AUDIO'" style="font-size:30px; color:#8c8c8c" />
+                <file-outlined v-else style="font-size:28px; color:#8c8c8c" />
+              </div>
+            </template>
+            <template v-if="column.key === 'media'">
+              <div>{{ getContentMedia(record)?.fileName || `媒体 #${record.mediaId}` }}</div>
+              <a-space size="small" style="margin-top:4px" wrap>
+                <a-tag>{{ getContentMedia(record)?.mediaType || '未知类型' }}</a-tag>
+                <a-tag v-if="getContentMedia(record)?.sourceName">{{ getContentMedia(record).sourceName }}</a-tag>
+                <a-tag v-if="getContentMedia(record)?.status" :color="statusColor(getContentMedia(record).status)">
+                  {{ statusLabel(getContentMedia(record).status) }}
+                </a-tag>
+              </a-space>
+              <div v-if="getContentMedia(record)?.folderPath" style="color:#8c8c8c; font-size:12px; margin-top:4px">
+                {{ getContentMedia(record).folderPath }}
+              </div>
+            </template>
+            <template v-if="column.key === 'duration'">
+              {{ record.duration ? `${record.duration}s` : '-' }}
+            </template>
+            <template v-if="column.key === 'action'">
+              <a-popconfirm title="从相册中移除？" @confirm="removeContent(record.id)">
+                <a-button type="link" danger size="small">移除</a-button>
+              </a-popconfirm>
+            </template>
+          </template>
+        </a-table>
+        </a-card>
+      </a-tab-pane>
+
+      <a-tab-pane key="bgm" tab="BGM 列表">
+        <a-card title="BGM 列表" style="margin-bottom:16px">
+          <template #extra>
+            <a-space>
+              <a-button size="small" @click="loadBgms">刷新</a-button>
+              <a-button type="primary" size="small" @click="openBgmModal">添加 BGM</a-button>
+            </a-space>
+          </template>
+          <audio
+            ref="bgmPreviewAudioRef"
+            :src="activeBgmPreviewResolvedUrl"
+            style="display:none"
+            @timeupdate="handleBgmPreviewTimeUpdate"
+            @loadedmetadata="handleBgmPreviewLoadedMetadata"
+            @ended="handleBgmPreviewEnded"
+            @pause="handleBgmPreviewPause"
+            @error="handleBgmPreviewError"
+          />
+          <a-table :data-source="bgms" :columns="bgmColumns" row-key="id" :pagination="false" :loading="bgmListLoading">
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'index'">
+                {{ (record.sortOrder ?? 0) + 1 }}
+              </template>
+              <template v-if="column.key === 'file'">
+                <div>{{ record.fileName }}</div>
+                <div style="color:#8c8c8c; font-size:12px; margin-top:4px">{{ record.sourceName || sourceTypeLabel(record.sourceType) }}</div>
+              </template>
+              <template v-if="column.key === 'preview'">
+                <div style="display:flex; flex-direction:column; gap:8px; min-width:0">
+                  <div style="display:flex; align-items:center; gap:8px">
+                    <a-button size="small" @click="toggleBgmPreview(record)">
+                      {{ activeBgmPreviewId === record.id && bgmPreviewPlaying ? '暂停' : activeBgmPreviewId === record.id ? '继续' : '播放' }}
+                    </a-button>
+                    <span style="color:#8c8c8c; font-size:12px; white-space:nowrap">
+                      {{ formatDuration(activeBgmPreviewId === record.id ? bgmPreviewPosition : 0) }} / {{ formatDuration(activeBgmPreviewId === record.id ? bgmPreviewDuration : 0) }}
+                    </span>
+                  </div>
+                  <a-slider
+                    :min="0"
+                    :max="Math.max(activeBgmPreviewId === record.id ? bgmPreviewDuration : 0, 0)"
+                    :step="0.1"
+                    :value="activeBgmPreviewId === record.id ? bgmPreviewPosition : 0"
+                    :disabled="activeBgmPreviewId !== record.id || !bgmPreviewDuration"
+                    @change="value => seekBgmPreview(record, value)"
+                  />
+                </div>
+              </template>
+              <template v-if="column.key === 'type'">
+                <a-tag>{{ record.mediaType || 'AUDIO' }}</a-tag>
+              </template>
+              <template v-if="column.key === 'action'">
+                <a-space>
+                  <a-button type="link" size="small" :disabled="record.sortOrder === 0" @click="moveBgm(record, -1)">上移</a-button>
+                  <a-button type="link" size="small" :disabled="record.sortOrder === bgms.length - 1" @click="moveBgm(record, 1)">下移</a-button>
+                  <a-popconfirm title="删除该 BGM？" @confirm="removeBgmItem(record.id)">
+                    <a-button type="link" danger size="small">删除</a-button>
+                  </a-popconfirm>
+                </a-space>
+              </template>
+            </template>
+          </a-table>
+          <a-empty v-if="!bgmListLoading && !bgms.length" description="暂无 BGM" />
+        </a-card>
+      </a-tab-pane>
+    </a-tabs>
 
     <a-modal v-model:open="coverModalOpen" title="从媒体库选择相册封面" @ok="submitCover" :confirm-loading="saving" :width="1320"
              ok-text="保存" cancel-text="取消"
@@ -344,10 +418,10 @@
 
           <div class="album-picker-modal-selection album-picker-pane-scroll">
             <div style="font-weight:500; margin-bottom:12px">BGM 预览</div>
-            <template v-if="selectedBgmMediaRecord || bgmUrl">
-              <div style="font-weight:500; word-break:break-all">{{ selectedBgmMediaRecord?.fileName || album?.bgmFileName || '当前 BGM' }}</div>
-              <div style="color:#8c8c8c; font-size:12px; margin-top:8px">来源：{{ selectedBgmMediaRecord?.sourceName || album?.bgmSourceName || '历史URL' }}</div>
-              <div v-if="selectedBgmMediaRecord?.folderPath" style="color:#8c8c8c; font-size:12px; margin-top:4px">目录：{{ selectedBgmMediaRecord.folderPath }}</div>
+            <template v-if="selectedBgmMediaRecords.length">
+              <div style="font-weight:500; word-break:break-all">{{ selectedBgmMediaRecords[0].fileName }}</div>
+              <div style="color:#8c8c8c; font-size:12px; margin-top:8px">来源：{{ selectedBgmMediaRecords[0].sourceName || sourceTypeLabel(selectedBgmMediaRecords[0].sourceType) }}</div>
+              <div v-if="selectedBgmMediaRecords[0].folderPath" style="color:#8c8c8c; font-size:12px; margin-top:4px">目录：{{ selectedBgmMediaRecords[0].folderPath }}</div>
               <div style="margin-top:16px; background:#fff; border:1px solid #f0f0f0; border-radius:8px; padding:12px">
                 <audio v-if="bgmPreviewResolvedUrl" :src="bgmPreviewResolvedUrl" controls style="width:100%" />
                 <a-empty v-else description="当前音频暂不可试听" />
@@ -362,7 +436,7 @@
             </a-form>
 
             <div style="display:flex; justify-content:flex-end; margin-top:8px">
-              <a-button danger @click="clearBgmSelection">清除 BGM</a-button>
+              <a-button @click="selectedBgmMediaRecords = []">清空已选</a-button>
             </div>
           </div>
         </div>
@@ -562,7 +636,7 @@
 </template>
 
 <script setup>
-import { computed, ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
@@ -593,14 +667,33 @@ const loading = ref(false)
 const saving = ref(false)
 
 const coverModalOpen = ref(false)
-const bgmModalOpen = ref(false)
 const addMediaModalOpen = ref(false)
+const bgmModalOpen = ref(false)
+const activeTabKey = ref('media')
 
 const coverUrl = ref('')
 const bgmUrl = ref('')
 const bgmVolume = ref(80)
+const bgms = ref([])
+const bgmListLoading = ref(false)
+const activeBgmPreviewId = ref(null)
+const bgmPreviewPosition = ref(0)
+const bgmPreviewDuration = ref(0)
+const bgmPreviewSeeking = ref(false)
+const bgmPreviewPlaying = ref(false)
+const bgmPreviewAudioRef = ref(null)
+const activeBgmPreviewUrl = computed(() => bgms.value.find(item => item.id === activeBgmPreviewId.value)?.url || '')
+const { resolvedSrc: activeBgmPreviewResolvedUrl } = useSecureObjectUrl(activeBgmPreviewUrl)
+const bgmColumns = [
+  { title: '#', key: 'index', width: 60 },
+  { title: '音频', key: 'file' },
+  { title: '试听', key: 'preview', width: 320 },
+  { title: '类型', key: 'type', width: 120 },
+  { title: '操作', key: 'action', width: 220 }
+]
+
 const bgmSelectableMedia = ref([])
-const selectedBgmMediaRecord = ref(null)
+const selectedBgmMediaRecords = ref([])
 const bgmClearRequested = ref(false)
 const bgmPickerLoading = ref(false)
 const bgmPickerPage = ref(1)
@@ -645,6 +738,11 @@ const coverPickerKeyword = ref(undefined)
 const coverPickerGroups = ref({ sourceGroups: [], mediaTypeGroups: [] })
 const coverGroupLoading = ref(false)
 
+const addMediaForm = reactive({
+  sortOrder: 0,
+  duration: 5
+})
+
 const mediaSourceGroups = computed(() => mergePickerSourceGroups(mediaPickerGroups.value?.sourceGroups || [], mediaSources.value || []))
 const coverSourceGroups = computed(() => mergePickerSourceGroups(coverPickerGroups.value?.sourceGroups || [], mediaSources.value || []))
 const bgmSourceGroups = computed(() => mergePickerSourceGroups(bgmPickerGroups.value?.sourceGroups || [], mediaSources.value || []))
@@ -674,13 +772,8 @@ const bgmPickerHintText = computed(() => {
 
 const addMediaSubmitDisabled = computed(() => selectedMediaRecords.value.length === 0)
 const coverSubmitDisabled = computed(() => !selectedCoverMediaRecord.value)
-const bgmSubmitDisabled = computed(() => !selectedBgmMediaRecord.value && !bgmClearRequested.value && !album.value?.bgmUrl)
-const bgmPreviewUrl = computed(() => {
-  if (bgmClearRequested.value) {
-    return ''
-  }
-  return selectedBgmMediaRecord.value?.url || album.value?.bgmUrl || ''
-})
+const bgmSubmitDisabled = computed(() => selectedBgmMediaRecords.value.length === 0)
+const bgmPreviewUrl = computed(() => selectedBgmMediaRecords.value[0]?.url || '')
 const { resolvedSrc: bgmPreviewResolvedUrl } = useSecureObjectUrl(bgmPreviewUrl)
 
 const columns = [
@@ -691,9 +784,54 @@ const columns = [
   { title: '操作', key: 'action', width: 100 }
 ]
 
-onMounted(async () => {
-  await Promise.all([loadAlbum(), loadContents(), loadMediaSources()])
+watch(activeBgmPreviewResolvedUrl, async url => {
+  const audio = bgmPreviewAudioRef.value
+  if (!audio) {
+    return
+  }
+  if (!url) {
+    audio.pause()
+    audio.removeAttribute('src')
+    audio.load()
+    bgmPreviewPlaying.value = false
+    return
+  }
+  await nextTick()
+  try {
+    audio.currentTime = 0
+    await audio.play()
+    bgmPreviewPlaying.value = true
+  } catch {
+    bgmPreviewPlaying.value = false
+    message.warning('当前 BGM 暂不可试听')
+  }
 })
+
+watch(activeBgmPreviewId, id => {
+  if (!id) {
+    bgmPreviewPlaying.value = false
+  }
+})
+
+onMounted(async () => {
+  await Promise.all([loadAlbum(), loadBgms(), loadContents(), loadMediaSources()])
+})
+
+async function loadBgms() {
+  bgmListLoading.value = true
+  try {
+    const res = await albumApi.listBgms(albumId)
+    bgms.value = Array.isArray(res.data) ? res.data : []
+    if (activeBgmPreviewId.value && !bgms.value.some(item => item.id === activeBgmPreviewId.value)) {
+      activeBgmPreviewId.value = null
+      bgmPreviewPosition.value = 0
+      bgmPreviewDuration.value = 0
+      bgmPreviewPlaying.value = false
+    }
+  } finally {
+    bgmListLoading.value = false
+  }
+}
 
 async function loadAlbum() {
   const res = await albumApi.get(albumId)
@@ -804,13 +942,111 @@ async function loadContentMedia(list) {
 }
 
 function getContentMedia(record) {
-  return contentMediaMap.value[record.id] || record
+  return contentMediaMap.value[record?.id] || record
 }
 
 async function removeContent(id) {
   await albumApi.removeContent(albumId, id)
   message.success('已移除')
-  await loadContents()
+  await Promise.all([loadContents(), loadAllAlbumContentKeys()])
+}
+
+async function openCoverModal() {
+  selectedCoverMediaRecord.value = null
+  coverPickerPage.value = 1
+  sanitizeCoverFilterType()
+  coverModalOpen.value = true
+  await Promise.all([loadCoverGroups(), loadCoverSelectableMedia()])
+}
+
+async function toggleBgmPreview(record) {
+  if (!record?.id || !record.url) {
+    message.warning('当前 BGM 暂不可试听')
+    return
+  }
+  const audio = bgmPreviewAudioRef.value
+  if (activeBgmPreviewId.value === record.id) {
+    if (bgmPreviewPlaying.value) {
+      audio?.pause()
+      bgmPreviewPlaying.value = false
+    } else {
+      try {
+        await audio?.play()
+        bgmPreviewPlaying.value = true
+      } catch {
+        message.warning('当前 BGM 暂不可试听')
+      }
+    }
+    return
+  }
+  activeBgmPreviewId.value = record.id
+  bgmPreviewPosition.value = 0
+  bgmPreviewDuration.value = 0
+}
+
+function handleBgmPreviewLoadedMetadata() {
+  const duration = Number(bgmPreviewAudioRef.value?.duration || 0)
+  bgmPreviewDuration.value = Number.isFinite(duration) ? duration : 0
+}
+
+function handleBgmPreviewTimeUpdate() {
+  if (bgmPreviewSeeking.value) {
+    return
+  }
+  bgmPreviewPosition.value = Number(bgmPreviewAudioRef.value?.currentTime || 0)
+}
+
+function handleBgmPreviewEnded() {
+  activeBgmPreviewId.value = null
+  bgmPreviewPosition.value = 0
+  bgmPreviewDuration.value = 0
+  bgmPreviewPlaying.value = false
+}
+
+function handleBgmPreviewPause() {
+  bgmPreviewPlaying.value = false
+}
+
+function handleBgmPreviewError() {
+  bgmPreviewPlaying.value = false
+  activeBgmPreviewId.value = null
+  bgmPreviewPosition.value = 0
+  bgmPreviewDuration.value = 0
+}
+
+function seekBgmPreview(record, value) {
+  if (activeBgmPreviewId.value !== record?.id || !bgmPreviewAudioRef.value) {
+    return
+  }
+  bgmPreviewSeeking.value = true
+  bgmPreviewAudioRef.value.currentTime = Number(value || 0)
+  bgmPreviewPosition.value = Number(value || 0)
+  bgmPreviewSeeking.value = false
+}
+
+async function removeBgmItem(id) {
+  if (activeBgmPreviewId.value === id) {
+    bgmPreviewAudioRef.value?.pause()
+    activeBgmPreviewId.value = null
+    bgmPreviewPosition.value = 0
+    bgmPreviewDuration.value = 0
+    bgmPreviewPlaying.value = false
+  }
+  await albumApi.removeBgm(albumId, id)
+  message.success('已删除')
+  await Promise.all([loadBgms(), loadAlbum()])
+}
+
+async function moveBgm(record, offset) {
+  const next = [...bgms.value]
+  const currentIndex = next.findIndex(item => item.id === record.id)
+  const targetIndex = currentIndex + offset
+  if (currentIndex < 0 || targetIndex < 0 || targetIndex >= next.length) {
+    return
+  }
+  ;[next[currentIndex], next[targetIndex]] = [next[targetIndex], next[currentIndex]]
+  await albumApi.reorderBgms(albumId, { ids: next.map(item => item.id) })
+  await loadBgms()
 }
 
 async function submitCover() {
@@ -838,34 +1074,7 @@ async function submitCover() {
 }
 
 async function openBgmModal() {
-  bgmClearRequested.value = false
-  selectedBgmMediaRecord.value = album.value?.bgmMediaId
-    ? {
-        id: album.value.bgmMediaId,
-        fileName: album.value.bgmFileName,
-        sourceId: album.value.bgmSourceId,
-        sourceType: album.value.bgmSourceType,
-        sourceName: album.value.bgmSourceName,
-        externalMediaKey: album.value.bgmExternalMediaKey,
-        path: album.value.bgmPath,
-        mediaType: album.value.bgmMediaType,
-        contentType: album.value.bgmContentType,
-        url: album.value.bgmUrl
-      }
-    : album.value?.bgmExternalMediaKey
-      ? {
-          id: null,
-          fileName: album.value.bgmFileName,
-          sourceId: album.value.bgmSourceId,
-          sourceType: album.value.bgmSourceType,
-          sourceName: album.value.bgmSourceName,
-          externalMediaKey: album.value.bgmExternalMediaKey,
-          path: album.value.bgmPath,
-          mediaType: album.value.bgmMediaType,
-          contentType: album.value.bgmContentType,
-          url: album.value.bgmUrl
-        }
-      : null
+  selectedBgmMediaRecords.value = []
   bgmPickerPage.value = 1
   bgmModalOpen.value = true
   await Promise.all([loadBgmGroups(), loadBgmSelectableMedia()])
@@ -956,12 +1165,17 @@ function onBgmPickerPageChange(nextPage) {
 }
 
 function selectBgmMedia(item) {
-  bgmClearRequested.value = false
-  selectedBgmMediaRecord.value = item
+  const key = resolvePickerItemKey(item)
+  const index = selectedBgmMediaRecords.value.findIndex(current => resolvePickerItemKey(current) === key)
+  if (index >= 0) {
+    selectedBgmMediaRecords.value.splice(index, 1)
+    return
+  }
+  selectedBgmMediaRecords.value.push(item)
 }
 
 function bgmMediaCardStyle(item) {
-  const selected = resolvePickerItemKey(selectedBgmMediaRecord.value) === resolvePickerItemKey(item)
+  const selected = selectedBgmMediaRecords.value.some(current => resolvePickerItemKey(current) === resolvePickerItemKey(item))
   return selected
     ? 'border:1px solid #1677ff; box-shadow:0 0 0 2px rgba(22,119,255,0.12)'
     : 'border:1px solid #f0f0f0'
@@ -989,21 +1203,23 @@ function buildBgmPayload(item) {
 }
 
 function clearBgmSelection() {
-  bgmClearRequested.value = true
-  selectedBgmMediaRecord.value = null
+  selectedBgmMediaRecords.value = []
 }
 async function submitBgm() {
-  const payload = buildBgmPayload(selectedBgmMediaRecord.value)
-  if (!payload) {
+  const items = selectedBgmMediaRecords.value
+    .map(item => buildBgmPayload(item))
+    .filter(Boolean)
+  if (!items.length) {
     message.warning('请选择 BGM 音频')
     return
   }
   saving.value = true
   try {
-    await albumApi.updateBgm(albumId, payload)
-    message.success('BGM 已更新')
+    await albumApi.addBgms(albumId, { items })
+    message.success('BGM 已添加')
     bgmModalOpen.value = false
-    await loadAlbum()
+    selectedBgmMediaRecords.value = []
+    await Promise.all([loadBgms(), loadAlbum()])
   } finally {
     saving.value = false
   }
