@@ -33,4 +33,6 @@ public interface AlbumService {
     AlbumResponse updateBgm(Long albumId, Long userId, AlbumBgmRequest request);
 
     void writeAlbumCover(Long albumId, Long userId, HttpServletRequest request, HttpServletResponse response);
+
+    void writeAlbumBgm(Long albumId, Long userId, HttpServletRequest request, HttpServletResponse response);
 }

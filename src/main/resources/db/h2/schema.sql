@@ -48,6 +48,15 @@ CREATE TABLE IF NOT EXISTS t_album (
     cover_content_type       VARCHAR(100),
     cover_media_type         VARCHAR(20),
     bgm_url                  VARCHAR(500),
+    bgm_media_id             BIGINT,
+    bgm_source_id            BIGINT,
+    bgm_source_type          VARCHAR(20),
+    bgm_source_name          VARCHAR(100),
+    bgm_external_media_key   VARCHAR(255),
+    bgm_path                 VARCHAR(500),
+    bgm_file_name            VARCHAR(255),
+    bgm_content_type         VARCHAR(100),
+    bgm_media_type           VARCHAR(20),
     bgm_volume               TINYINT DEFAULT 80,
     visibility               VARCHAR(20) NOT NULL DEFAULT 'PRIVATE',
     status                   VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
@@ -66,6 +75,15 @@ ALTER TABLE t_album ADD COLUMN IF NOT EXISTS cover_path VARCHAR(500);
 ALTER TABLE t_album ADD COLUMN IF NOT EXISTS cover_file_name VARCHAR(255);
 ALTER TABLE t_album ADD COLUMN IF NOT EXISTS cover_content_type VARCHAR(100);
 ALTER TABLE t_album ADD COLUMN IF NOT EXISTS cover_media_type VARCHAR(20);
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS bgm_media_id BIGINT;
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS bgm_source_id BIGINT;
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS bgm_source_type VARCHAR(20);
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS bgm_source_name VARCHAR(100);
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS bgm_external_media_key VARCHAR(255);
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS bgm_path VARCHAR(500);
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS bgm_file_name VARCHAR(255);
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS bgm_content_type VARCHAR(100);
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS bgm_media_type VARCHAR(20);
 
 CREATE TABLE IF NOT EXISTS t_album_media (
     id                 BIGINT AUTO_INCREMENT PRIMARY KEY,

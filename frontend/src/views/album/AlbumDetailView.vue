@@ -4,7 +4,7 @@
       <template #extra>
         <a-space>
           <a-button @click="openCoverModal"><picture-outlined /> 更新封面</a-button>
-          <a-button @click="bgmModalOpen = true"><customer-service-outlined /> 设置 BGM</a-button>
+          <a-button @click="openBgmModal"><customer-service-outlined /> 设置 BGM</a-button>
           <a-button type="primary" @click="openAddMediaModal"><plus-outlined /> 添加媒体</a-button>
         </a-space>
       </template>
@@ -237,15 +237,136 @@
       </div>
     </a-modal>
 
-    <a-modal v-model:open="bgmModalOpen" title="设置 BGM" :width="480" @ok="submitBgm" :confirm-loading="saving" ok-text="保存" cancel-text="取消">
-      <a-form layout="vertical">
-        <a-form-item label="BGM URL">
-          <a-input v-model:value="bgmUrl" placeholder="https://..." />
-        </a-form-item>
-        <a-form-item label="音量 (0-100)">
-          <a-slider v-model:value="bgmVolume" :min="0" :max="100" />
-        </a-form-item>
-      </a-form>
+    <a-modal v-model:open="bgmModalOpen" title="设置 BGM" :width="1320" @ok="submitBgm" :confirm-loading="saving" ok-text="保存" cancel-text="取消"
+             :ok-button-props="{ disabled: bgmSubmitDisabled }"
+             :body-style="{ padding: '16px 20px' }">
+      <div class="album-picker-modal-layout album-picker-modal-layout-fixed">
+        <div class="album-picker-modal-sidebar album-picker-pane-scroll">
+          <a-card size="small" title="来源 / 目录">
+            <template #extra>
+              <a-button type="link" size="small" @click="reloadBgmPicker" :loading="bgmPickerLoading || bgmGroupLoading">刷新</a-button>
+            </template>
+
+            <a-input-search
+              v-model:value="bgmPickerKeywordInput"
+              placeholder="搜索音频"
+              allow-clear
+              @search="applyBgmKeyword"
+            />
+
+            <div style="margin-top:12px">
+              <div :style="pickerAllCardStyle(!bgmPickerSourceType && !bgmPickerFolderPath)" @click="selectAllBgmSource">
+                <div style="display:flex; justify-content:space-between; gap:8px">
+                  <span>全部来源</span>
+                  <span style="color:#8c8c8c">{{ bgmTotalMediaCount }}</span>
+                </div>
+              </div>
+
+              <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px">
+                <template v-for="source in bgmSourceGroups" :key="pickerSourceKey(source)">
+                  <div :style="pickerSourceCardStyle(source, bgmPickerSourceType, bgmPickerSourceId, bgmPickerFolderPath)">
+                    <div style="display:flex; justify-content:space-between; gap:8px; cursor:pointer" @click="selectBgmSource(source)">
+                      <div style="min-width:0">
+                        <div style="font-weight:500; word-break:break-all">{{ source.sourceName || sourceTypeLabel(source.sourceType) }}</div>
+                        <div style="color:#8c8c8c; font-size:12px; margin-top:4px">{{ sourceTypeLabel(source.sourceType) }}</div>
+                      </div>
+                      <a-tag color="blue" style="margin-inline-end:0">{{ source.mediaCount }}</a-tag>
+                    </div>
+
+                    <div v-if="source.folders?.length" style="margin-top:10px; display:flex; flex-direction:column; gap:6px">
+                      <div
+                        v-for="folder in source.folders"
+                        :key="`${pickerSourceKey(source)}#${folder.folderPath}`"
+                        :style="pickerFolderItemStyle(source, folder, bgmPickerSourceType, bgmPickerSourceId, bgmPickerFolderPath)"
+                        @click="selectBgmFolder(source, folder)"
+                      >
+                        <span style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ folder.title || folder.folderPath }}</span>
+                        <span style="color:inherit">{{ folder.mediaCount }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </a-card>
+        </div>
+
+        <div class="album-picker-modal-content">
+          <div class="album-picker-modal-main">
+            <div class="album-picker-main-sticky">
+              <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:16px; flex-wrap:wrap">
+                <a-space wrap>
+                  <a-tag color="blue">{{ bgmPickerTitle }}</a-tag>
+                  <a-tag v-if="bgmPickerKeyword">搜索：{{ bgmPickerKeyword }}</a-tag>
+                  <span style="color:#8c8c8c; font-size:12px">{{ bgmPickerHintText }}</span>
+                </a-space>
+              </div>
+            </div>
+
+            <div class="album-picker-main-list album-picker-pane-scroll">
+              <a-spin :spinning="bgmPickerLoading || bgmGroupLoading">
+                <div v-if="bgmSelectableMedia.length" class="album-picker-media-grid">
+                  <a-card v-for="item in bgmSelectableMedia" :key="resolvePickerItemKey(item)" hoverable :body-style="{ padding: '12px' }" :style="bgmMediaCardStyle(item)" @click="selectBgmMedia(item)">
+                    <div style="display:flex; gap:12px; align-items:flex-start">
+                      <div style="width:76px; height:76px; display:flex; align-items:center; justify-content:center; background:#fafafa; border-radius:8px; overflow:hidden; flex-shrink:0">
+                        <customer-service-outlined style="font-size:30px; color:#8c8c8c" />
+                      </div>
+                      <div class="album-picker-item-body">
+                        <div style="font-weight:500; word-break:break-all">{{ item.fileName }}</div>
+                        <a-space size="small" wrap style="margin-top:8px">
+                          <a-tag>AUDIO</a-tag>
+                          <a-tag>{{ item.sourceName || sourceTypeLabel(item.sourceType) }}</a-tag>
+                          <a-tag v-if="item.folderPath">{{ item.folderPath }}</a-tag>
+                          <a-tag :color="statusColor(item.status)">{{ statusLabel(item.status) }}</a-tag>
+                        </a-space>
+                        <div style="margin-top:8px; color:#8c8c8c; font-size:12px">
+                          {{ formatSize(item.fileSize) }}
+                          <span v-if="item.durationSec"> · {{ formatDuration(item.durationSec) }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </a-card>
+                </div>
+                <a-empty v-else description="暂无可选音频" />
+              </a-spin>
+            </div>
+
+            <div class="album-picker-main-sticky album-picker-main-footer">
+              <a-pagination
+                :current="bgmPickerPage"
+                :total="bgmPickerTotal"
+                :page-size="bgmPickerPageSize"
+                @change="onBgmPickerPageChange"
+                show-less-items
+              />
+            </div>
+          </div>
+
+          <div class="album-picker-modal-selection album-picker-pane-scroll">
+            <div style="font-weight:500; margin-bottom:12px">BGM 预览</div>
+            <template v-if="selectedBgmMediaRecord || bgmUrl">
+              <div style="font-weight:500; word-break:break-all">{{ selectedBgmMediaRecord?.fileName || album?.bgmFileName || '当前 BGM' }}</div>
+              <div style="color:#8c8c8c; font-size:12px; margin-top:8px">来源：{{ selectedBgmMediaRecord?.sourceName || album?.bgmSourceName || '历史URL' }}</div>
+              <div v-if="selectedBgmMediaRecord?.folderPath" style="color:#8c8c8c; font-size:12px; margin-top:4px">目录：{{ selectedBgmMediaRecord.folderPath }}</div>
+              <div style="margin-top:16px; background:#fff; border:1px solid #f0f0f0; border-radius:8px; padding:12px">
+                <audio v-if="bgmPreviewResolvedUrl" :src="bgmPreviewResolvedUrl" controls style="width:100%" />
+                <a-empty v-else description="当前音频暂不可试听" />
+              </div>
+            </template>
+            <a-empty v-else description="请选择 BGM 音频" />
+
+            <a-form layout="vertical" style="margin-top:16px">
+              <a-form-item label="音量 (0-100)">
+                <a-slider v-model:value="bgmVolume" :min="0" :max="100" />
+              </a-form-item>
+            </a-form>
+
+            <div style="display:flex; justify-content:flex-end; margin-top:8px">
+              <a-button danger @click="clearBgmSelection">清除 BGM</a-button>
+            </div>
+          </div>
+        </div>
+      </div>
     </a-modal>
 
     <a-modal v-model:open="addMediaModalOpen" title="添加媒体到相册" @ok="submitAddMedia" :confirm-loading="saving" :width="1320"
@@ -455,6 +576,7 @@ import { albumApi } from '@/api/album'
 import { mediaApi } from '@/api/media'
 import { mediaSourceApi } from '@/api/media-source'
 import SecureImage from '@/components/SecureImage.vue'
+import { useSecureObjectUrl } from '@/components/useSecureObjectUrl'
 
 const SOURCE_TYPE_ORDER = ['UPLOAD', 'SMB', 'FTP', 'SFTP', 'WEBDAV']
 
@@ -475,9 +597,22 @@ const bgmModalOpen = ref(false)
 const addMediaModalOpen = ref(false)
 
 const coverUrl = ref('')
-const bgmUrl = ref(80)
+const bgmUrl = ref('')
 const bgmVolume = ref(80)
-const addMediaForm = reactive({ sortOrder: 0, duration: 5 })
+const bgmSelectableMedia = ref([])
+const selectedBgmMediaRecord = ref(null)
+const bgmClearRequested = ref(false)
+const bgmPickerLoading = ref(false)
+const bgmPickerPage = ref(1)
+const bgmPickerPageSize = 12
+const bgmPickerTotal = ref(0)
+const bgmPickerSourceType = ref(undefined)
+const bgmPickerSourceId = ref(undefined)
+const bgmPickerFolderPath = ref(undefined)
+const bgmPickerKeywordInput = ref('')
+const bgmPickerKeyword = ref(undefined)
+const bgmPickerGroups = ref({ sourceGroups: [], mediaTypeGroups: [] })
+const bgmGroupLoading = ref(false)
 const selectableMedia = ref([])
 const selectedMediaRecords = ref([])
 const existingAlbumContentKeys = ref(new Set())
@@ -512,11 +647,15 @@ const coverGroupLoading = ref(false)
 
 const mediaSourceGroups = computed(() => mergePickerSourceGroups(mediaPickerGroups.value?.sourceGroups || [], mediaSources.value || []))
 const coverSourceGroups = computed(() => mergePickerSourceGroups(coverPickerGroups.value?.sourceGroups || [], mediaSources.value || []))
+const bgmSourceGroups = computed(() => mergePickerSourceGroups(bgmPickerGroups.value?.sourceGroups || [], mediaSources.value || []))
 const mediaTotalMediaCount = computed(() => mediaSourceGroups.value.reduce((sum, item) => sum + (item.mediaCount || 0), 0))
 const coverTotalMediaCount = computed(() => coverSourceGroups.value.reduce((sum, item) => sum + (item.mediaCount || 0), 0))
+const bgmTotalMediaCount = computed(() => bgmSourceGroups.value.reduce((sum, item) => sum + (item.mediaCount || 0), 0))
 const mediaPickerTitle = computed(() => buildPickerTitle(mediaSourceGroups.value, mediaPickerSourceType.value, mediaPickerSourceId.value, mediaPickerFolderPath.value))
 const coverPickerTitle = computed(() => buildPickerTitle(coverSourceGroups.value, coverPickerSourceType.value, coverPickerSourceId.value, coverPickerFolderPath.value))
+const bgmPickerTitle = computed(() => buildPickerTitle(bgmSourceGroups.value, bgmPickerSourceType.value, bgmPickerSourceId.value, bgmPickerFolderPath.value))
 const isExternalCoverSelection = computed(() => isExternalPickerSelection(coverPickerSourceType.value, coverPickerSourceId.value))
+const isExternalBgmSelection = computed(() => isExternalPickerSelection(bgmPickerSourceType.value, bgmPickerSourceId.value))
 const mediaPickerHintText = computed(() => isExternalPickerSelection(mediaPickerSourceType.value, mediaPickerSourceId.value)
   ? '外部源直连，已存在项不可重复添加'
   : '已存在项不可重复添加')
@@ -526,9 +665,23 @@ const coverPickerHintText = computed(() => {
   }
   return '可直接选择图片或视频缩略图作为相册封面'
 })
+const bgmPickerHintText = computed(() => {
+  if (isExternalBgmSelection.value) {
+    return '当前展示的是外部媒体源目录，仅支持选择音频作为 BGM，播放时仍通过服务端代理。'
+  }
+  return '仅展示可作为 BGM 的音频媒体'
+})
 
 const addMediaSubmitDisabled = computed(() => selectedMediaRecords.value.length === 0)
 const coverSubmitDisabled = computed(() => !selectedCoverMediaRecord.value)
+const bgmSubmitDisabled = computed(() => !selectedBgmMediaRecord.value && !bgmClearRequested.value && !album.value?.bgmUrl)
+const bgmPreviewUrl = computed(() => {
+  if (bgmClearRequested.value) {
+    return ''
+  }
+  return selectedBgmMediaRecord.value?.url || album.value?.bgmUrl || ''
+})
+const { resolvedSrc: bgmPreviewResolvedUrl } = useSecureObjectUrl(bgmPreviewUrl)
 
 const columns = [
   { title: '预览', key: 'preview', width: 92 },
@@ -684,24 +837,176 @@ async function submitCover() {
   }
 }
 
+async function openBgmModal() {
+  bgmClearRequested.value = false
+  selectedBgmMediaRecord.value = album.value?.bgmMediaId
+    ? {
+        id: album.value.bgmMediaId,
+        fileName: album.value.bgmFileName,
+        sourceId: album.value.bgmSourceId,
+        sourceType: album.value.bgmSourceType,
+        sourceName: album.value.bgmSourceName,
+        externalMediaKey: album.value.bgmExternalMediaKey,
+        path: album.value.bgmPath,
+        mediaType: album.value.bgmMediaType,
+        contentType: album.value.bgmContentType,
+        url: album.value.bgmUrl
+      }
+    : album.value?.bgmExternalMediaKey
+      ? {
+          id: null,
+          fileName: album.value.bgmFileName,
+          sourceId: album.value.bgmSourceId,
+          sourceType: album.value.bgmSourceType,
+          sourceName: album.value.bgmSourceName,
+          externalMediaKey: album.value.bgmExternalMediaKey,
+          path: album.value.bgmPath,
+          mediaType: album.value.bgmMediaType,
+          contentType: album.value.bgmContentType,
+          url: album.value.bgmUrl
+        }
+      : null
+  bgmPickerPage.value = 1
+  bgmModalOpen.value = true
+  await Promise.all([loadBgmGroups(), loadBgmSelectableMedia()])
+}
+
+async function reloadBgmPicker() {
+  bgmPickerPage.value = 1
+  await Promise.all([loadBgmGroups(), loadBgmSelectableMedia()])
+}
+
+async function applyBgmKeyword() {
+  bgmPickerKeyword.value = bgmPickerKeywordInput.value?.trim() || undefined
+  bgmPickerPage.value = 1
+  await Promise.all([loadBgmGroups(), loadBgmSelectableMedia()])
+}
+
+async function loadBgmGroups() {
+  bgmGroupLoading.value = true
+  try {
+    const res = await mediaApi.groups({ keyword: bgmPickerKeyword.value || undefined })
+    bgmPickerGroups.value = {
+      sourceGroups: res.data?.sourceGroups || [],
+      mediaTypeGroups: res.data?.mediaTypeGroups || []
+    }
+  } finally {
+    bgmGroupLoading.value = false
+  }
+}
+
+async function loadBgmSelectableMedia() {
+  bgmPickerLoading.value = true
+  try {
+    if (isExternalPickerSelection(bgmPickerSourceType.value, bgmPickerSourceId.value)) {
+      const rawItems = await loadExternalMediaBrowseItems(bgmPickerSourceId.value, bgmPickerFolderPath.value)
+      const filtered = filterExternalPickerItems(rawItems, {
+        mediaType: 'AUDIO',
+        keyword: bgmPickerKeyword.value || undefined
+      })
+      bgmPickerTotal.value = filtered.length
+      bgmSelectableMedia.value = paginatePickerItems(filtered, bgmPickerPage.value, bgmPickerPageSize)
+      return
+    }
+
+    const res = await mediaApi.list({
+      page: bgmPickerPage.value,
+      size: bgmPickerPageSize,
+      status: 'READY',
+      mediaType: 'AUDIO',
+      sourceType: bgmPickerSourceType.value || undefined,
+      sourceId: bgmPickerSourceId.value ?? undefined,
+      folderPath: bgmPickerFolderPath.value || undefined,
+      keyword: bgmPickerKeyword.value || undefined
+    })
+    bgmSelectableMedia.value = res.data.list || []
+    bgmPickerTotal.value = res.data.total
+  } finally {
+    bgmPickerLoading.value = false
+  }
+}
+
+async function selectAllBgmSource() {
+  bgmPickerSourceType.value = undefined
+  bgmPickerSourceId.value = undefined
+  bgmPickerFolderPath.value = undefined
+  bgmPickerPage.value = 1
+  await loadBgmSelectableMedia()
+}
+
+async function selectBgmSource(source) {
+  bgmPickerSourceType.value = source.sourceType || undefined
+  bgmPickerSourceId.value = source.sourceId ?? undefined
+  bgmPickerFolderPath.value = undefined
+  bgmPickerPage.value = 1
+  await loadBgmSelectableMedia()
+}
+
+async function selectBgmFolder(source, folder) {
+  bgmPickerSourceType.value = source.sourceType || undefined
+  bgmPickerSourceId.value = source.sourceId ?? undefined
+  bgmPickerFolderPath.value = folder.folderPath || undefined
+  bgmPickerPage.value = 1
+  await loadBgmSelectableMedia()
+}
+
+function onBgmPickerPageChange(nextPage) {
+  bgmPickerPage.value = nextPage
+  loadBgmSelectableMedia()
+}
+
+function selectBgmMedia(item) {
+  bgmClearRequested.value = false
+  selectedBgmMediaRecord.value = item
+}
+
+function bgmMediaCardStyle(item) {
+  const selected = resolvePickerItemKey(selectedBgmMediaRecord.value) === resolvePickerItemKey(item)
+  return selected
+    ? 'border:1px solid #1677ff; box-shadow:0 0 0 2px rgba(22,119,255,0.12)'
+    : 'border:1px solid #f0f0f0'
+}
+
+function buildBgmPayload(item) {
+  if (bgmClearRequested.value) {
+    return { clear: true, bgmVolume: bgmVolume.value }
+  }
+  if (!item) {
+    return album.value?.bgmUrl ? { bgmVolume: bgmVolume.value } : null
+  }
+  const basePayload = isExternalPickerItem(item)
+    ? buildExternalSelectionPayload(item)
+    : item.id
+      ? { mediaId: item.id }
+      : null
+  if (!basePayload) {
+    return null
+  }
+  return {
+    ...basePayload,
+    bgmVolume: bgmVolume.value
+  }
+}
+
+function clearBgmSelection() {
+  bgmClearRequested.value = true
+  selectedBgmMediaRecord.value = null
+}
 async function submitBgm() {
+  const payload = buildBgmPayload(selectedBgmMediaRecord.value)
+  if (!payload) {
+    message.warning('请选择 BGM 音频')
+    return
+  }
   saving.value = true
   try {
-    await albumApi.updateBgm(albumId, { bgmUrl: bgmUrl.value, bgmVolume: bgmVolume.value })
+    await albumApi.updateBgm(albumId, payload)
     message.success('BGM 已更新')
     bgmModalOpen.value = false
     await loadAlbum()
   } finally {
     saving.value = false
   }
-}
-
-async function openCoverModal() {
-  selectedCoverMediaRecord.value = null
-  sanitizeCoverFilterType()
-  coverPickerPage.value = 1
-  coverModalOpen.value = true
-  await Promise.all([loadCoverGroups(), loadCoverSelectableMedia()])
 }
 
 async function reloadCoverPicker() {

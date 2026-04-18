@@ -87,6 +87,15 @@ public class DeviceController {
         deviceService.writeDeviceAlbumCover(principal.getDeviceId(), albumId, request, response);
     }
 
+    @Operation(summary = "设备访问相册BGM")
+    @GetMapping("/albums/{albumId}/bgm")
+    public void getDeviceAlbumBgm(@PathVariable Long albumId,
+                                  HttpServletRequest request,
+                                  HttpServletResponse response) {
+        DeviceAuthPrincipal principal = SecurityUtil.getCurrentDevicePrincipal();
+        deviceService.writeDeviceAlbumBgm(principal.getDeviceId(), albumId, request, response);
+    }
+
     @Operation(summary = "设备访问媒体原文件")
     @GetMapping("/media/{mediaId}/content")
     public void getDeviceMediaContent(@PathVariable Long mediaId,

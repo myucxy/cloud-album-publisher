@@ -235,15 +235,55 @@ public class AlbumServiceImpl implements AlbumService {
     }
 
     @Override
+    @Transactional
     public AlbumResponse updateBgm(Long albumId, Long userId, AlbumBgmRequest request) {
         Album album = getAlbumOrThrow(albumId);
         checkOwner(album, userId);
-        if (request.getBgmUrl() != null) album.setBgmUrl(request.getBgmUrl());
-        if (request.getBgmVolume() != null) album.setBgmVolume(request.getBgmVolume());
-        albumMapper.updateById(album);
-        return toResponse(album);
-    }
 
+        if (Boolean.TRUE.equals(request.getClear())) {
+            clearBgm(album);
+        } else if (request.getSourceId() != null || StringUtils.hasText(request.getExternalMediaKey()) || StringUtils.hasText(request.getPath())) {
+            MediaSourceBrowseItemResponse externalItem = resolveExternalMediaItem(
+                    request.getSourceId(),
+                    userId,
+                    request.getPath(),
+                    request.getExternalMediaKey());
+            if (!isAudioMediaType(externalItem.getMediaType())) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "BGM 仅支持音频");
+            }
+            applyExternalBgm(album, externalItem);
+        } else if (request.getMediaId() != null) {
+            Media media = getOwnedReadyMedia(request.getMediaId(), userId);
+            if (!isAudioMediaType(media.getMediaType())) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "BGM 仅支持音频");
+            }
+            applyInternalBgm(album, media);
+        }
+
+        if (request.getBgmVolume() != null) {
+            album.setBgmVolume(request.getBgmVolume());
+        }
+
+        if (Boolean.TRUE.equals(request.getClear())) {
+            Album update = new Album();
+            update.setId(album.getId());
+            update.setBgmUrl(null);
+            update.setBgmMediaId(null);
+            update.setBgmSourceId(null);
+            update.setBgmSourceType(null);
+            update.setBgmSourceName(null);
+            update.setBgmExternalMediaKey(null);
+            update.setBgmPath(null);
+            update.setBgmFileName(null);
+            update.setBgmContentType(null);
+            update.setBgmMediaType(null);
+            update.setBgmVolume(album.getBgmVolume());
+            albumMapper.updateById(update);
+        } else {
+            albumMapper.updateById(album);
+        }
+        return toResponse(albumMapper.selectById(album.getId()));
+    }
     @Override
     public void writeAlbumCover(Long albumId, Long userId, HttpServletRequest request, HttpServletResponse response) {
         Album album = getAlbumOrThrow(albumId);
@@ -279,6 +319,38 @@ public class AlbumServiceImpl implements AlbumService {
                 request,
                 response,
                 "读取相册封面失败");
+    }
+
+    @Override
+    public void writeAlbumBgm(Long albumId, Long userId, HttpServletRequest request, HttpServletResponse response) {
+        Album album = getAlbumOrThrow(albumId);
+        checkAccess(album, userId);
+        if (hasExternalBgm(album)) {
+            mediaSourceService.writeMediaContent(
+                    album.getBgmSourceId(),
+                    album.getUserId(),
+                    album.getBgmPath(),
+                    false,
+                    request,
+                    response);
+            return;
+        }
+
+        Media bgmMedia = resolveBgmMedia(album);
+        if (bgmMedia != null) {
+            mediaHttpWriter.write(
+                    objectStorageMediaContentResolver.resolve(bgmMedia, false),
+                    request,
+                    response,
+                    "读取相册BGM失败");
+            return;
+        }
+
+        if (!StringUtils.hasText(album.getBgmUrl())) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "相册BGM不存在");
+        }
+
+        throw new BusinessException(ResultCode.NOT_FOUND, "相册BGM不存在");
     }
 
     private AlbumMedia addInternalContent(Long albumId, Long userId, AlbumAddContentRequest request) {
@@ -360,6 +432,45 @@ public class AlbumServiceImpl implements AlbumService {
         return item;
     }
 
+    private void clearBgm(Album album) {
+        album.setBgmUrl(null);
+        album.setBgmMediaId(null);
+        album.setBgmSourceId(null);
+        album.setBgmSourceType(null);
+        album.setBgmSourceName(null);
+        album.setBgmExternalMediaKey(null);
+        album.setBgmPath(null);
+        album.setBgmFileName(null);
+        album.setBgmContentType(null);
+        album.setBgmMediaType(null);
+    }
+
+    private void applyInternalBgm(Album album, Media media) {
+        clearBgm(album);
+        album.setBgmMediaId(media.getId());
+        album.setBgmFileName(media.getFileName());
+        album.setBgmContentType(media.getContentType());
+        album.setBgmMediaType(media.getMediaType());
+        album.setBgmUrl(buildContentUrl(media.getId()));
+    }
+
+    private void applyExternalBgm(Album album, MediaSourceBrowseItemResponse externalItem) {
+        clearBgm(album);
+        album.setBgmSourceId(externalItem.getSourceId());
+        album.setBgmSourceType(externalItem.getSourceType());
+        album.setBgmSourceName(externalItem.getSourceName());
+        album.setBgmExternalMediaKey(externalItem.getExternalMediaKey());
+        album.setBgmPath(externalItem.getPath());
+        album.setBgmFileName(firstText(externalItem.getFileName(), externalItem.getName()));
+        album.setBgmContentType(externalItem.getContentType());
+        album.setBgmMediaType(externalItem.getMediaType());
+        album.setBgmUrl(buildExternalContentUrl(externalItem.getSourceId(), externalItem.getPath()));
+    }
+
+    private boolean isAudioMediaType(String mediaType) {
+        return "AUDIO".equals(mediaType);
+    }
+
     private Album getAlbumOrThrow(Long albumId) {
         Album album = albumMapper.selectById(albumId);
         if (album == null) {
@@ -403,7 +514,16 @@ public class AlbumServiceImpl implements AlbumService {
         resp.setCoverFileName(album.getCoverFileName());
         resp.setCoverContentType(album.getCoverContentType());
         resp.setCoverMediaType(album.getCoverMediaType());
-        resp.setBgmUrl(album.getBgmUrl());
+        resp.setBgmUrl(buildBgmUrl(album));
+        resp.setBgmMediaId(album.getBgmMediaId());
+        resp.setBgmSourceId(album.getBgmSourceId());
+        resp.setBgmSourceType(album.getBgmSourceType());
+        resp.setBgmSourceName(album.getBgmSourceName());
+        resp.setBgmExternalMediaKey(album.getBgmExternalMediaKey());
+        resp.setBgmPath(album.getBgmPath());
+        resp.setBgmFileName(album.getBgmFileName());
+        resp.setBgmContentType(album.getBgmContentType());
+        resp.setBgmMediaType(album.getBgmMediaType());
         resp.setBgmVolume(album.getBgmVolume());
         resp.setVisibility(album.getVisibility());
         resp.setStatus(album.getStatus());
@@ -444,6 +564,37 @@ public class AlbumServiceImpl implements AlbumService {
         response.setUrl(buildExternalContentUrl(albumMedia.getSourceId(), albumMedia.getFilePath()));
         response.setThumbnailUrl(buildExternalThumbnailUrl(albumMedia.getSourceId(), albumMedia.getFilePath(), albumMedia.getMediaType()));
         return response;
+    }
+
+    private String buildBgmUrl(Album album) {
+        if (hasExternalBgm(album) || resolveBgmMedia(album) != null) {
+            return buildAlbumBgmUrl(album.getId());
+        }
+        return StringUtils.hasText(album.getBgmUrl()) ? album.getBgmUrl() : null;
+    }
+
+    private String buildAlbumBgmUrl(Long albumId) {
+        return ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/v1/albums/{id}/bgm")
+                .buildAndExpand(albumId)
+                .toUriString();
+    }
+
+    private Media resolveBgmMedia(Album album) {
+        if (album.getBgmMediaId() == null) {
+            return null;
+        }
+        Media media = mediaMapper.selectById(album.getBgmMediaId());
+        if (media == null || !Objects.equals(media.getUserId(), album.getUserId())) {
+            return null;
+        }
+        return media;
+    }
+
+    private boolean hasExternalBgm(Album album) {
+        return album.getBgmSourceId() != null
+                && StringUtils.hasText(album.getBgmExternalMediaKey())
+                && StringUtils.hasText(album.getBgmPath());
     }
 
     private String buildCoverUrl(Album album) {

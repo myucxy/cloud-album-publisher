@@ -42,6 +42,24 @@ public class Album {
 
     private String bgmUrl;
 
+    private Long bgmMediaId;
+
+    private Long bgmSourceId;
+
+    private String bgmSourceType;
+
+    private String bgmSourceName;
+
+    private String bgmExternalMediaKey;
+
+    private String bgmPath;
+
+    private String bgmFileName;
+
+    private String bgmContentType;
+
+    private String bgmMediaType;
+
     /** 音量 0-100 */
     private Integer bgmVolume;
 

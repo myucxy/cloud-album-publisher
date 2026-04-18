@@ -338,6 +338,46 @@ public class DeviceServiceImpl implements DeviceService {
     }
 
     @Override
+    public void writeDeviceAlbumBgm(Long deviceId,
+                                    Long albumId,
+                                    HttpServletRequest request,
+                                    HttpServletResponse response) {
+        Device device = getDevice(deviceId);
+        Album album = albumMapper.selectById(albumId);
+        if (album == null) {
+            throw new BusinessException(ResultCode.ALBUM_NOT_FOUND);
+        }
+        if (!Objects.equals(album.getUserId(), device.getUserId())) {
+            throw new BusinessException(ResultCode.ALBUM_ACCESS_DENIED);
+        }
+        if (!canDeviceAccessAlbum(album, true)) {
+            throw new BusinessException(ResultCode.ALBUM_ACCESS_DENIED);
+        }
+        if (hasExternalBgm(album)) {
+            mediaSourceService.writeMediaContent(
+                    album.getBgmSourceId(),
+                    album.getUserId(),
+                    album.getBgmPath(),
+                    false,
+                    request,
+                    response);
+            return;
+        }
+
+        Media bgmMedia = resolveBgmMedia(album);
+        if (bgmMedia != null) {
+            mediaHttpWriter.write(
+                    mediaContentResolverRegistry.resolve(bgmMedia, false),
+                    request,
+                    response,
+                    "读取相册BGM失败");
+            return;
+        }
+
+        throw new BusinessException(ResultCode.NOT_FOUND, "相册BGM不存在");
+    }
+
+    @Override
     public void writeDeviceExternalMediaContent(Long deviceId,
                                                 Long sourceId,
                                                 String path,
@@ -483,10 +523,37 @@ public class DeviceServiceImpl implements DeviceService {
         item.setTitle(album.getTitle());
         item.setDescription(album.getDescription());
         item.setCoverUrl(buildAlbumCoverUrl(album));
-        item.setBgmUrl(album.getBgmUrl());
+        item.setBgmUrl(buildAlbumBgmUrl(album));
         item.setBgmVolume(album.getBgmVolume());
         item.setVisibility(album.getVisibility());
         return item;
+    }
+
+    private String buildAlbumBgmUrl(Album album) {
+        if (hasExternalBgm(album) || resolveBgmMedia(album) != null) {
+            return ServletUriComponentsBuilder.fromCurrentContextPath()
+                    .path("/api/v1/devices/albums/{id}/bgm")
+                    .buildAndExpand(album.getId())
+                    .toUriString();
+        }
+        return album.getBgmUrl();
+    }
+
+    private boolean hasExternalBgm(Album album) {
+        return album.getBgmSourceId() != null
+                && StringUtils.hasText(album.getBgmExternalMediaKey())
+                && StringUtils.hasText(album.getBgmPath());
+    }
+
+    private Media resolveBgmMedia(Album album) {
+        if (album.getBgmMediaId() == null) {
+            return null;
+        }
+        Media media = mediaMapper.selectById(album.getBgmMediaId());
+        if (media == null || !Objects.equals(media.getUserId(), album.getUserId())) {
+            return null;
+        }
+        return media;
     }
 
     private DevicePullResponse.MediaItem toPullMediaItem(AlbumMedia albumMedia,

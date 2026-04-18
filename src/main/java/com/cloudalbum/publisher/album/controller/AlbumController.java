@@ -46,6 +46,14 @@ public class AlbumController {
         albumService.writeAlbumCover(id, SecurityUtil.getCurrentUserId(), request, response);
     }
 
+    @Operation(summary = "访问相册BGM")
+    @GetMapping("/{id}/bgm")
+    public void getAlbumBgm(@PathVariable Long id,
+                            HttpServletRequest request,
+                            HttpServletResponse response) {
+        albumService.writeAlbumBgm(id, SecurityUtil.getCurrentUserId(), request, response);
+    }
+
     @Operation(summary = "创建相册")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)

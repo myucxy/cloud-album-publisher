@@ -45,6 +45,11 @@ public interface DeviceService {
                                HttpServletRequest request,
                                HttpServletResponse response);
 
+    void writeDeviceAlbumBgm(Long deviceId,
+                             Long albumId,
+                             HttpServletRequest request,
+                             HttpServletResponse response);
+
     void writeDeviceExternalMediaContent(Long deviceId,
                                          Long sourceId,
                                          String path,
