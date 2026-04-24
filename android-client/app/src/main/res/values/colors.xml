@@ -1,0 +1,18 @@
+<resources>
+    <color name="ca_background">#0F172A</color>
+    <color name="ca_surface">#111827</color>
+    <color name="ca_surface_alt">#1F2937</color>
+    <color name="ca_surface_light">#F3F4F6</color>
+    <color name="ca_primary">#2563EB</color>
+    <color name="ca_primary_dark">#1D4ED8</color>
+    <color name="ca_primary_text">#FFFFFF</color>
+    <color name="ca_text_primary">#F9FAFB</color>
+    <color name="ca_text_secondary">#CBD5E1</color>
+    <color name="ca_text_dark">#111827</color>
+    <color name="ca_border">#334155</color>
+    <color name="ca_success">#16A34A</color>
+    <color name="ca_warning">#D97706</color>
+    <color name="ca_error">#DC2626</color>
+    <color name="ca_focus">#60A5FA</color>
+    <color name="ca_overlay">#990F172A</color>
+</resources>

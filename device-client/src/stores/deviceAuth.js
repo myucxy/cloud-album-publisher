@@ -1,8 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { authApi } from '@/api/auth'
 import { deviceApi } from '@/api/device'
-import { sanitizeBaseUrl } from '@/api/request'
+import { sanitizeServerAddress } from '@/api/request'
 
 function getFallbackIdentity() {
   const existingUid = localStorage.getItem('device_fallback_uid')
@@ -41,14 +40,13 @@ function resolveDeviceType(platform) {
 
 export const useDeviceAuthStore = defineStore('deviceAuth', () => {
   const initialized = ref(false)
-  const serverBaseUrl = ref(localStorage.getItem('device_server_base_url') || 'http://localhost:8080')
+  const serverBaseUrl = ref(sanitizeServerAddress(localStorage.getItem('device_server_base_url') || 'localhost:8080'))
   const deviceUid = ref(localStorage.getItem('device_uid') || '')
   const deviceId = ref(localStorage.getItem('device_id') || '')
   const deviceName = ref(localStorage.getItem('device_name') || '')
   const deviceAccessToken = ref(localStorage.getItem('device_access_token') || '')
   const platform = ref(localStorage.getItem('device_platform') || '')
   const hostname = ref(localStorage.getItem('device_hostname') || '')
-  const ownerUsername = ref(sessionStorage.getItem('owner_username') || '')
 
   const isActivated = computed(() => Boolean(deviceAccessToken.value))
   const deviceType = computed(() => resolveDeviceType(platform.value))
@@ -78,30 +76,11 @@ export const useDeviceAuthStore = defineStore('deviceAuth', () => {
   }
 
   function saveSettings(payload = {}) {
-    serverBaseUrl.value = sanitizeBaseUrl(payload.serverBaseUrl ?? serverBaseUrl.value)
+    serverBaseUrl.value = sanitizeServerAddress(payload.serverBaseUrl ?? serverBaseUrl.value)
     deviceName.value = String(payload.deviceName ?? deviceName.value).trim() || hostname.value || deviceUid.value
 
     localStorage.setItem('device_server_base_url', serverBaseUrl.value)
     localStorage.setItem('device_name', deviceName.value)
-  }
-
-  async function loginOwner(credentials) {
-    const res = await authApi.login(credentials)
-    const data = res.data
-
-    sessionStorage.setItem('owner_access_token', data.accessToken)
-    sessionStorage.setItem('owner_refresh_token', data.refreshToken)
-    sessionStorage.setItem('owner_username', data.username)
-    ownerUsername.value = data.username
-
-    return data
-  }
-
-  function clearOwnerSession() {
-    ownerUsername.value = ''
-    sessionStorage.removeItem('owner_access_token')
-    sessionStorage.removeItem('owner_refresh_token')
-    sessionStorage.removeItem('owner_username')
   }
 
   function clearDeviceSession() {
@@ -111,19 +90,25 @@ export const useDeviceAuthStore = defineStore('deviceAuth', () => {
     localStorage.removeItem('device_id')
   }
 
-  async function bindCurrentDevice() {
-    const res = await deviceApi.bind({
+  async function registerCurrentDevice() {
+    const res = await deviceApi.selfRegister({
       deviceUid: deviceUid.value,
       type: deviceType.value,
       name: deviceName.value || hostname.value || deviceUid.value
     })
-
+    if (res.data?.id !== undefined && res.data?.id !== null) {
+      deviceId.value = String(res.data.id)
+      localStorage.setItem('device_id', deviceId.value)
+    }
     return res.data
   }
 
   async function issueDeviceToken() {
-    const res = await deviceApi.createAccessToken(deviceUid.value)
+    const res = await deviceApi.createSelfAccessToken(deviceUid.value)
     const data = res.data
+    if (!data?.accessToken) {
+      throw new Error(res.message || '设备令牌为空，请先确认设备已在后台完成绑定')
+    }
 
     deviceAccessToken.value = data.accessToken
     deviceId.value = String(data.deviceId)
@@ -132,26 +117,16 @@ export const useDeviceAuthStore = defineStore('deviceAuth', () => {
     return data
   }
 
-  async function activateDevice(credentials) {
+  async function registerAndTryActivate() {
     await initializeIdentity()
     saveSettings()
-    await loginOwner(credentials)
-
+    await registerCurrentDevice()
     try {
-      await bindCurrentDevice()
+      return await issueDeviceToken()
     } catch (error) {
-      if (error.response?.status !== 409) {
-        clearOwnerSession()
-        throw error
+      if (error.response?.status === 409) {
+        return null
       }
-    }
-
-    try {
-      const tokenData = await issueDeviceToken()
-      clearOwnerSession()
-      return tokenData
-    } catch (error) {
-      clearOwnerSession()
       throw error
     }
   }
@@ -165,16 +140,13 @@ export const useDeviceAuthStore = defineStore('deviceAuth', () => {
     deviceAccessToken,
     platform,
     hostname,
-    ownerUsername,
     isActivated,
     deviceType,
     initializeIdentity,
     saveSettings,
-    loginOwner,
-    clearOwnerSession,
     clearDeviceSession,
-    bindCurrentDevice,
+    registerCurrentDevice,
     issueDeviceToken,
-    activateDevice
+    registerAndTryActivate
   }
 })

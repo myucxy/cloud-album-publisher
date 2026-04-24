@@ -1,38 +1,30 @@
 <template>
   <div class="activate-page">
     <div class="activate-layout">
-      <a-card class="summary-card" title="设备摘要">
+      <a-card class="summary-card" title="等待管理员绑定设备">
         <a-descriptions :column="1" size="small">
           <a-descriptions-item label="设备 UID">{{ deviceAuth.deviceUid || '-' }}</a-descriptions-item>
           <a-descriptions-item label="设备名称">{{ deviceAuth.deviceName || '-' }}</a-descriptions-item>
           <a-descriptions-item label="设备类型">{{ deviceAuth.deviceType }}</a-descriptions-item>
           <a-descriptions-item label="服务器地址">{{ deviceAuth.serverBaseUrl }}</a-descriptions-item>
         </a-descriptions>
-        <a-alert style="margin-top: 16px" type="info" show-icon message="登录成功后将自动完成设备绑定并签发设备访问令牌。" />
+        <a-alert style="margin-top: 16px" type="info" show-icon message="当前设备已注册到服务器，请在后台设备管理中完成绑定。绑定完成后会自动进入播放器。" />
       </a-card>
 
-      <a-card class="form-card" title="登录并激活设备">
-        <a-form layout="vertical" :model="form" @finish="submit">
-          <a-form-item label="用户名" name="username" :rules="[{ required: true, message: '请输入用户名' }]">
-            <a-input v-model:value="form.username" placeholder="请输入用户名" size="large" />
-          </a-form-item>
-          <a-form-item label="密码" name="password" :rules="[{ required: true, message: '请输入密码' }]">
-            <a-input-password v-model:value="form.password" placeholder="请输入密码" size="large" />
-          </a-form-item>
-          <a-space direction="vertical" style="width: 100%">
-            <a-button type="primary" html-type="submit" block size="large" :loading="loading">
-              登录并激活
-            </a-button>
-            <a-button block @click="router.push('/setup')">返回设置</a-button>
-          </a-space>
-        </a-form>
+      <a-card class="form-card" title="绑定状态检查">
+        <a-space direction="vertical" style="width: 100%">
+          <a-button type="primary" block size="large" :loading="loading" @click="checkBinding">
+            立即检查绑定状态
+          </a-button>
+          <a-button block @click="router.push('/setup')">返回设置</a-button>
+        </a-space>
       </a-card>
     </div>
   </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useDeviceAuthStore } from '@/stores/deviceAuth'
@@ -40,22 +32,38 @@ import { useDeviceAuthStore } from '@/stores/deviceAuth'
 const router = useRouter()
 const deviceAuth = useDeviceAuthStore()
 const loading = ref(false)
-const form = reactive({
-  username: '',
-  password: ''
-})
+let pollTimer = null
 
 onMounted(async () => {
   await deviceAuth.initializeIdentity()
   deviceAuth.saveSettings()
+  await checkBinding()
+  pollTimer = window.setInterval(() => {
+    checkBinding(false)
+  }, 15000)
 })
 
-async function submit() {
+onBeforeUnmount(() => {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+})
+
+async function checkBinding(showToast = true) {
   loading.value = true
   try {
-    await deviceAuth.activateDevice(form)
-    message.success('设备已激活')
-    router.push('/player')
+    const activated = await deviceAuth.registerAndTryActivate()
+    if (activated) {
+      if (showToast) {
+        message.success('设备已激活')
+      }
+      router.push('/player')
+      return
+    }
+    if (showToast) {
+      message.info('设备已注册，等待后台绑定')
+    }
   } finally {
     loading.value = false
   }

@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Getter
 @Setter
@@ -22,6 +23,10 @@ public class DeviceResponse {
     private LocalDateTime lastHeartbeatAt;
 
     private LocalDateTime boundAt;
+
+    private List<Long> groupIds;
+
+    private List<String> groupNames;
 
     private LocalDateTime updatedAt;
 }

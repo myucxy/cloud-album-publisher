@@ -10,6 +10,12 @@ dist/
 *.log
 application-prod.yml
 .env
+/android-client/.gradle/
+/android-client/local.properties
+/android-client/build/
+/android-client/app/build/
+*.apk
+*.aab
 /device-client/node_modules/.bin/conc
 /device-client/node_modules/.bin/conc.cmd
 /device-client/node_modules/.bin/conc.ps1
@@ -23068,3 +23074,22 @@ application-prod.yml
 /device-client/node_modules/yauzl/package.json
 /device-client/node_modules/yauzl/README.md
 /device-client/node_modules/.package-lock.json
+
+# Dependency directories
+node_modules/
+/frontend/node_modules/
+/device-client/node_modules/
+
+# Local runtime data
+/data/
+/logs/
+/.playwright-mcp/
+
+# Claude local state
+/.claude/settings.local.json
+/.claude/worktrees/
+
+# Android local tooling and caches
+/android-client/.android-user-home/
+/android-client/.gradle-user-home/
+/android-client/.tools/

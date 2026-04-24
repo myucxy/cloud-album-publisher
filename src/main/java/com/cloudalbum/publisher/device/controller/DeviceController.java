@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -30,11 +31,39 @@ public class DeviceController {
         return Result.success(deviceService.listDevices(SecurityUtil.getCurrentUserId()));
     }
 
+    @Operation(summary = "获取未绑定设备列表")
+    @GetMapping("/unbound")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Result<List<DeviceResponse>> listUnboundDevices() {
+        return Result.success(deviceService.listUnboundDevices());
+    }
+
+    @Operation(summary = "设备自注册为未绑定状态")
+    @PostMapping("/self/register")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Result<DeviceResponse> selfRegister(@Valid @RequestBody DeviceSelfRegisterRequest request) {
+        return Result.success(deviceService.registerUnboundDevice(request));
+    }
+
     @Operation(summary = "绑定设备")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Result<DeviceResponse> bindDevice(@Valid @RequestBody DeviceBindRequest request) {
         return Result.success(deviceService.bindDevice(SecurityUtil.getCurrentUserId(), request));
+    }
+
+    @Operation(summary = "绑定未绑定设备")
+    @PatchMapping("/{id}/bind")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Result<DeviceResponse> bindUnboundDevice(@PathVariable Long id,
+                                                    @Valid @RequestBody AdminDeviceBindRequest request) {
+        return Result.success(deviceService.bindUnboundDevice(SecurityUtil.getCurrentUserId(), id, request));
+    }
+
+    @Operation(summary = "设备自助获取访问令牌")
+    @PostMapping("/self/token")
+    public Result<DeviceTokenResponse> createSelfAccessToken(@Valid @RequestBody DeviceTokenRequest request) {
+        return Result.success(deviceService.createAccessTokenForCurrentDevice(request));
     }
 
     @Operation(summary = "为设备签发访问令牌")

@@ -33,8 +33,7 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('roles', JSON.stringify(data.roles || []))
   }
 
-  async function logout() {
-    try { await authApi.logout() } catch { /* ignore */ }
+  function clearAuth() {
     accessToken.value = ''
     userId.value = ''
     username.value = ''
@@ -46,5 +45,10 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('roles')
   }
 
-  return { accessToken, userId, username, roles, isLoggedIn, isAdmin, login, register, logout }
+  async function logout() {
+    try { await authApi.logout() } catch { /* ignore */ }
+    clearAuth()
+  }
+
+  return { accessToken, userId, username, roles, isLoggedIn, isAdmin, login, register, logout, clearAuth }
 })

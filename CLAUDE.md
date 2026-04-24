@@ -38,17 +38,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Start Electron against built assets:
   - `npm run start`
 
-### Local infrastructure
-- Start MySQL / Redis / MinIO via Docker Compose:
-  - `docker-compose up -d`
-- Check container health:
-  - `docker-compose ps`
-- Stop services:
-  - `docker-compose down`
-- Stop and remove volumes:
-  - `docker-compose down -v`
+### Android client (`android-client/`)
+- Build debug apk:
+  - `gradle -p android-client :app:assembleDebug`
+- Build debug apk with isolated Gradle home (avoids machine-global init scripts interfering):
+  - `GRADLE_USER_HOME="android-client/.gradle-user-home" gradle -p android-client :app:assembleDebug --no-daemon`
+- If local Android SDK is not auto-detected, set `android-client/local.properties` with `sdk.dir=...`
 
-## Runtime and environment notes
 
 - Default `application.yml` uses MySQL + Redis + MinIO; default profile is `dev`.
 - `application-dev.yml` switches the backend to H2 file DB at `./data/cloud_album.mv.db` and always runs `src/main/resources/db/h2/schema.sql` on startup.

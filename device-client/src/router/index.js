@@ -16,8 +16,7 @@ const routes = [
   },
   {
     path: '/player',
-    component: () => import('@/views/PlayerView.vue'),
-    meta: { requiresDeviceToken: true }
+    component: () => import('@/views/PlayerView.vue')
   },
   {
     path: '/:pathMatch(.*)*',
@@ -33,8 +32,8 @@ const router = createRouter({
 router.beforeEach((to) => {
   const hasDeviceToken = Boolean(localStorage.getItem('device_access_token'))
 
-  if (to.meta.requiresDeviceToken && !hasDeviceToken) {
-    return '/setup'
+  if (to.path === '/player' && !hasDeviceToken) {
+    return '/activate'
   }
 
   if (to.meta.guestOnly && hasDeviceToken) {

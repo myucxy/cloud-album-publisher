@@ -43,6 +43,7 @@ public enum ResultCode {
     DEVICE_NOT_FOUND(404, "设备不存在"),
     DEVICE_ACCESS_DENIED(403, "无权访问该设备"),
     DEVICE_ALREADY_BOUND(409, "设备已被绑定"),
+    DEVICE_NOT_BOUND(409, "设备尚未绑定"),
     DEVICE_GROUP_NOT_FOUND(404, "设备组不存在"),
     DEVICE_GROUP_MEMBER_EXISTS(409, "设备已在该分组中"),
     DEVICE_GROUP_MEMBER_NOT_FOUND(404, "设备不在该分组中"),

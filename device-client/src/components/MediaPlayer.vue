@@ -26,6 +26,7 @@
       ref="videoRef"
       class="video-content"
       :src="mediaResolvedUrl"
+      :muted="muted"
       autoplay
       playsinline
       controls
@@ -43,6 +44,7 @@
         ref="audioRef"
         class="audio-element"
         :src="mediaResolvedUrl"
+        :muted="muted"
         autoplay
         controls
         @loadeddata="handleMediaLoaded"
@@ -72,6 +74,10 @@ const props = defineProps({
     default: null
   },
   loading: {
+    type: Boolean,
+    default: false
+  },
+  muted: {
     type: Boolean,
     default: false
   }
@@ -131,7 +137,7 @@ function resolveMediaElementErrorMessage(mediaLabel, element) {
   const errorCode = element?.error?.code
   const detail = mediaErrorMap[errorCode]
   if (detail) {
-    return `${detail}（${media?.fileName || '未命名文件'}）`
+    return `${detail}：${media?.fileName || '未命名文件'}`
   }
   return media?.fileName ? `${media.fileName} ${mediaLabel}无法播放` : `当前${mediaLabel}无法播放`
 }
@@ -149,6 +155,19 @@ watch(mediaResolveError, value => {
     handleMediaError()
   }
 })
+
+watch(
+  () => props.muted,
+  value => {
+    if (videoRef.value) {
+      videoRef.value.muted = value
+    }
+    if (audioRef.value) {
+      audioRef.value.muted = value
+    }
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>
@@ -209,4 +228,3 @@ watch(mediaResolveError, value => {
   width: min(480px, 100%);
 }
 </style>
-

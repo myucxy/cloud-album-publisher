@@ -3,19 +3,32 @@
     <div>
       <div class="device-card">
         <div class="device-title">{{ device.deviceName || device.hostname || device.deviceUid }}</div>
-        <div class="device-meta">UID：{{ device.deviceUid || '-' }}</div>
-        <div class="device-meta">服务器：{{ device.serverBaseUrl }}</div>
-        <div class="device-meta">设备类型：{{ device.deviceType }}</div>
+        <div class="device-meta">UID: {{ device.deviceUid || '-' }}</div>
+        <div class="device-meta">服务器: {{ device.serverBaseUrl }}</div>
+        <div class="device-meta">设备类型: {{ device.deviceType }}</div>
         <a-tag :color="syncColor">{{ syncLabel }}</a-tag>
       </div>
 
-      <div class="section-title">分发队列</div>
-      <a-list :data-source="distributions" size="small" :locale="{ emptyText: '暂无分发内容' }">
-        <template #renderItem="{ item, index }">
-          <a-list-item class="distribution-item" :class="{ active: index === currentDistributionIndex }" @click="$emit('select-distribution', index)">
-            <div class="distribution-name">{{ item.name }}</div>
-            <div class="distribution-meta">
-              {{ item.mediaList?.length || 0 }} 项 · {{ item.shuffle ? '随机' : '顺序' }} · {{ item.loopPlay === false ? '单次' : '循环' }}
+      <div class="section-header">
+        <div class="section-title">播放分组</div>
+        <div class="section-summary">已启用 {{ enabledDistributionCount }} / {{ playableDistributions.length }}</div>
+      </div>
+
+      <a-list :data-source="playableDistributions" size="small" :locale="{ emptyText: '暂无可播放分组' }">
+        <template #renderItem="{ item }">
+          <a-list-item class="distribution-item" :class="{ active: item.id === currentDistributionId }" @click="$emit('select-distribution', item.id)">
+            <div class="distribution-row">
+              <a-checkbox
+                :checked="isDistributionEnabled(item.id)"
+                @click.stop
+                @change="event => handleDistributionToggle(item.id, event)"
+              />
+              <div class="distribution-body">
+                <div class="distribution-name">{{ item.name || '未命名分组' }}</div>
+                <div class="distribution-meta">
+                  {{ item.mediaList?.length || 0 }} 个媒体 · {{ item.shuffle ? '随机' : '顺序' }} · {{ item.loopPlay === false ? '单次' : '循环' }}
+                </div>
+              </div>
             </div>
           </a-list-item>
         </template>
@@ -26,10 +39,21 @@
       <div class="section-title">当前播放</div>
       <div class="now-card">
         <div class="now-name">{{ currentMedia?.fileName || '暂无媒体' }}</div>
-        <div class="device-meta">分发：{{ currentDistribution?.name || '-' }}</div>
-        <div class="device-meta">相册：{{ currentDistribution?.album?.title || '-' }}</div>
-        <div class="device-meta">最近同步：{{ pulledAt || '-' }}</div>
+        <div class="device-meta">分组: {{ currentDistribution?.name || '-' }}</div>
+        <div class="device-meta">相册: {{ currentDistribution?.album?.title || '-' }}</div>
+        <div class="device-meta">最近同步: {{ pulledAt || '-' }}</div>
         <div v-if="errorMessage" class="error-text">{{ errorMessage }}</div>
+      </div>
+
+      <div class="mute-card">
+        <div class="section-title">声音设置</div>
+        <div class="mute-row">
+          <div>
+            <div class="distribution-name">静音播放</div>
+            <div class="device-meta">{{ playbackMuted ? '当前已静音' : '当前已开启声音' }}</div>
+          </div>
+          <a-switch :checked="playbackMuted" @change="value => $emit('toggle-mute', value)" />
+        </div>
       </div>
 
       <a-space direction="vertical" style="width: 100%; margin-top: 16px">
@@ -52,9 +76,9 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
-  currentDistributionIndex: {
-    type: Number,
-    default: 0
+  currentDistributionId: {
+    type: [Number, String],
+    default: null
   },
   currentDistribution: {
     type: Object,
@@ -75,10 +99,26 @@ const props = defineProps({
   errorMessage: {
     type: String,
     default: ''
+  },
+  playbackMuted: {
+    type: Boolean,
+    default: false
+  },
+  disabledDistributionIds: {
+    type: Array,
+    default: () => []
   }
 })
 
-defineEmits(['select-distribution', 'refresh', 'open-setup'])
+const emit = defineEmits(['select-distribution', 'toggle-distribution', 'toggle-mute', 'refresh', 'open-setup'])
+
+const playableDistributions = computed(() => {
+  return props.distributions.filter(item => Array.isArray(item?.mediaList) && item.mediaList.length > 0)
+})
+
+const enabledDistributionCount = computed(() => {
+  return playableDistributions.value.filter(item => !props.disabledDistributionIds.includes(String(item.id))).length
+})
 
 const syncColor = computed(() => {
   if (props.syncStatus === 'ready') return 'green'
@@ -93,6 +133,17 @@ const syncLabel = computed(() => {
   if (props.syncStatus === 'error') return '同步失败'
   return '未开始'
 })
+
+function isDistributionEnabled(distributionId) {
+  return !props.disabledDistributionIds.includes(String(distributionId))
+}
+
+function handleDistributionToggle(distributionId, event) {
+  emit('toggle-distribution', {
+    distributionId,
+    enabled: Boolean(event?.target?.checked)
+  })
+}
 </script>
 
 <style scoped>
@@ -105,7 +156,8 @@ const syncLabel = computed(() => {
 }
 
 .device-card,
-.now-card {
+.now-card,
+.mute-card {
   padding: 16px;
   border-radius: 16px;
   background: rgba(15, 23, 42, 0.9);
@@ -121,14 +173,22 @@ const syncLabel = computed(() => {
 }
 
 .device-meta,
-.distribution-meta {
+.distribution-meta,
+.section-summary {
   margin-top: 6px;
   color: rgba(255, 255, 255, 0.68);
   font-size: 13px;
 }
 
-.section-title {
+.section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
   margin: 18px 0 10px;
+}
+
+.section-title {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -150,9 +210,31 @@ const syncLabel = computed(() => {
   background: rgba(30, 41, 59, 0.9);
 }
 
+.distribution-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.distribution-body {
+  min-width: 0;
+  flex: 1;
+}
+
 .error-text {
   margin-top: 10px;
   color: #fda4af;
   font-size: 13px;
+}
+
+.mute-card {
+  margin-top: 16px;
+}
+
+.mute-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 </style>

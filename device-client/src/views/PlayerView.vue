@@ -11,13 +11,17 @@
       <PlaylistSidebar
         :device="deviceSummary"
         :distributions="player.distributions"
-        :current-distribution-index="player.currentDistributionIndex"
+        :current-distribution-id="currentDistribution?.id ?? null"
         :current-distribution="currentDistribution"
         :current-media="currentMedia"
         :pulled-at="player.pulledAt"
         :sync-status="player.syncStatus"
         :error-message="sidebarErrorMessage"
+        :playback-muted="player.playbackMuted"
+        :disabled-distribution-ids="player.disabledDistributionIds"
         @select-distribution="player.selectDistribution"
+        @toggle-distribution="handleDistributionToggle"
+        @toggle-mute="handleMuteToggle"
         @refresh="refresh"
         @open-setup="router.push('/setup')"
       />
@@ -31,13 +35,14 @@
         :aria-label="sidebarVisible ? '隐藏侧边栏' : '显示侧边栏'"
         @click="sidebarVisible = !sidebarVisible"
       >
-        {{ sidebarVisible ? '‹' : '›' }}
+        {{ sidebarVisible ? '<' : '>' }}
       </button>
 
       <div class="stage">
         <MediaPlayer
           :media="currentMedia"
           :album="currentDistribution?.album"
+          :muted="player.playbackMuted"
           :loading="player.syncStatus === 'loading' && !player.currentMedia"
           @ended="player.nextMedia"
           @loaded="handleMediaLoaded"
@@ -53,29 +58,33 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import MediaPlayer from '@/components/MediaPlayer.vue'
 import PlaylistSidebar from '@/components/PlaylistSidebar.vue'
-import { useSecureObjectUrl } from '@/components/useSecureObjectUrl'
+import { useSecureObjectUrl, warmSecureObjectUrl } from '@/components/useSecureObjectUrl'
 import { useDeviceAuthStore } from '@/stores/deviceAuth'
 import { usePlayerStore, resolveMediaIdentity } from '@/stores/player'
+
+const IMAGE_ADVANCE_RETRY_DELAY_MS = 300
+const IMAGE_ADVANCE_MAX_RETRY_COUNT = 10
 
 const router = useRouter()
 const deviceAuth = useDeviceAuthStore()
 const player = usePlayerStore()
 const bgmRef = ref()
 const sidebarVisible = ref(true)
-const bgmIndex = ref(0)
+const showSidebarHandle = ref(false)
+const imageAdvanceRetryCount = ref(0)
 
 let imageTimer = null
 let syncTimer = null
 let mediaErrorAdvanceTimer = null
+let bgmErrorAdvanceTimer = null
 let sidebarHandleTimer = null
+const preloadedImageIdentities = new Set()
 
 const currentDistribution = computed(() => player.currentDistribution)
 const currentMedia = computed(() => player.currentMedia)
 const sidebarErrorMessage = computed(() => player.errorMessage || player.mediaErrorMessage || player.bgmErrorMessage)
-const bgmList = computed(() => currentDistribution.value?.album?.bgmList || [])
-const currentBgm = computed(() => bgmList.value[bgmIndex.value] || null)
-const bgmUrl = computed(() => currentBgm.value?.url || currentDistribution.value?.album?.bgmUrl || '')
-const { resolvedSrc: resolvedBgmUrl, error: bgmResolveError } = useSecureObjectUrl(bgmUrl)
+const resolvedBgmInputUrl = computed(() => player.currentBgmUrl)
+const { resolvedSrc: resolvedBgmUrl, error: bgmResolveError } = useSecureObjectUrl(resolvedBgmInputUrl)
 
 const deviceSummary = computed(() => ({
   deviceUid: deviceAuth.deviceUid,
@@ -120,6 +129,49 @@ function clearMediaErrorAdvanceTimer() {
   }
 }
 
+function clearBgmErrorAdvanceTimer() {
+  if (bgmErrorAdvanceTimer) {
+    clearTimeout(bgmErrorAdvanceTimer)
+    bgmErrorAdvanceTimer = null
+  }
+}
+
+function preloadNextImage() {
+  const nextMedia = player.peekNextMedia()
+  if (!nextMedia || nextMedia.mediaType !== 'IMAGE') {
+    return
+  }
+
+  const nextMediaIdentity = resolveMediaIdentity(nextMedia)
+  if (preloadedImageIdentities.has(nextMediaIdentity)) {
+    return
+  }
+
+  warmSecureObjectUrl(nextMedia.url)
+    .then(() => {
+      preloadedImageIdentities.add(nextMediaIdentity)
+    })
+    .catch(() => {
+      preloadedImageIdentities.delete(nextMediaIdentity)
+    })
+}
+
+function advanceImageWhenReady() {
+  const nextMedia = player.peekNextMedia()
+  if (nextMedia?.mediaType === 'IMAGE') {
+    const nextMediaIdentity = resolveMediaIdentity(nextMedia)
+    if (!preloadedImageIdentities.has(nextMediaIdentity) && imageAdvanceRetryCount.value < IMAGE_ADVANCE_MAX_RETRY_COUNT) {
+      imageAdvanceRetryCount.value += 1
+      preloadNextImage()
+      imageTimer = window.setTimeout(advanceImageWhenReady, IMAGE_ADVANCE_RETRY_DELAY_MS)
+      return
+    }
+  }
+
+  imageAdvanceRetryCount.value = 0
+  player.nextMedia()
+}
+
 function scheduleImageAdvance() {
   clearImageTimer()
 
@@ -130,9 +182,7 @@ function scheduleImageAdvance() {
   }
 
   const durationSeconds = media.itemDuration || distribution?.itemDuration || 10
-  imageTimer = window.setTimeout(() => {
-    player.nextMedia()
-  }, durationSeconds * 1000)
+  imageTimer = window.setTimeout(advanceImageWhenReady, durationSeconds * 1000)
 }
 
 function scheduleMediaErrorAdvance() {
@@ -147,6 +197,18 @@ function scheduleMediaErrorAdvance() {
   }, 1500)
 }
 
+function scheduleBgmErrorAdvance() {
+  clearBgmErrorAdvanceTimer()
+
+  if (!player.currentBgmUrl) {
+    return
+  }
+
+  bgmErrorAdvanceTimer = window.setTimeout(() => {
+    player.nextBgm()
+  }, 1500)
+}
+
 function handleMediaLoaded() {
   player.clearMediaError()
 }
@@ -156,16 +218,21 @@ function handleMediaError(message) {
   scheduleMediaErrorAdvance()
 }
 
-function moveToNextBgm() {
-  if (!bgmList.value.length) {
-    bgmIndex.value = 0
-    return
-  }
-  bgmIndex.value = (bgmIndex.value + 1) % bgmList.value.length
+function handleBgmEnded() {
+  player.nextBgm()
 }
 
-function handleBgmEnded() {
-  moveToNextBgm()
+function handleBgmError() {
+  player.setBgmError('背景音乐播放失败')
+  scheduleBgmErrorAdvance()
+}
+
+function handleDistributionToggle(payload) {
+  player.setDistributionEnabled(payload.distributionId, payload.enabled)
+}
+
+function handleMuteToggle(value) {
+  player.setPlaybackMuted(value)
 }
 
 async function refresh() {
@@ -188,20 +255,31 @@ watch(
   () => {
     clearMediaErrorAdvanceTimer()
     player.clearMediaError()
-    player.clearBgmError()
-    bgmIndex.value = 0
+    imageAdvanceRetryCount.value = 0
+
+    if (!currentMedia.value) {
+      clearImageTimer()
+      return
+    }
+
+    const currentMediaIdentity = resolveMediaIdentity(currentMedia.value)
+    if (currentMedia.value.mediaType === 'IMAGE' && currentMediaIdentity) {
+      preloadedImageIdentities.add(currentMediaIdentity)
+      preloadNextImage()
+    }
+
     scheduleImageAdvance()
   },
   { immediate: true }
 )
 
 watch(
-  () => currentDistribution.value?.album?.bgmList,
+  () => [player.currentBgm?.url, currentDistribution.value?.id],
   () => {
+    clearBgmErrorAdvanceTimer()
     player.clearBgmError()
-    bgmIndex.value = 0
   },
-  { immediate: true, deep: true }
+  { immediate: true }
 )
 
 watch(bgmResolveError, value => {
@@ -211,7 +289,7 @@ watch(bgmResolveError, value => {
 })
 
 watch(
-  () => [resolvedBgmUrl.value, currentDistribution.value?.album?.bgmVolume, currentMedia.value?.mediaType, bgmIndex.value],
+  () => [resolvedBgmUrl.value, player.currentBgmVolume, currentMedia.value?.mediaType, player.currentBgmIndex, player.playbackMuted],
   async () => {
     const audio = bgmRef.value
     if (!audio) {
@@ -219,9 +297,8 @@ watch(
     }
 
     const hasBgm = Boolean(resolvedBgmUrl.value)
-
-    audio.volume = Math.min(Math.max((currentDistribution.value?.album?.bgmVolume ?? 40) / 100, 0), 1)
-    audio.muted = currentMedia.value?.mediaType === 'VIDEO'
+    audio.volume = Math.min(Math.max(player.currentBgmVolume / 100, 0), 1)
+    audio.muted = player.playbackMuted || currentMedia.value?.mediaType === 'VIDEO'
 
     if (!hasBgm) {
       player.clearBgmError()
@@ -240,7 +317,7 @@ watch(
     try {
       await audio.play()
     } catch {
-      // ignore autoplay failures in renderer
+      // Ignore autoplay failures in the renderer process.
     }
   },
   { immediate: true }
@@ -255,6 +332,7 @@ onBeforeUnmount(() => {
   clearSidebarHandleTimer()
   clearImageTimer()
   clearMediaErrorAdvanceTimer()
+  clearBgmErrorAdvanceTimer()
   if (syncTimer) {
     clearInterval(syncTimer)
     syncTimer = null

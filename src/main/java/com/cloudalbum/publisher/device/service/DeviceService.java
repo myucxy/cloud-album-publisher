@@ -10,7 +10,13 @@ public interface DeviceService {
 
     List<DeviceResponse> listDevices(Long userId);
 
+    List<DeviceResponse> listUnboundDevices();
+
+    DeviceResponse registerUnboundDevice(DeviceSelfRegisterRequest request);
+
     DeviceResponse bindDevice(Long userId, DeviceBindRequest request);
+
+    DeviceResponse bindUnboundDevice(Long userId, Long deviceId, AdminDeviceBindRequest request);
 
     void unbindDevice(Long userId, Long deviceId);
 
@@ -19,6 +25,8 @@ public interface DeviceService {
     DeviceResponse updateDeviceStatus(Long userId, Long deviceId, DeviceStatusUpdateRequest request);
 
     DeviceTokenResponse createAccessToken(Long userId, DeviceTokenRequest request);
+
+    DeviceTokenResponse createAccessTokenForCurrentDevice(DeviceTokenRequest request);
 
     DevicePullResponse pullContent(Long userId, String deviceUid);
 

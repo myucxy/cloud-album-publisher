@@ -31,7 +31,10 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const auth = useAuthStore()
-  if (to.meta.requiresAuth && !auth.isLoggedIn) return '/login'
+  if (to.meta.requiresAuth && (!auth.isLoggedIn || !auth.username)) {
+    auth.clearAuth()
+    return { path: '/login', query: { redirect: to.fullPath } }
+  }
   if (to.meta.guest && auth.isLoggedIn) return '/'
   if (to.meta.adminOnly && !auth.isAdmin) return '/albums'
 })

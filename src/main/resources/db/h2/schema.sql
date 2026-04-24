@@ -170,6 +170,7 @@ CREATE TABLE IF NOT EXISTS t_distribution_device (
     CONSTRAINT uk_dist_group UNIQUE (distribution_id, group_id)
 );
 
+ALTER TABLE t_distribution_device ALTER COLUMN device_id BIGINT NULL;
 ALTER TABLE t_distribution_device ADD COLUMN IF NOT EXISTS group_id BIGINT;
 CREATE INDEX IF NOT EXISTS idx_distribution_device_group_id ON t_distribution_device (group_id);
 
@@ -346,7 +347,7 @@ CREATE TABLE IF NOT EXISTS t_media_process_task (
 
 CREATE TABLE IF NOT EXISTS t_device (
     id                BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id           BIGINT NOT NULL,
+    user_id           BIGINT,
     device_uid        VARCHAR(128) NOT NULL,
     name              VARCHAR(100) NOT NULL,
     type              VARCHAR(50) NOT NULL,
@@ -359,6 +360,8 @@ CREATE TABLE IF NOT EXISTS t_device (
     deleted           TINYINT NOT NULL DEFAULT 0,
     CONSTRAINT uk_device_uid_deleted UNIQUE (device_uid, deleted)
 );
+
+ALTER TABLE t_device ALTER COLUMN user_id BIGINT NULL;
 
 CREATE TABLE IF NOT EXISTS t_device_group (
     id          BIGINT AUTO_INCREMENT PRIMARY KEY,

@@ -11,29 +11,17 @@
           <file-image-outlined />
           <span>媒体管理</span>
         </a-menu-item>
-        <a-menu-item key="/devices">
-          <desktop-outlined />
-          <span>设备管理</span>
-        </a-menu-item>
         <a-menu-item key="/distributions">
           <deployment-unit-outlined />
           <span>内容分发</span>
         </a-menu-item>
-        <a-menu-item v-if="isAdmin" key="/admin/stats">
-          <bar-chart-outlined />
-          <span>管理统计</span>
+        <a-menu-item key="/devices">
+          <desktop-outlined />
+          <span>设备管理</span>
         </a-menu-item>
         <a-menu-item v-if="isAdmin" key="/admin/users">
           <team-outlined />
           <span>用户管理</span>
-        </a-menu-item>
-        <a-menu-item v-if="isAdmin" key="/admin/reviews">
-          <audit-outlined />
-          <span>内容审核</span>
-        </a-menu-item>
-        <a-menu-item v-if="isAdmin" key="/admin/audit-logs">
-          <file-search-outlined />
-          <span>审计日志</span>
         </a-menu-item>
       </a-menu>
     </a-layout-sider>
@@ -90,7 +78,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   PictureOutlined, FileImageOutlined, DesktopOutlined, DeploymentUnitOutlined,
-  BarChartOutlined, TeamOutlined, AuditOutlined, FileSearchOutlined, UserOutlined
+  TeamOutlined, UserOutlined
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'

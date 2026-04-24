@@ -4,7 +4,7 @@
       <a-alert
         :type="deviceAuth.isActivated ? 'success' : 'info'"
         show-icon
-        :message="deviceAuth.isActivated ? '设备已激活，可直接进入播放器。' : '请先确认设备信息并完成激活绑定。'"
+        :message="deviceAuth.isActivated ? '设备已激活，可直接进入播放器。' : '请先保存服务器地址并等待后台设备管理完成绑定。'"
         style="margin-bottom: 20px"
       />
 
@@ -12,7 +12,7 @@
         <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item label="服务器地址">
-              <a-input v-model:value="deviceAuth.serverBaseUrl" placeholder="http://localhost:8080" />
+              <a-input v-model:value="deviceAuth.serverBaseUrl" placeholder="192.168.1.10:8080" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -33,9 +33,8 @@
 
       <div class="actions">
         <a-space wrap>
-          <a-button type="primary" @click="save">保存设置</a-button>
-          <a-button v-if="!deviceAuth.isActivated" @click="goActivate">去激活</a-button>
-          <a-button v-else type="primary" ghost @click="goPlayer">进入播放器</a-button>
+          <a-button type="primary" :loading="saving" @click="saveAndRegister">保存并注册</a-button>
+          <a-button type="primary" ghost :loading="saving" @click="goPlayer">进入播放器</a-button>
           <a-button v-if="deviceAuth.isActivated" danger @click="resetActivation">清除设备令牌</a-button>
         </a-space>
       </div>
@@ -44,31 +43,44 @@
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useDeviceAuthStore } from '@/stores/deviceAuth'
 
 const router = useRouter()
 const deviceAuth = useDeviceAuthStore()
+const saving = ref(false)
 
 onMounted(async () => {
-  await deviceAuth.initializeIdentity()
+  try {
+    await deviceAuth.initializeIdentity()
+  } catch (error) {
+    message.error(error?.message || '设备初始化失败')
+  }
 })
 
-function save() {
-  deviceAuth.saveSettings()
-  message.success('设备设置已保存')
+async function saveAndRegister() {
+  if (saving.value) {
+    return null
+  }
+
+  saving.value = true
+  try {
+    const activated = await deviceAuth.registerAndTryActivate()
+    message.success(activated ? '设备已激活' : '设备已注册，等待后台绑定')
+    return activated
+  } catch (error) {
+    message.error(error?.response?.data?.message || error?.message || '保存并注册失败')
+    return null
+  } finally {
+    saving.value = false
+  }
 }
 
-function goActivate() {
-  save()
-  router.push('/activate')
-}
-
-function goPlayer() {
-  save()
-  router.push('/player')
+async function goPlayer() {
+  const activated = await saveAndRegister()
+  router.push(activated ? '/player' : '/activate')
 }
 
 function resetActivation() {
