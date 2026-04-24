@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">云影安卓播放端</string>
+    <string name="app_name">云影客户端</string>
     <string name="setup_title">设备初始化</string>
     <string name="setup_subtitle">配置服务器地址、设备名称，并将设备注册为待绑定状态。</string>
     <string name="server_base_url">服务器地址</string>
@@ -16,14 +16,13 @@
     <string name="save_settings">保存设置</string>
     <string name="go_activate">去激活</string>
     <string name="go_player">进入播放器</string>
-    <string name="clear_token">清除设备令牌</string>
     <string name="activate_title">等待管理员绑定</string>
     <string name="activate_subtitle">当前版本无需在电视端登录，设备保存后会自动注册到后台，等待管理员在设备管理中绑定。</string>
     <string name="username">用户名</string>
     <string name="password">密码</string>
     <string name="login_and_activate">登录并激活</string>
     <string name="back_to_setup">返回设置</string>
-    <string name="player_title">云影播放器</string>
+    <string name="player_title">云影客户端</string>
     <string name="refresh">立即同步</string>
     <string name="open_setup">设置</string>
     <string name="sync_status_idle">待同步</string>
@@ -37,7 +36,6 @@
     <string name="pulled_at_label">上次同步</string>
     <string name="unknown_value">-</string>
     <string name="toast_settings_saved">设备设置已保存并已注册</string>
-    <string name="toast_token_cleared">设备令牌已清除</string>
     <string name="toast_activation_success">设备已激活</string>
     <string name="toast_missing_server">请输入服务器地址</string>
     <string name="toast_missing_username">请输入用户名</string>

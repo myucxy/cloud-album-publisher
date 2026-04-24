@@ -39,7 +39,9 @@ function createWindow() {
     height: 900,
     minWidth: 1100,
     minHeight: 720,
+    title: '云影客户端',
     backgroundColor: '#0b1220',
+    icon: path.join(__dirname, '..', 'assets', 'icon.png'),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

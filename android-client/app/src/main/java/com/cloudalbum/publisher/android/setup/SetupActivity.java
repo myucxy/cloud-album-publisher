@@ -37,7 +37,6 @@ public class SetupActivity extends AppCompatActivity {
     private TextView setupDetailText;
     private Button saveButton;
     private Button playerButton;
-    private Button clearTokenButton;
     private ScrollView setupRoot;
     private PageRotationController rotationController;
     private boolean forceSetup;
@@ -94,7 +93,6 @@ public class SetupActivity extends AppCompatActivity {
         setupDetailText = findViewById(R.id.setupDetailText);
         saveButton = findViewById(R.id.saveButton);
         playerButton = findViewById(R.id.playerButton);
-        clearTokenButton = findViewById(R.id.clearTokenButton);
     }
 
     private void applyPageRotation() {
@@ -120,12 +118,6 @@ public class SetupActivity extends AppCompatActivity {
             if (saveAndRegister()) {
                 startActivity(new Intent(this, PlayerActivity.class));
             }
-        });
-        clearTokenButton.setOnClickListener(v -> {
-            sessionRepository.clearDeviceSession();
-            populateFields();
-            updateSetupStatus(getString(R.string.setup_status_idle), null, buildDeviceSnapshot());
-            Toast.makeText(this, R.string.toast_token_cleared, Toast.LENGTH_SHORT).show();
         });
 
         if (forceSetup) {
@@ -197,7 +189,6 @@ public class SetupActivity extends AppCompatActivity {
         saving = value;
         saveButton.setEnabled(!value);
         playerButton.setEnabled(!value);
-        clearTokenButton.setEnabled(!value);
     }
 
     private void updateSetupStatus(String status, String error, String detail) {

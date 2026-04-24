@@ -35,7 +35,6 @@
         <a-space wrap>
           <a-button type="primary" :loading="saving" @click="saveAndRegister">保存并注册</a-button>
           <a-button type="primary" ghost :loading="saving" @click="goPlayer">进入播放器</a-button>
-          <a-button v-if="deviceAuth.isActivated" danger @click="resetActivation">清除设备令牌</a-button>
         </a-space>
       </div>
     </a-card>
@@ -81,12 +80,6 @@ async function saveAndRegister() {
 async function goPlayer() {
   const activated = await saveAndRegister()
   router.push(activated ? '/player' : '/activate')
-}
-
-function resetActivation() {
-  deviceAuth.clearDeviceSession()
-  message.success('设备令牌已清除')
-  router.push('/setup')
 }
 </script>
 

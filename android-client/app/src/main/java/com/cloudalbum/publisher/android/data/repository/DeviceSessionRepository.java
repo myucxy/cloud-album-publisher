@@ -12,7 +12,7 @@ import java.util.Set;
 
 public class DeviceSessionRepository {
     private static final String PREFS = "cloud_album_device";
-    private static final String DEFAULT_BASE_URL = "http://192.168.9.26:8080";
+    private static final String DEFAULT_BASE_URL = "http://192.168.9.28:8080";
     private static final String KEY_SERVER_BASE_URL = "server_base_url";
     private static final String KEY_DEVICE_NAME = "device_name";
     private static final String KEY_DEVICE_ID = "device_id";
