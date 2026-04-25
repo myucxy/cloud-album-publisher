@@ -4,6 +4,7 @@ import { deviceApi } from '@/api/device'
 
 const DISABLED_DISTRIBUTION_IDS_STORAGE_KEY = 'device_disabled_distribution_ids'
 const PLAYBACK_MUTED_STORAGE_KEY = 'device_playback_muted'
+const SUPPORTED_TRANSITION_STYLES = ['NONE', 'FADE', 'SLIDE', 'CUBE', 'REVEAL', 'FLIP', 'RANDOM']
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value)
@@ -60,6 +61,14 @@ function getSortedBgmList(distribution) {
     return []
   }
   return [...bgmList].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+}
+
+function normalizeTransitionStyle(value) {
+  if (!value || !String(value).trim()) {
+    return 'NONE'
+  }
+  const normalized = String(value).trim().toUpperCase()
+  return SUPPORTED_TRANSITION_STYLES.includes(normalized) ? normalized : 'NONE'
 }
 
 export function resolveMediaIdentity(media) {
@@ -128,6 +137,7 @@ export const usePlayerStore = defineStore('player', () => {
   const currentBgm = computed(() => currentBgmList.value[currentBgmIndex.value] || null)
   const currentBgmUrl = computed(() => currentBgm.value?.url || currentDistribution.value?.album?.bgmUrl || '')
   const currentBgmVolume = computed(() => currentDistribution.value?.album?.bgmVolume ?? 40)
+  const currentTransitionStyle = computed(() => normalizeTransitionStyle(currentDistribution.value?.album?.transitionStyle))
   const selectableDistributionCount = computed(() => {
     return distributions.value.filter(distribution => getPlayableMediaList(distribution).length > 0).length
   })
@@ -382,6 +392,7 @@ export const usePlayerStore = defineStore('player', () => {
     currentBgm,
     currentBgmUrl,
     currentBgmVolume,
+    currentTransitionStyle,
     selectableDistributionCount,
     enabledDistributionCount,
     hasPlayableContent,

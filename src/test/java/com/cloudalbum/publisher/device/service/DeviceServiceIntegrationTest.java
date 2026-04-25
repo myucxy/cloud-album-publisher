@@ -16,6 +16,8 @@ class DeviceServiceIntegrationTest extends ServiceIntegrationTestSupport {
     void pullContent_returnsDistributionForDirectDeviceTarget() {
         var device = insertDevice(USER_ID, "direct-device");
         var album = insertAlbum(USER_ID, "PUBLIC");
+        album.setTransitionStyle("FADE");
+        albumMapper.updateById(album);
         var media = insertMedia(USER_ID, "READY", "direct-target.jpg");
         insertAlbumMedia(album.getId(), media.getId(), 1, 18);
         insertReview(media.getId(), USER_ID, "APPROVED", LocalDateTime.now());
@@ -28,6 +30,7 @@ class DeviceServiceIntegrationTest extends ServiceIntegrationTestSupport {
         DevicePullResponse.DistributionItem item = response.getDistributions().get(0);
         assertEquals(distribution.getId(), item.getId());
         assertEquals("direct-distribution", item.getName());
+        assertEquals("FADE", item.getAlbum().getTransitionStyle());
         assertEquals(1, item.getMediaList().size());
         assertEquals(media.getId(), item.getMediaList().get(0).getId());
         assertEquals(18, item.getMediaList().get(0).getItemDuration());
@@ -126,8 +129,8 @@ class DeviceServiceIntegrationTest extends ServiceIntegrationTestSupport {
         List<DevicePullResponse.MediaItem> mediaList = response.getDistributions().get(0).getMediaList();
         assertEquals(1, mediaList.size());
         assertEquals(approvedReady.getId(), mediaList.get(0).getId());
-        assertEquals("http://test-minio:9000/test-bucket/objects/approved-ready.jpg", mediaList.get(0).getUrl());
-        assertEquals("http://test-minio:9000/test-bucket/thumbs/approved-ready.jpg.jpg", mediaList.get(0).getThumbnailUrl());
+        assertEquals("http://localhost/api/v1/devices/media/" + approvedReady.getId() + "/content", mediaList.get(0).getUrl());
+        assertEquals("http://localhost/api/v1/devices/media/" + approvedReady.getId() + "/thumbnail", mediaList.get(0).getThumbnailUrl());
     }
 
     @Test

@@ -15,6 +15,9 @@ public class AlbumCreateRequest {
 
     private String description;
 
+    /** 播放转场样式，默认无转场 */
+    private String transitionStyle = "NONE";
+
     /** PUBLIC / PRIVATE / DEVICE_ONLY，默认PRIVATE */
     private String visibility = "PRIVATE";
 }

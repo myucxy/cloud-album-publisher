@@ -43,6 +43,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AlbumServiceImpl implements AlbumService {
 
+    private static final Set<String> SUPPORTED_TRANSITION_STYLES = Set.of(
+            "NONE", "FADE", "SLIDE", "CUBE", "REVEAL", "FLIP", "RANDOM");
+
     private final AlbumMapper albumMapper;
     private final AlbumBgmMapper albumBgmMapper;
     private final AlbumMediaMapper albumMediaMapper;
@@ -85,6 +88,7 @@ public class AlbumServiceImpl implements AlbumService {
         album.setTitle(request.getTitle());
         album.setDescription(request.getDescription());
         album.setVisibility(request.getVisibility());
+        album.setTransitionStyle(normalizeTransitionStyle(request.getTransitionStyle()));
         album.setStatus("DRAFT");
         album.setSortOrder(0);
         album.setBgmVolume(80);
@@ -99,6 +103,7 @@ public class AlbumServiceImpl implements AlbumService {
         if (StringUtils.hasText(request.getTitle())) album.setTitle(request.getTitle());
         if (request.getDescription() != null) album.setDescription(request.getDescription());
         if (StringUtils.hasText(request.getVisibility())) album.setVisibility(request.getVisibility());
+        if (request.getTransitionStyle() != null) album.setTransitionStyle(normalizeTransitionStyle(request.getTransitionStyle()));
         if (StringUtils.hasText(request.getStatus())) album.setStatus(request.getStatus());
         if (request.getSortOrder() != null) album.setSortOrder(request.getSortOrder());
         albumMapper.updateById(album);
@@ -417,6 +422,7 @@ public class AlbumServiceImpl implements AlbumService {
         resp.setBgmContentType(album.getBgmContentType());
         resp.setBgmMediaType(album.getBgmMediaType());
         resp.setBgmVolume(album.getBgmVolume());
+        resp.setTransitionStyle(resolveTransitionStyle(album.getTransitionStyle()));
         resp.setVisibility(album.getVisibility());
         resp.setStatus(album.getStatus());
         resp.setSortOrder(album.getSortOrder());
@@ -873,6 +879,21 @@ public class AlbumServiceImpl implements AlbumService {
 
     private String firstText(String first, String fallback) {
         return StringUtils.hasText(first) ? first : fallback;
+    }
+
+    private String normalizeTransitionStyle(String transitionStyle) {
+        if (!StringUtils.hasText(transitionStyle)) {
+            return "NONE";
+        }
+        String normalized = transitionStyle.trim().toUpperCase(Locale.ROOT);
+        if (!SUPPORTED_TRANSITION_STYLES.contains(normalized)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "不支持的播放转场样式");
+        }
+        return normalized;
+    }
+
+    private String resolveTransitionStyle(String transitionStyle) {
+        return StringUtils.hasText(transitionStyle) ? transitionStyle : "NONE";
     }
 
     @Override

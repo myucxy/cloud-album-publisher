@@ -13,6 +13,8 @@ public class AlbumUpdateRequest {
 
     private String description;
 
+    private String transitionStyle;
+
     private String visibility;
 
     private String status;

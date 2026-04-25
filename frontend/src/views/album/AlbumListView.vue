@@ -24,6 +24,7 @@
           <template #actions>
             <a-tag :color="statusColor(album.status)">{{ album.status }}</a-tag>
             <a-tag>{{ album.visibility }}</a-tag>
+            <a-tag color="blue">{{ transitionStyleLabel(album.transitionStyle) }}</a-tag>
             <a @click.stop="openEdit(album)"><edit-outlined /></a>
             <a-popconfirm title="确认删除该相册？" @confirm.stop="deleteAlbum(album.id)">
               <a @click.stop><delete-outlined /></a>
@@ -52,6 +53,16 @@
             <a-select-option value="DEVICE_ONLY">设备专属</a-select-option>
           </a-select>
         </a-form-item>
+        <a-form-item label="播放转场" name="transitionStyle">
+          <a-select v-model:value="form.transitionStyle">
+            <a-select-option v-for="option in TRANSITION_STYLE_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </a-select-option>
+          </a-select>
+          <div style="color:#8c8c8c; font-size:12px; margin-top:6px">
+            转场样式按相册统一配置；客户端仅对图片应用该效果，视频会自动跳过转场效果并正常播放。
+          </div>
+        </a-form-item>
         <a-form-item v-if="editingId" label="状态" name="status">
           <a-select v-model:value="form.status">
             <a-select-option value="DRAFT">草稿</a-select-option>
@@ -71,6 +82,16 @@ import { PlusOutlined, PictureOutlined, EditOutlined, DeleteOutlined } from '@an
 import { albumApi } from '@/api/album'
 import SecureImage from '@/components/SecureImage.vue'
 
+const TRANSITION_STYLE_OPTIONS = [
+  { value: 'NONE', label: '无转场' },
+  { value: 'FADE', label: '淡入淡出' },
+  { value: 'SLIDE', label: '滑动缩放' },
+  { value: 'CUBE', label: '立方体' },
+  { value: 'REVEAL', label: '圆形揭示' },
+  { value: 'FLIP', label: '翻页' },
+  { value: 'RANDOM', label: '随机' }
+]
+
 const router = useRouter()
 const albums = ref([])
 const total = ref(0)
@@ -81,7 +102,7 @@ const modalOpen = ref(false)
 const saving = ref(false)
 const editingId = ref(null)
 const formRef = ref()
-const form = reactive({ title: '', description: '', visibility: 'PRIVATE', status: 'DRAFT' })
+const form = reactive({ title: '', description: '', visibility: 'PRIVATE', transitionStyle: 'NONE', status: 'DRAFT' })
 
 onMounted(load)
 
@@ -93,13 +114,19 @@ async function load() {
 
 function openCreate() {
   editingId.value = null
-  Object.assign(form, { title: '', description: '', visibility: 'PRIVATE', status: 'DRAFT' })
+  Object.assign(form, { title: '', description: '', visibility: 'PRIVATE', transitionStyle: 'NONE', status: 'DRAFT' })
   modalOpen.value = true
 }
 
 function openEdit(album) {
   editingId.value = album.id
-  Object.assign(form, { title: album.title, description: album.description, visibility: album.visibility, status: album.status })
+  Object.assign(form, {
+    title: album.title,
+    description: album.description,
+    visibility: album.visibility,
+    transitionStyle: album.transitionStyle || 'NONE',
+    status: album.status
+  })
   modalOpen.value = true
 }
 
@@ -125,6 +152,10 @@ async function deleteAlbum(id) {
   await albumApi.remove(id)
   message.success('已删除')
   load()
+}
+
+function transitionStyleLabel(value) {
+  return TRANSITION_STYLE_OPTIONS.find(option => option.value === value)?.label || '无转场'
 }
 
 function statusColor(status) {

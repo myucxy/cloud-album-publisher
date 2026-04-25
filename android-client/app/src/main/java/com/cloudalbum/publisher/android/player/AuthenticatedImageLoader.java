@@ -25,13 +25,37 @@ public class AuthenticatedImageLoader {
     }
 
     public static void load(ImageView imageView, String url, DeviceSessionRepository repository) {
+        load(imageView, url, repository, null);
+    }
+
+    public static void load(ImageView imageView, String url, DeviceSessionRepository repository, final Callback callback) {
         if (url == null || url.trim().isEmpty()) {
             imageView.setImageDrawable(null);
+            if (callback != null) {
+                callback.onFailure();
+            }
             return;
         }
         Drawable currentDrawable = imageView.getDrawable();
         buildRequest(imageView, url, repository)
                 .placeholder(currentDrawable)
+                .listener(new RequestListener<Drawable>() {
+                    @Override
+                    public boolean onLoadFailed(GlideException e, Object model, Target<Drawable> target, boolean isFirstResource) {
+                        if (callback != null) {
+                            callback.onFailure();
+                        }
+                        return false;
+                    }
+
+                    @Override
+                    public boolean onResourceReady(Drawable resource, Object model, Target<Drawable> target, DataSource dataSource, boolean isFirstResource) {
+                        if (callback != null) {
+                            callback.onSuccess();
+                        }
+                        return false;
+                    }
+                })
                 .into(imageView);
     }
 

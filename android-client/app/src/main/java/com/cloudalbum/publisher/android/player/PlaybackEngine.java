@@ -7,6 +7,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 public class PlaybackEngine {
@@ -193,6 +194,14 @@ public class PlaybackEngine {
         return distribution.getAlbum().getBgmVolume();
     }
 
+    public String getCurrentTransitionStyle() {
+        DevicePullResponse.DistributionItem distribution = getCurrentDistribution();
+        if (distribution == null || distribution.getAlbum() == null) {
+            return "NONE";
+        }
+        return normalizeTransitionStyle(distribution.getAlbum().getTransitionStyle());
+    }
+
     public void nextBgm() {
         List<DevicePullResponse.BgmItem> list = getCurrentBgmList();
         if (list.isEmpty()) {
@@ -208,6 +217,23 @@ public class PlaybackEngine {
 
     public int getCurrentDistributionIndex() {
         return currentDistributionIndex;
+    }
+
+    private String normalizeTransitionStyle(String style) {
+        if (style == null || style.trim().isEmpty()) {
+            return "NONE";
+        }
+        String normalized = style.trim().toUpperCase(Locale.US);
+        if ("NONE".equals(normalized)
+                || "FADE".equals(normalized)
+                || "SLIDE".equals(normalized)
+                || "CUBE".equals(normalized)
+                || "REVEAL".equals(normalized)
+                || "FLIP".equals(normalized)
+                || "RANDOM".equals(normalized)) {
+            return normalized;
+        }
+        return "NONE";
     }
 
     private List<DevicePullResponse.MediaItem> getPlayableMediaList(DevicePullResponse.DistributionItem distribution) {

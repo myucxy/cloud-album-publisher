@@ -25,6 +25,15 @@
             android:scaleType="fitCenter"
             android:visibility="gone" />
 
+        <ImageView
+            android:id="@+id/imageStageNext"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:adjustViewBounds="true"
+            android:background="@color/ca_background"
+            android:scaleType="fitCenter"
+            android:visibility="gone" />
+
         <com.google.android.exoplayer2.ui.StyledPlayerView
             android:id="@+id/playerView"
             android:layout_width="match_parent"
@@ -140,6 +149,40 @@
                 android:layout_marginTop="12dp"
                 android:nextFocusUp="@id/refreshButton"
                 android:text="@string/open_setup" />
+
+            <LinearLayout
+                android:id="@+id/appUpdatePanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:background="@drawable/bg_panel"
+                android:orientation="vertical"
+                android:padding="@dimen/panel_padding">
+
+                <TextView
+                    android:id="@+id/appUpdateTitleText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/ca_text_primary"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/appUpdateSummaryText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:textColor="@color/ca_text_secondary"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/appUpdateButton"
+                    style="@style/Widget.CloudAlbum.Button.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:visibility="gone" />
+            </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/rotationPanel"
@@ -260,14 +303,7 @@
         android:layout_gravity="start"
         android:clickable="true"
         android:focusable="false"
-        android:focusableInTouchMode="false">
-
-        <View
-            android:layout_width="@dimen/drawer_handle_indicator_width"
-            android:layout_height="72dp"
-            android:layout_gravity="start|center_vertical"
-            android:background="@drawable/bg_drawer_handle" />
-    </FrameLayout>
+        android:focusableInTouchMode="false" />
 
     <FrameLayout
         android:id="@+id/systemCapabilityOverlay"

@@ -63,6 +63,9 @@ public class Album {
     /** 音量 0-100 */
     private Integer bgmVolume;
 
+    /** 播放转场样式 */
+    private String transitionStyle;
+
     /** PUBLIC / PRIVATE / DEVICE_ONLY */
     private String visibility;
 

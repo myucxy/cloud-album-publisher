@@ -1,5 +1,11 @@
 package com.cloudalbum.publisher.android.player;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
+import android.animation.RectEvaluator;
+import android.animation.ValueAnimator;
 import android.app.ActivityManager;
 import android.content.Intent;
 import android.content.res.Configuration;
@@ -16,6 +22,7 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.animation.AccelerateDecelerateInterpolator;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
@@ -34,6 +41,7 @@ import androidx.core.view.ViewCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 
 import com.cloudalbum.publisher.android.R;
+import com.cloudalbum.publisher.android.data.model.AppUpdateResponse;
 import com.cloudalbum.publisher.android.data.model.DevicePullResponse;
 import com.cloudalbum.publisher.android.data.model.DeviceTokenResponse;
 import com.cloudalbum.publisher.android.data.repository.CloudAlbumRepository;
@@ -62,12 +70,20 @@ import java.util.Set;
 public class PlayerActivity extends AppCompatActivity implements PullSyncCoordinator.Listener {
     private static final String TAG = "PlayerActivity";
     private static final long TOKEN_POLL_INTERVAL_MS = 15000L;
+    private static final long UPDATE_POLL_INTERVAL_MS = 60 * 1000L;
     private static final long IMAGE_ADVANCE_RETRY_DELAY_MS = 300L;
     private static final int IMAGE_ADVANCE_MAX_RETRY_COUNT = 10;
     private static final int DRAWER_FOCUS_TOP_EXTRA_DP = 96;
     private static final int DRAWER_HANDLE_SWIPE_THRESHOLD_DP = 36;
+    private static final long IMAGE_TRANSITION_DURATION_MS = 650L;
+    private static final String[] RANDOM_IMAGE_TRANSITIONS = new String[] {"FADE", "SLIDE", "CUBE", "REVEAL", "FLIP"};
     private static final String REFRESH_BUTTON_LABEL = "\u7acb\u5373\u540c\u6b65";
     private static final String SETUP_BUTTON_LABEL = "\u8bbe\u7f6e";
+    private static final String APP_UPDATE_TITLE = "\u7248\u672c\u66f4\u65b0";
+    private static final String APP_UPDATE_CHECKING = "\u6b63\u5728\u68c0\u67e5\u65b0\u7248\u672c...";
+    private static final String APP_UPDATE_CURRENT = "\u5df2\u662f\u6700\u65b0\u7248\u672c";
+    private static final String APP_UPDATE_AVAILABLE_BUTTON = "\u4e0b\u8f7d\u5e76\u5b89\u88c5";
+    private static final String APP_UPDATE_CHECK_FAILED = "\u7248\u672c\u68c0\u67e5\u5931\u8d25";
     private static final String PLAYBACK_SELECTION_TITLE = "\u5206\u7ec4\u9009\u62e9";
     private static final String PLAYBACK_SELECTION_EMPTY = "\u6682\u65e0\u5df2\u540c\u6b65\u5206\u7ec4";
     private static final String PLAYBACK_SELECTION_WAITING = "\u7b49\u5f85\u540c\u6b65\u540e\u53ef\u9009\u62e9\u5206\u7ec4";
@@ -113,6 +129,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private final Handler imageHandler = new Handler(Looper.getMainLooper());
     private final Handler errorHandler = new Handler(Looper.getMainLooper());
     private final Handler tokenHandler = new Handler(Looper.getMainLooper());
+    private final Handler updateHandler = new Handler(Looper.getMainLooper());
     private final Rect drawerFocusRect = new Rect();
     private final Runnable imageAdvanceRunnable = new Runnable() {
         @Override
@@ -124,6 +141,12 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         @Override
         public void run() {
             attemptAcquireToken(false);
+        }
+    };
+    private final Runnable updatePollRunnable = new Runnable() {
+        @Override
+        public void run() {
+            checkAppUpdate(false);
         }
     };
     private final Set<String> disabledDistributionIds = new HashSet<String>();
@@ -144,6 +167,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private LinearLayout deviceInfoPanel;
     private LinearLayout currentMediaPanel;
     private ImageView imageStage;
+    private ImageView imageStageNext;
     private StyledPlayerView playerView;
     private TextView deviceSummaryText;
     private TextView distributionText;
@@ -156,6 +180,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private TextView muteSummaryText;
     private TextView playbackSelectionTitleText;
     private TextView playbackSelectionSummaryText;
+    private TextView appUpdateTitleText;
+    private TextView appUpdateSummaryText;
     private TextView systemCapabilityTitleText;
     private TextView systemCapabilityContentText;
     private LinearLayout rotationOptionContainer;
@@ -164,11 +190,13 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private CheckBox muteToggleCheckBox;
     private Button refreshButton;
     private Button setupButton;
+    private Button appUpdateButton;
     private Button systemCapabilityButton;
     private Button systemCapabilityCloseButton;
     private ScrollView systemCapabilityScrollView;
 
     private String lastRenderedMediaIdentity = "";
+    private String lastRenderedMediaType = "";
     private String lastRenderedBgmIdentity = "";
     private String playbackRotationMode = DeviceSessionRepository.PLAYBACK_ROTATION_AUTO;
     private String playerAccessToken = "";
@@ -176,9 +204,12 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private boolean waitingForBinding = false;
     private DevicePullResponse lastPullResponse;
     private PageRotationController rotationController;
+    private AppUpdateResponse availableUpdate;
     private float drawerHandleDownX;
     private boolean drawerHandleOpenedBySwipe;
+    private boolean primaryImageStageActive = true;
     private int imageAdvanceRetryCount = 0;
+    private Animator imageTransitionAnimator;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -208,7 +239,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     protected void onStart() {
         super.onStart();
         enterImmersiveMode();
-        appUpdateChecker.checkOnce();
+        checkAppUpdate(true);
         if (sessionRepository.isActivated()) {
             waitingForBinding = false;
             pullSyncCoordinator.start();
@@ -225,6 +256,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         pullSyncCoordinator.stop();
         clearScheduledTasks();
         tokenHandler.removeCallbacks(tokenPollRunnable);
+        updateHandler.removeCallbacks(updatePollRunnable);
         if (contentPlayer != null) {
             contentPlayer.pause();
         }
@@ -238,6 +270,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         super.onDestroy();
         clearScheduledTasks();
         tokenHandler.removeCallbacks(tokenPollRunnable);
+        updateHandler.removeCallbacks(updatePollRunnable);
         releasePlayers();
     }
 
@@ -308,6 +341,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         deviceInfoPanel = findViewById(R.id.deviceInfoPanel);
         currentMediaPanel = findViewById(R.id.currentMediaPanel);
         imageStage = findViewById(R.id.imageStage);
+        imageStageNext = findViewById(R.id.imageStageNext);
         playerView = findViewById(R.id.playerView);
         deviceSummaryText = findViewById(R.id.deviceSummaryText);
         distributionText = findViewById(R.id.distributionText);
@@ -320,6 +354,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         muteSummaryText = findViewById(R.id.muteSummaryText);
         playbackSelectionTitleText = findViewById(R.id.playbackSelectionTitleText);
         playbackSelectionSummaryText = findViewById(R.id.playbackSelectionSummaryText);
+        appUpdateTitleText = findViewById(R.id.appUpdateTitleText);
+        appUpdateSummaryText = findViewById(R.id.appUpdateSummaryText);
         systemCapabilityOverlay = findViewById(R.id.systemCapabilityOverlay);
         systemCapabilityTitleText = findViewById(R.id.systemCapabilityTitleText);
         systemCapabilityContentText = findViewById(R.id.systemCapabilityContentText);
@@ -329,6 +365,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         muteToggleCheckBox = findViewById(R.id.muteToggleCheckBox);
         refreshButton = findViewById(R.id.refreshButton);
         setupButton = findViewById(R.id.setupButton);
+        appUpdateButton = findViewById(R.id.appUpdateButton);
         systemCapabilityButton = findViewById(R.id.systemCapabilityButton);
         systemCapabilityCloseButton = findViewById(R.id.systemCapabilityCloseButton);
     }
@@ -354,6 +391,9 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         updateMuteSummary();
         playbackSelectionTitleText.setText(PLAYBACK_SELECTION_TITLE);
         showPlaybackSelectionMessage(PLAYBACK_SELECTION_WAITING);
+        appUpdateTitleText.setText(APP_UPDATE_TITLE);
+        appUpdateButton.setText(APP_UPDATE_AVAILABLE_BUTTON);
+        updateAppUpdatePanel(null, APP_UPDATE_CHECKING);
         systemCapabilityButton.setText(SYSTEM_CAPABILITY_TITLE);
         systemCapabilityTitleText.setText(SYSTEM_CAPABILITY_TITLE);
         systemCapabilityCloseButton.setText(SYSTEM_CAPABILITY_CLOSE);
@@ -391,6 +431,14 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             public void onClick(View v) {
                 closeDrawerMenu();
                 startActivity(new Intent(PlayerActivity.this, SetupActivity.class).putExtra("force_setup", true));
+            }
+        });
+        appUpdateButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (availableUpdate != null) {
+                    appUpdateChecker.installUpdate(availableUpdate);
+                }
             }
         });
         muteToggleCheckBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
@@ -623,10 +671,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         clearScheduledTasks();
         lastPullResponse = null;
         lastRenderedMediaIdentity = "";
+        lastRenderedMediaType = "";
         lastRenderedBgmIdentity = "";
         preloadedImageIdentities.clear();
         imageAdvanceRetryCount = 0;
-        imageStage.setVisibility(View.GONE);
+        hideImageStages();
         playerView.setVisibility(View.GONE);
         emptyStateText.setVisibility(View.VISIBLE);
         showPlaybackSelectionMessage(PLAYBACK_SELECTION_WAITING);
@@ -647,10 +696,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         if (!playbackEngine.hasPlayableContent() || distribution == null || media == null) {
             clearScheduledTasks();
             lastRenderedMediaIdentity = "";
+            lastRenderedMediaType = "";
             lastRenderedBgmIdentity = "";
             preloadedImageIdentities.clear();
             imageAdvanceRetryCount = 0;
-            imageStage.setVisibility(View.GONE);
+            hideImageStages();
             playerView.setVisibility(View.GONE);
             emptyStateText.setVisibility(View.VISIBLE);
             distributionText.setText(getString(R.string.distribution_label) + ": " + getString(R.string.unknown_value));
@@ -678,19 +728,17 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         if (!currentMediaIdentity.equals(lastRenderedMediaIdentity)) {
             clearScheduledTasks();
             imageAdvanceRetryCount = 0;
+            String previousMediaType = lastRenderedMediaType;
             lastRenderedMediaIdentity = currentMediaIdentity;
+            lastRenderedMediaType = safeText(media.getMediaType(), "");
             if ("IMAGE".equalsIgnoreCase(media.getMediaType())) {
                 playerView.setVisibility(View.GONE);
-                imageStage.setVisibility(View.VISIBLE);
                 if (contentPlayer != null) {
                     contentPlayer.stop();
                 }
-                AuthenticatedImageLoader.load(imageStage, media.getUrl(), sessionRepository);
-                preloadedImageIdentities.add(currentMediaIdentity);
-                preloadNextImage();
-                imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+                renderImageMedia(media, currentMediaIdentity, "IMAGE".equalsIgnoreCase(previousMediaType));
             } else {
-                imageStage.setVisibility(View.GONE);
+                hideImageStages();
                 playerView.setVisibility(View.VISIBLE);
                 MediaItem mediaItem = new MediaItem.Builder()
                         .setUri(Uri.parse(media.getUrl()))
@@ -709,6 +757,242 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         }
 
         renderBgm();
+    }
+
+    private void renderImageMedia(final DevicePullResponse.MediaItem media, final String mediaIdentity, final boolean previousWasImage) {
+        final ImageView targetStage = getInactiveImageStage();
+        final ImageView currentStage = getActiveImageStage();
+        resetImageStage(targetStage);
+        targetStage.setVisibility(View.INVISIBLE);
+        AuthenticatedImageLoader.load(targetStage, media.getUrl(), sessionRepository, new AuthenticatedImageLoader.Callback() {
+            @Override
+            public void onSuccess() {
+                if (!mediaIdentity.equals(lastRenderedMediaIdentity)) {
+                    return;
+                }
+                String transitionStyle = previousWasImage ? resolveImageTransitionStyle(playbackEngine.getCurrentTransitionStyle(), mediaIdentity) : "NONE";
+                if ("NONE".equals(transitionStyle) || currentStage.getVisibility() != View.VISIBLE) {
+                    showImageWithoutTransition(targetStage, currentStage);
+                } else {
+                    runImageTransition(currentStage, targetStage, transitionStyle);
+                }
+                preloadedImageIdentities.add(mediaIdentity);
+                preloadNextImage();
+                imageHandler.removeCallbacks(imageAdvanceRunnable);
+                imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+            }
+
+            @Override
+            public void onFailure() {
+                if (!mediaIdentity.equals(lastRenderedMediaIdentity)) {
+                    return;
+                }
+                Toast.makeText(PlayerActivity.this, R.string.toast_media_error, Toast.LENGTH_SHORT).show();
+                errorHandler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        playbackEngine.nextMedia();
+                        renderPlayback();
+                    }
+                }, 1500L);
+            }
+        });
+    }
+
+    private void showImageWithoutTransition(ImageView targetStage, ImageView oldStage) {
+        cancelImageTransition();
+        resetImageStage(targetStage);
+        targetStage.setVisibility(View.VISIBLE);
+        oldStage.setVisibility(View.GONE);
+        resetImageStage(oldStage);
+        primaryImageStageActive = targetStage == imageStage;
+    }
+
+    private ImageView getActiveImageStage() {
+        return primaryImageStageActive ? imageStage : imageStageNext;
+    }
+
+    private ImageView getInactiveImageStage() {
+        return primaryImageStageActive ? imageStageNext : imageStage;
+    }
+
+    private void hideImageStages() {
+        cancelImageTransition();
+        if (imageStage != null) {
+            imageStage.setVisibility(View.GONE);
+            resetImageStage(imageStage);
+        }
+        if (imageStageNext != null) {
+            imageStageNext.setVisibility(View.GONE);
+            resetImageStage(imageStageNext);
+        }
+    }
+
+    private void runImageTransition(final ImageView fromStage, final ImageView toStage, String transitionStyle) {
+        cancelImageTransition();
+        resetImageStage(fromStage);
+        resetImageStage(toStage);
+        fromStage.setVisibility(View.VISIBLE);
+        toStage.setVisibility(View.VISIBLE);
+        Animator animator;
+        if ("SLIDE".equals(transitionStyle)) {
+            animator = buildSlideTransition(fromStage, toStage);
+        } else if ("CUBE".equals(transitionStyle)) {
+            animator = buildCubeTransition(fromStage, toStage);
+        } else if ("REVEAL".equals(transitionStyle)) {
+            animator = buildRevealTransition(fromStage, toStage);
+        } else if ("FLIP".equals(transitionStyle)) {
+            animator = buildFlipTransition(fromStage, toStage);
+        } else {
+            animator = buildFadeTransition(fromStage, toStage);
+        }
+        imageTransitionAnimator = animator;
+        animator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                imageTransitionAnimator = null;
+                fromStage.setVisibility(View.GONE);
+                resetImageStage(fromStage);
+                resetImageStage(toStage);
+                toStage.setVisibility(View.VISIBLE);
+                primaryImageStageActive = toStage == imageStage;
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                imageTransitionAnimator = null;
+            }
+        });
+        animator.start();
+    }
+
+    private Animator buildFadeTransition(ImageView fromStage, ImageView toStage) {
+        toStage.setAlpha(0f);
+        AnimatorSet set = new AnimatorSet();
+        set.playTogether(
+                ObjectAnimator.ofFloat(fromStage, View.ALPHA, 1f, 0f),
+                ObjectAnimator.ofFloat(toStage, View.ALPHA, 0f, 1f));
+        configureImageAnimator(set);
+        return set;
+    }
+
+    private Animator buildSlideTransition(ImageView fromStage, ImageView toStage) {
+        float width = Math.max(1, fromStage.getWidth());
+        toStage.setTranslationX(width);
+        AnimatorSet set = new AnimatorSet();
+        set.playTogether(
+                ObjectAnimator.ofFloat(fromStage, View.TRANSLATION_X, 0f, -width * 0.25f),
+                ObjectAnimator.ofFloat(fromStage, View.ALPHA, 1f, 0f),
+                ObjectAnimator.ofFloat(toStage, View.TRANSLATION_X, width, 0f),
+                ObjectAnimator.ofFloat(toStage, View.ALPHA, 0.4f, 1f));
+        configureImageAnimator(set);
+        return set;
+    }
+
+    private Animator buildCubeTransition(ImageView fromStage, ImageView toStage) {
+        float width = Math.max(1, fromStage.getWidth());
+        float cameraDistance = getResources().getDisplayMetrics().density * 8000f;
+        fromStage.setCameraDistance(cameraDistance);
+        toStage.setCameraDistance(cameraDistance);
+        fromStage.setPivotX(0f);
+        fromStage.setPivotY(fromStage.getHeight() / 2f);
+        toStage.setPivotX(width);
+        toStage.setPivotY(toStage.getHeight() / 2f);
+        toStage.setRotationY(90f);
+        AnimatorSet set = new AnimatorSet();
+        set.playTogether(
+                ObjectAnimator.ofFloat(fromStage, View.ROTATION_Y, 0f, -90f),
+                ObjectAnimator.ofFloat(fromStage, View.ALPHA, 1f, 0.2f),
+                ObjectAnimator.ofFloat(toStage, View.ROTATION_Y, 90f, 0f),
+                ObjectAnimator.ofFloat(toStage, View.ALPHA, 0.2f, 1f));
+        configureImageAnimator(set);
+        return set;
+    }
+
+    private Animator buildRevealTransition(final ImageView fromStage, final ImageView toStage) {
+        int width = Math.max(1, toStage.getWidth());
+        int height = Math.max(1, toStage.getHeight());
+        toStage.setClipBounds(new Rect(0, 0, 0, height));
+        ValueAnimator reveal = ValueAnimator.ofObject(new RectEvaluator(), new Rect(0, 0, 0, height), new Rect(0, 0, width, height));
+        reveal.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator animation) {
+                toStage.setClipBounds((Rect) animation.getAnimatedValue());
+            }
+        });
+        AnimatorSet set = new AnimatorSet();
+        set.playTogether(reveal, ObjectAnimator.ofFloat(fromStage, View.ALPHA, 1f, 0.35f));
+        configureImageAnimator(set);
+        return set;
+    }
+
+    private Animator buildFlipTransition(final ImageView fromStage, final ImageView toStage) {
+        float cameraDistance = getResources().getDisplayMetrics().density * 8000f;
+        fromStage.setCameraDistance(cameraDistance);
+        toStage.setCameraDistance(cameraDistance);
+        toStage.setRotationY(-90f);
+        AnimatorSet firstHalf = new AnimatorSet();
+        firstHalf.playTogether(
+                ObjectAnimator.ofFloat(fromStage, View.ROTATION_Y, 0f, 90f),
+                ObjectAnimator.ofFloat(fromStage, View.ALPHA, 1f, 0.2f));
+        firstHalf.setDuration(IMAGE_TRANSITION_DURATION_MS / 2);
+        firstHalf.setInterpolator(new AccelerateDecelerateInterpolator());
+        firstHalf.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                fromStage.setVisibility(View.GONE);
+                toStage.setVisibility(View.VISIBLE);
+            }
+        });
+        AnimatorSet secondHalf = new AnimatorSet();
+        secondHalf.playTogether(
+                ObjectAnimator.ofFloat(toStage, View.ROTATION_Y, -90f, 0f),
+                ObjectAnimator.ofFloat(toStage, View.ALPHA, 0.2f, 1f));
+        secondHalf.setDuration(IMAGE_TRANSITION_DURATION_MS / 2);
+        secondHalf.setInterpolator(new AccelerateDecelerateInterpolator());
+        AnimatorSet full = new AnimatorSet();
+        full.playSequentially(firstHalf, secondHalf);
+        return full;
+    }
+
+    private void configureImageAnimator(Animator animator) {
+        animator.setDuration(IMAGE_TRANSITION_DURATION_MS);
+        animator.setInterpolator(new AccelerateDecelerateInterpolator());
+    }
+
+    private void cancelImageTransition() {
+        if (imageTransitionAnimator != null) {
+            imageTransitionAnimator.cancel();
+            imageTransitionAnimator = null;
+        }
+    }
+
+    private void resetImageStage(ImageView stage) {
+        if (stage == null) {
+            return;
+        }
+        stage.setAlpha(1f);
+        stage.setTranslationX(0f);
+        stage.setTranslationY(0f);
+        stage.setScaleX(1f);
+        stage.setScaleY(1f);
+        stage.setRotation(0f);
+        stage.setRotationX(0f);
+        stage.setRotationY(0f);
+        stage.setPivotX(stage.getWidth() / 2f);
+        stage.setPivotY(stage.getHeight() / 2f);
+        stage.setClipBounds(null);
+    }
+
+    private String resolveImageTransitionStyle(String transitionStyle, String mediaIdentity) {
+        if (transitionStyle == null || transitionStyle.trim().isEmpty() || "NONE".equals(transitionStyle)) {
+            return "NONE";
+        }
+        if ("RANDOM".equals(transitionStyle)) {
+            int index = Math.abs(mediaIdentity == null ? 0 : mediaIdentity.hashCode()) % RANDOM_IMAGE_TRANSITIONS.length;
+            return RANDOM_IMAGE_TRANSITIONS[index];
+        }
+        return transitionStyle;
     }
 
     private void preloadNextImage() {
@@ -983,6 +1267,9 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 if (imageStage != null) {
                     imageStage.requestLayout();
                 }
+                if (imageStageNext != null) {
+                    imageStageNext.requestLayout();
+                }
                 if (playerView != null) {
                     playerView.requestLayout();
                 }
@@ -1201,9 +1488,64 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         statusText.setText(status);
     }
 
+    private void checkAppUpdate(final boolean showInitialDialog) {
+        updateHandler.removeCallbacks(updatePollRunnable);
+        if (showInitialDialog) {
+            updateAppUpdatePanel(availableUpdate, APP_UPDATE_CHECKING);
+        }
+        appUpdateChecker.checkForUpdate(showInitialDialog, new AppUpdateChecker.UpdateCallback() {
+            @Override
+            public void onChecked(AppUpdateResponse update) {
+                updateAppUpdatePanel(update, null);
+                scheduleNextUpdateCheck();
+            }
+
+            @Override
+            public void onFailed(java.io.IOException error) {
+                updateAppUpdatePanel(availableUpdate, APP_UPDATE_CHECK_FAILED);
+                scheduleNextUpdateCheck();
+            }
+        });
+    }
+
+    private void scheduleNextUpdateCheck() {
+        updateHandler.removeCallbacks(updatePollRunnable);
+        updateHandler.postDelayed(updatePollRunnable, UPDATE_POLL_INTERVAL_MS);
+    }
+
+    private void updateAppUpdatePanel(AppUpdateResponse update, String fallbackMessage) {
+        boolean hasUpdate = update != null && Boolean.TRUE.equals(update.getHasUpdate());
+        availableUpdate = hasUpdate ? update : null;
+        appUpdateButton.setVisibility(hasUpdate ? View.VISIBLE : View.GONE);
+        appUpdateButton.setEnabled(hasUpdate);
+        appUpdateButton.setFocusable(hasUpdate);
+        appUpdateSummaryText.setText(hasUpdate ? buildAppUpdateSummary(update) : safeText(fallbackMessage, APP_UPDATE_CURRENT));
+        rebuildDrawerFocusOrder();
+    }
+
+    private String buildAppUpdateSummary(AppUpdateResponse update) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("\u53d1\u73b0\u65b0\u7248\u672c");
+        if (safeText(update.getLatestVersion(), "").length() > 0) {
+            builder.append("\uff1a").append(update.getLatestVersion());
+        }
+        Integer latestVersionCode = update.getLatestVersionCode();
+        if (latestVersionCode != null) {
+            builder.append(" (").append(latestVersionCode).append(")");
+        }
+        if (Boolean.TRUE.equals(update.getForceUpdate())) {
+            builder.append("\n\u5fc5\u987b\u66f4\u65b0");
+        }
+        if (safeText(update.getReleaseNotes(), "").length() > 0) {
+            builder.append("\n\n").append(update.getReleaseNotes());
+        }
+        return builder.toString();
+    }
+
     private void clearScheduledTasks() {
         imageHandler.removeCallbacks(imageAdvanceRunnable);
         errorHandler.removeCallbacksAndMessages(null);
+        cancelImageTransition();
     }
 
     private void enterImmersiveMode() {
@@ -1252,6 +1594,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         addDrawerFocusableView(currentMediaPanel);
         addDrawerFocusableView(refreshButton);
         addDrawerFocusableView(setupButton);
+        addDrawerFocusableView(appUpdateButton);
         collectFocusableChildren(rotationOptionContainer);
         addDrawerFocusableView(muteToggleCheckBox);
         collectFocusableChildren(playbackSelectionContainer);
@@ -1268,6 +1611,9 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
     private void addDrawerFocusableView(View view) {
         if (view == null) {
+            return;
+        }
+        if (view.getVisibility() != View.VISIBLE || !view.isEnabled()) {
             return;
         }
         if (view.getId() == View.NO_ID) {
@@ -1296,6 +1642,9 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
     private void collectFocusableView(View view) {
         if (view == null) {
+            return;
+        }
+        if (view.getVisibility() != View.VISIBLE || !view.isEnabled()) {
             return;
         }
         if (view instanceof CheckBox || view instanceof Button) {

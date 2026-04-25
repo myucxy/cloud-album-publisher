@@ -77,6 +77,9 @@ public class DevicePullResponse {
         @Schema(description = "背景音乐音量")
         private Integer bgmVolume;
 
+        @Schema(description = "播放转场样式")
+        private String transitionStyle;
+
         @Schema(description = "可见性")
         private String visibility;
     }

@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS t_album (
     bgm_content_type         VARCHAR(100),
     bgm_media_type           VARCHAR(20),
     bgm_volume               TINYINT DEFAULT 80,
+    transition_style         VARCHAR(20) NOT NULL DEFAULT 'NONE',
     visibility               VARCHAR(20) NOT NULL DEFAULT 'PRIVATE',
     status                   VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
     sort_order               INT DEFAULT 0,
@@ -84,6 +85,8 @@ ALTER TABLE t_album ADD COLUMN IF NOT EXISTS bgm_path VARCHAR(500);
 ALTER TABLE t_album ADD COLUMN IF NOT EXISTS bgm_file_name VARCHAR(255);
 ALTER TABLE t_album ADD COLUMN IF NOT EXISTS bgm_content_type VARCHAR(100);
 ALTER TABLE t_album ADD COLUMN IF NOT EXISTS bgm_media_type VARCHAR(20);
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS transition_style VARCHAR(20) NOT NULL DEFAULT 'NONE';
+UPDATE t_album SET transition_style = 'NONE' WHERE transition_style IS NULL OR transition_style = '';
 
 CREATE TABLE IF NOT EXISTS t_album_media (
     id                 BIGINT AUTO_INCREMENT PRIMARY KEY,

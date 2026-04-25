@@ -42,6 +42,7 @@
         <MediaPlayer
           :media="currentMedia"
           :album="currentDistribution?.album"
+          :transition-style="player.currentTransitionStyle"
           :muted="player.playbackMuted"
           :loading="player.syncStatus === 'loading' && !player.currentMedia"
           @ended="player.nextMedia"

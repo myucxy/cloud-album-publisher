@@ -615,6 +615,7 @@ public class DeviceServiceImpl implements DeviceService {
         item.setBgmList(bgmList);
         item.setBgmUrl(!bgmList.isEmpty() ? bgmList.get(0).getUrl() : buildAlbumBgmUrl(album));
         item.setBgmVolume(album.getBgmVolume());
+        item.setTransitionStyle(StringUtils.hasText(album.getTransitionStyle()) ? album.getTransitionStyle() : "NONE");
         item.setVisibility(album.getVisibility());
         return item;
     }

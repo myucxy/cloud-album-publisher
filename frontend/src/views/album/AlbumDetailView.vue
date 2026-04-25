@@ -6,12 +6,16 @@
           <span style="font-weight:600">{{ album?.title }}</span>
           <a-tag :color="album?.status === 'PUBLISHED' ? 'green' : 'default'">{{ album?.status }}</a-tag>
           <a-tag>{{ album?.visibility }}</a-tag>
+          <a-tag color="blue">{{ transitionStyleLabel(album?.transitionStyle) }}</a-tag>
         </div>
       </template>
       <template #extra>
         <a-button type="primary" size="small" @click="openCoverModal"><picture-outlined /> 更新封面</a-button>
       </template>
       <div style="color:#8c8c8c; margin-top:8px">{{ album?.description || '-' }}</div>
+      <div style="color:#8c8c8c; font-size:12px; margin-top:6px">
+        图片播放时应用该转场样式，视频内容跳过转场效果。
+      </div>
     </a-page-header>
     <a-tabs v-model:activeKey="activeTabKey">
       <a-tab-pane key="media" tab="相册媒体">
@@ -632,6 +636,15 @@ import SecureAudio from '@/components/SecureAudio.vue'
 import { useSecureObjectUrl } from '@/components/useSecureObjectUrl'
 
 const SOURCE_TYPE_ORDER = ['UPLOAD', 'SMB', 'FTP', 'SFTP', 'WEBDAV']
+const TRANSITION_STYLE_OPTIONS = [
+  { value: 'NONE', label: '无转场' },
+  { value: 'FADE', label: '淡入淡出' },
+  { value: 'SLIDE', label: '滑动缩放' },
+  { value: 'CUBE', label: '立方体' },
+  { value: 'REVEAL', label: '圆形揭示' },
+  { value: 'FLIP', label: '翻页' },
+  { value: 'RANDOM', label: '随机' }
+]
 
 const route = useRoute()
 const router = useRouter()
@@ -1620,6 +1633,10 @@ function formatDuration(seconds) {
   const secs = totalSeconds % 60
   if (hrs > 0) return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
   return `${mins}:${String(secs).padStart(2, '0')}`
+}
+
+function transitionStyleLabel(value) {
+  return TRANSITION_STYLE_OPTIONS.find(option => option.value === value)?.label || '无转场'
 }
 
 function statusColor(status) {

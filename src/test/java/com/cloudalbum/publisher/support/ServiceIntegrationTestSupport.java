@@ -79,6 +79,7 @@ public abstract class ServiceIntegrationTestSupport {
         album.setCoverUrl("covers/album.jpg");
         album.setBgmUrl("bgm/test.mp3");
         album.setBgmVolume(80);
+        album.setTransitionStyle("NONE");
         album.setVisibility(visibility);
         album.setStatus("DRAFT");
         album.setSortOrder(0);
