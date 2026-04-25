@@ -1,6 +1,7 @@
 package com.cloudalbum.publisher.android.data.api;
 
 import com.cloudalbum.publisher.android.data.model.ApiResult;
+import com.cloudalbum.publisher.android.data.model.AppUpdateResponse;
 import com.cloudalbum.publisher.android.data.model.DevicePullResponse;
 import com.cloudalbum.publisher.android.data.model.DeviceResponse;
 import com.cloudalbum.publisher.android.data.model.DeviceSelfRegisterRequest;
@@ -11,6 +12,7 @@ import retrofit2.Call;
 import retrofit2.http.Body;
 import retrofit2.http.GET;
 import retrofit2.http.POST;
+import retrofit2.http.Query;
 
 public interface CloudAlbumApi {
     @POST("api/v1/devices/self/register")
@@ -18,6 +20,12 @@ public interface CloudAlbumApi {
 
     @POST("api/v1/devices/self/token")
     Call<ApiResult<DeviceTokenResponse>> createDeviceToken(@Body DeviceTokenRequest request);
+
+    @GET("api/v1/client-updates/check")
+    Call<ApiResult<AppUpdateResponse>> checkUpdate(@Query("platform") String platform,
+                                                   @Query("currentVersion") String currentVersion,
+                                                   @Query("currentVersionCode") int currentVersionCode,
+                                                   @Query("channel") String channel);
 
     @GET("api/v1/devices/pull/current")
     Call<ApiResult<DevicePullResponse>> pullCurrent();

@@ -16,6 +16,8 @@ application-prod.yml
 /android-client/app/build/
 *.apk
 *.aab
+/releases/
+/device-client/release/
 /device-client/node_modules/.bin/conc
 /device-client/node_modules/.bin/conc.cmd
 /device-client/node_modules/.bin/conc.ps1

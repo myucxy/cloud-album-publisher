@@ -254,6 +254,22 @@
     </androidx.drawerlayout.widget.DrawerLayout>
 
     <FrameLayout
+        android:id="@+id/drawerGestureHandle"
+        android:layout_width="@dimen/drawer_handle_width"
+        android:layout_height="match_parent"
+        android:layout_gravity="start"
+        android:clickable="true"
+        android:focusable="false"
+        android:focusableInTouchMode="false">
+
+        <View
+            android:layout_width="@dimen/drawer_handle_indicator_width"
+            android:layout_height="72dp"
+            android:layout_gravity="start|center_vertical"
+            android:background="@drawable/bg_drawer_handle" />
+    </FrameLayout>
+
+    <FrameLayout
         android:id="@+id/systemCapabilityOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"

@@ -33,9 +33,16 @@ public class SecurityConfig {
     private final ObjectMapper objectMapper;
 
     private static final String[] WHITE_LIST = {
+            "/",
+            "/index.html",
+            "/favicon.svg",
+            "/icons.svg",
+            "/assets/**",
             "/api/v1/auth/**",
             "/api/v1/devices/self/register",
             "/api/v1/devices/self/token",
+            "/api/v1/client-updates/**",
+            "/downloads/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
@@ -51,7 +58,8 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(WHITE_LIST).permitAll()
-                        .anyRequest().authenticated()
+                        .requestMatchers("/api/v1/**").authenticated()
+                        .anyRequest().permitAll()
                 )
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, authException) -> {

@@ -64,6 +64,10 @@ device:
   offline-threshold-seconds: 90
   offline-check-interval-ms: 30000
 
+release:
+  manifest-path: ${RELEASE_MANIFEST_PATH:./releases/manifest.json}
+  downloads-location: ${RELEASE_DOWNLOADS_LOCATION:file:./releases/}
+
 media-source:
   crypto:
     secret: ${MEDIA_SOURCE_CRYPTO_SECRET:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}

@@ -9,4 +9,6 @@
     <dimen name="label_size">14sp</dimen>
     <dimen name="body_size">18sp</dimen>
     <dimen name="caption_size">13sp</dimen>
+    <dimen name="drawer_handle_width">64dp</dimen>
+    <dimen name="drawer_handle_indicator_width">4dp</dimen>
 </resources>

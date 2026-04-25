@@ -13,6 +13,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -39,6 +40,7 @@ import com.cloudalbum.publisher.android.data.repository.CloudAlbumRepository;
 import com.cloudalbum.publisher.android.data.repository.DeviceSessionRepository;
 import com.cloudalbum.publisher.android.setup.SetupActivity;
 import com.cloudalbum.publisher.android.ui.PageRotationController;
+import com.cloudalbum.publisher.android.update.AppUpdateChecker;
 import com.google.android.exoplayer2.MediaItem;
 import com.google.android.exoplayer2.PlaybackException;
 import com.google.android.exoplayer2.Player;
@@ -63,6 +65,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private static final long IMAGE_ADVANCE_RETRY_DELAY_MS = 300L;
     private static final int IMAGE_ADVANCE_MAX_RETRY_COUNT = 10;
     private static final int DRAWER_FOCUS_TOP_EXTRA_DP = 96;
+    private static final int DRAWER_HANDLE_SWIPE_THRESHOLD_DP = 36;
     private static final String REFRESH_BUTTON_LABEL = "\u7acb\u5373\u540c\u6b65";
     private static final String SETUP_BUTTON_LABEL = "\u8bbe\u7f6e";
     private static final String PLAYBACK_SELECTION_TITLE = "\u5206\u7ec4\u9009\u62e9";
@@ -129,11 +132,13 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private CloudAlbumRepository repository;
     private DeviceSessionRepository sessionRepository;
     private PullSyncCoordinator pullSyncCoordinator;
+    private AppUpdateChecker appUpdateChecker;
     private PlaybackEngine playbackEngine;
     private SimpleExoPlayer contentPlayer;
     private SimpleExoPlayer bgmPlayer;
 
     private FrameLayout pageRoot;
+    private FrameLayout drawerGestureHandle;
     private DrawerLayout drawerLayout;
     private ScrollView menuDrawer;
     private LinearLayout deviceInfoPanel;
@@ -171,6 +176,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private boolean waitingForBinding = false;
     private DevicePullResponse lastPullResponse;
     private PageRotationController rotationController;
+    private float drawerHandleDownX;
+    private boolean drawerHandleOpenedBySwipe;
     private int imageAdvanceRetryCount = 0;
 
     @Override
@@ -184,6 +191,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
         playbackEngine = new PlaybackEngine();
         pullSyncCoordinator = new PullSyncCoordinator(repository, this);
+        appUpdateChecker = new AppUpdateChecker(this, repository);
 
         bindViews();
         rotationController = new PageRotationController(this, pageRoot);
@@ -200,6 +208,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     protected void onStart() {
         super.onStart();
         enterImmersiveMode();
+        appUpdateChecker.checkOnce();
         if (sessionRepository.isActivated()) {
             waitingForBinding = false;
             pullSyncCoordinator.start();
@@ -293,6 +302,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
     private void bindViews() {
         pageRoot = findViewById(R.id.playerRoot);
+        drawerGestureHandle = findViewById(R.id.drawerGestureHandle);
         drawerLayout = findViewById(R.id.playerDrawerLayout);
         menuDrawer = findViewById(R.id.menuDrawer);
         deviceInfoPanel = findViewById(R.id.deviceInfoPanel);
@@ -350,15 +360,18 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void setupButtons() {
+        setupDrawerGestureHandle();
         drawerLayout.addDrawerListener(new DrawerLayout.SimpleDrawerListener() {
             @Override
             public void onDrawerOpened(@NonNull View drawerView) {
+                drawerGestureHandle.setVisibility(View.GONE);
                 focusFirstDrawerItem();
                 enterImmersiveMode();
             }
 
             @Override
             public void onDrawerClosed(@NonNull View drawerView) {
+                drawerGestureHandle.setVisibility(View.VISIBLE);
                 enterImmersiveMode();
             }
         });
@@ -405,6 +418,56 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             }
         });
         rebuildDrawerFocusOrder();
+    }
+
+    private void setupDrawerGestureHandle() {
+        drawerGestureHandle.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!isDrawerOpen()) {
+                    openDrawerMenu();
+                }
+            }
+        });
+        drawerGestureHandle.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                if (isDrawerOpen() || isSystemCapabilityVisible()) {
+                    return false;
+                }
+                if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                    drawerHandleDownX = event.getX();
+                    drawerHandleOpenedBySwipe = false;
+                    return true;
+                }
+                if (event.getAction() == MotionEvent.ACTION_MOVE
+                        && event.getX() - drawerHandleDownX >= dp(DRAWER_HANDLE_SWIPE_THRESHOLD_DP)) {
+                    openDrawerMenu();
+                    drawerHandleOpenedBySwipe = true;
+                    return true;
+                }
+                if (event.getAction() == MotionEvent.ACTION_UP) {
+                    if (!drawerHandleOpenedBySwipe) {
+                        v.performClick();
+                    }
+                    return true;
+                }
+                if (event.getAction() == MotionEvent.ACTION_CANCEL) {
+                    return true;
+                }
+                return false;
+            }
+        });
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            drawerGestureHandle.post(new Runnable() {
+                @Override
+                public void run() {
+                    drawerGestureHandle.setSystemGestureExclusionRects(java.util.Collections.singletonList(
+                            new Rect(0, 0, drawerGestureHandle.getWidth(), drawerGestureHandle.getHeight())
+                    ));
+                }
+            });
+        }
     }
 
     private void setupPlayers() {

@@ -2,8 +2,10 @@ package com.cloudalbum.publisher.android.data.repository;
 
 import android.content.Context;
 
+import com.cloudalbum.publisher.android.BuildConfig;
 import com.cloudalbum.publisher.android.data.api.CloudAlbumApi;
 import com.cloudalbum.publisher.android.data.model.ApiResult;
+import com.cloudalbum.publisher.android.data.model.AppUpdateResponse;
 import com.cloudalbum.publisher.android.data.model.DevicePullResponse;
 import com.cloudalbum.publisher.android.data.model.DeviceResponse;
 import com.cloudalbum.publisher.android.data.model.DeviceSelfRegisterRequest;
@@ -56,6 +58,17 @@ public class CloudAlbumRepository {
         }
         sessionRepository.saveDeviceAccessToken(result.getData().getAccessToken());
         sessionRepository.saveDeviceId(result.getData().getDeviceId());
+        return result.getData();
+    }
+
+    public AppUpdateResponse checkAndroidUpdate() throws IOException {
+        CloudAlbumApi api = createApi(sessionRepository.getServerBaseUrl(), null);
+        ApiResult<AppUpdateResponse> result = execute(api.checkUpdate(
+                "android",
+                BuildConfig.VERSION_NAME,
+                BuildConfig.VERSION_CODE,
+                "stable"
+        ));
         return result.getData();
     }
 

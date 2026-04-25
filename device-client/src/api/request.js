@@ -88,7 +88,7 @@ request.interceptors.response.use(
       }
     } else if (status === 403) {
       message.error(error.response?.data?.message || '无权限执行该操作')
-    } else if (status !== 401) {
+    } else if (status !== 401 && !error.config?.silent) {
       message.error(messageText)
     }
 
