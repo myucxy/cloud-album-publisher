@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth'
 const routes = [
   { path: '/login', component: () => import('@/views/auth/LoginView.vue'), meta: { guest: true } },
   { path: '/register', component: () => import('@/views/auth/RegisterView.vue'), meta: { guest: true } },
+  { path: '/client-downloads', component: () => import('@/views/client/ClientDownloadsView.vue') },
   {
     path: '/',
     component: () => import('@/views/layout/MainLayout.vue'),

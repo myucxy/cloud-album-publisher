@@ -71,6 +71,7 @@ public class DevicePullResponse {
         private List<BgmItem> bgmList;
         private Integer bgmVolume;
         private String transitionStyle;
+        private String displayStyle;
         private String visibility;
 
         public long getId() {
@@ -103,6 +104,10 @@ public class DevicePullResponse {
 
         public String getTransitionStyle() {
             return transitionStyle;
+        }
+
+        public String getDisplayStyle() {
+            return displayStyle;
         }
 
         public String getVisibility() {

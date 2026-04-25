@@ -1,13 +1,7 @@
 <template>
   <div>
     <div style="display:flex; justify-content:space-between; margin-bottom:16px">
-      <a-space>
-        <a-select v-model:value="filterVisibility" style="width:120px" @change="load" allow-clear placeholder="可见性">
-          <a-select-option value="PUBLIC">公开</a-select-option>
-          <a-select-option value="PRIVATE">私有</a-select-option>
-          <a-select-option value="DEVICE_ONLY">设备专属</a-select-option>
-        </a-select>
-      </a-space>
+      <a-space />
       <a-button type="primary" @click="openCreate"><plus-outlined /> 新建相册</a-button>
     </div>
 
@@ -22,8 +16,7 @@
           </template>
           <a-card-meta :title="album.title" :description="album.description || '暂无描述'" />
           <template #actions>
-            <a-tag :color="statusColor(album.status)">{{ album.status }}</a-tag>
-            <a-tag>{{ album.visibility }}</a-tag>
+            <a-tag color="purple">{{ displayStyleLabel(album.displayStyle) }}</a-tag>
             <a-tag color="blue">{{ transitionStyleLabel(album.transitionStyle) }}</a-tag>
             <a @click.stop="openEdit(album)"><edit-outlined /></a>
             <a-popconfirm title="确认删除该相册？" @confirm.stop="deleteAlbum(album.id)">
@@ -46,13 +39,6 @@
         <a-form-item label="描述" name="description">
           <a-textarea v-model:value="form.description" :rows="3" />
         </a-form-item>
-        <a-form-item label="可见性" name="visibility">
-          <a-select v-model:value="form.visibility">
-            <a-select-option value="PRIVATE">私有</a-select-option>
-            <a-select-option value="PUBLIC">公开</a-select-option>
-            <a-select-option value="DEVICE_ONLY">设备专属</a-select-option>
-          </a-select>
-        </a-form-item>
         <a-form-item label="播放转场" name="transitionStyle">
           <a-select v-model:value="form.transitionStyle">
             <a-select-option v-for="option in TRANSITION_STYLE_OPTIONS" :key="option.value" :value="option.value">
@@ -63,11 +49,15 @@
             转场样式按相册统一配置；客户端仅对图片应用该效果，视频会自动跳过转场效果并正常播放。
           </div>
         </a-form-item>
-        <a-form-item v-if="editingId" label="状态" name="status">
-          <a-select v-model:value="form.status">
-            <a-select-option value="DRAFT">草稿</a-select-option>
-            <a-select-option value="PUBLISHED">已发布</a-select-option>
+        <a-form-item label="展示布局" name="displayStyle">
+          <a-select v-model:value="form.displayStyle">
+            <a-select-option v-for="option in DISPLAY_STYLE_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </a-select-option>
           </a-select>
+          <div style="color:#8c8c8c; font-size:12px; margin-top:6px">
+            单图使用播放转场；Bento、相框墙、轮播会同时展示多张图片，视频内容仍按原视频播放器播放。
+          </div>
         </a-form-item>
       </a-form>
     </a-modal>
@@ -92,29 +82,35 @@ const TRANSITION_STYLE_OPTIONS = [
   { value: 'RANDOM', label: '随机' }
 ]
 
+const DISPLAY_STYLE_OPTIONS = [
+  { value: 'SINGLE', label: '单图播放' },
+  { value: 'BENTO', label: 'Bento 拼贴' },
+  { value: 'FRAME_WALL', label: '相框墙' },
+  { value: 'CAROUSEL', label: '轮播墙' }
+]
+
 const router = useRouter()
 const albums = ref([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = 12
-const filterVisibility = ref(undefined)
 const modalOpen = ref(false)
 const saving = ref(false)
 const editingId = ref(null)
 const formRef = ref()
-const form = reactive({ title: '', description: '', visibility: 'PRIVATE', transitionStyle: 'NONE', status: 'DRAFT' })
+const form = reactive({ title: '', description: '', visibility: 'PUBLIC', transitionStyle: 'NONE', displayStyle: 'SINGLE', status: 'PUBLISHED' })
 
 onMounted(load)
 
 async function load() {
-  const res = await albumApi.list({ page: page.value, size: pageSize, visibility: filterVisibility.value || undefined })
+  const res = await albumApi.list({ page: page.value, size: pageSize })
   albums.value = res.data.list
   total.value = res.data.total
 }
 
 function openCreate() {
   editingId.value = null
-  Object.assign(form, { title: '', description: '', visibility: 'PRIVATE', transitionStyle: 'NONE', status: 'DRAFT' })
+  Object.assign(form, { title: '', description: '', visibility: 'PUBLIC', transitionStyle: 'NONE', displayStyle: 'SINGLE', status: 'PUBLISHED' })
   modalOpen.value = true
 }
 
@@ -123,9 +119,10 @@ function openEdit(album) {
   Object.assign(form, {
     title: album.title,
     description: album.description,
-    visibility: album.visibility,
+    visibility: 'PUBLIC',
     transitionStyle: album.transitionStyle || 'NONE',
-    status: album.status
+    displayStyle: album.displayStyle || 'SINGLE',
+    status: 'PUBLISHED'
   })
   modalOpen.value = true
 }
@@ -158,7 +155,8 @@ function transitionStyleLabel(value) {
   return TRANSITION_STYLE_OPTIONS.find(option => option.value === value)?.label || '无转场'
 }
 
-function statusColor(status) {
-  return status === 'PUBLISHED' ? 'green' : 'default'
+function displayStyleLabel(value) {
+  return DISPLAY_STYLE_OPTIONS.find(option => option.value === value)?.label || '单图播放'
 }
+
 </script>

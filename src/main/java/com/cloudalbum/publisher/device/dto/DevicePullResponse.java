@@ -80,6 +80,9 @@ public class DevicePullResponse {
         @Schema(description = "播放转场样式")
         private String transitionStyle;
 
+        @Schema(description = "展示布局样式")
+        private String displayStyle;
+
         @Schema(description = "可见性")
         private String visibility;
     }

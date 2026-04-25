@@ -202,6 +202,14 @@ public class PlaybackEngine {
         return normalizeTransitionStyle(distribution.getAlbum().getTransitionStyle());
     }
 
+    public String getCurrentDisplayStyle() {
+        DevicePullResponse.DistributionItem distribution = getCurrentDistribution();
+        if (distribution == null || distribution.getAlbum() == null) {
+            return "SINGLE";
+        }
+        return normalizeDisplayStyle(distribution.getAlbum().getDisplayStyle());
+    }
+
     public void nextBgm() {
         List<DevicePullResponse.BgmItem> list = getCurrentBgmList();
         if (list.isEmpty()) {
@@ -230,10 +238,28 @@ public class PlaybackEngine {
                 || "CUBE".equals(normalized)
                 || "REVEAL".equals(normalized)
                 || "FLIP".equals(normalized)
+                || "BENTO".equals(normalized)
+                || "FRAME_WALL".equals(normalized)
+                || "FRAMEWALL".equals(normalized)
+                || "CAROUSEL".equals(normalized)
                 || "RANDOM".equals(normalized)) {
             return normalized;
         }
         return "NONE";
+    }
+
+    private String normalizeDisplayStyle(String style) {
+        if (style == null || style.trim().isEmpty()) {
+            return "SINGLE";
+        }
+        String normalized = style.trim().toUpperCase(Locale.US);
+        if ("BENTO".equals(normalized)
+                || "FRAME_WALL".equals(normalized)
+                || "FRAMEWALL".equals(normalized)
+                || "CAROUSEL".equals(normalized)) {
+            return normalized;
+        }
+        return "SINGLE";
     }
 
     private List<DevicePullResponse.MediaItem> getPlayableMediaList(DevicePullResponse.DistributionItem distribution) {

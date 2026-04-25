@@ -18,6 +18,9 @@ public class AlbumCreateRequest {
     /** 播放转场样式，默认无转场 */
     private String transitionStyle = "NONE";
 
-    /** PUBLIC / PRIVATE / DEVICE_ONLY，默认PRIVATE */
-    private String visibility = "PRIVATE";
+    /** 展示布局样式，默认单图 */
+    private String displayStyle = "SINGLE";
+
+    /** PUBLIC / PRIVATE / DEVICE_ONLY，默认PUBLIC */
+    private String visibility = "PUBLIC";
 }

@@ -4,8 +4,7 @@
       <template #title>
         <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; min-width:0">
           <span style="font-weight:600">{{ album?.title }}</span>
-          <a-tag :color="album?.status === 'PUBLISHED' ? 'green' : 'default'">{{ album?.status }}</a-tag>
-          <a-tag>{{ album?.visibility }}</a-tag>
+          <a-tag color="purple">{{ displayStyleLabel(album?.displayStyle) }}</a-tag>
           <a-tag color="blue">{{ transitionStyleLabel(album?.transitionStyle) }}</a-tag>
         </div>
       </template>
@@ -644,6 +643,13 @@ const TRANSITION_STYLE_OPTIONS = [
   { value: 'REVEAL', label: '圆形揭示' },
   { value: 'FLIP', label: '翻页' },
   { value: 'RANDOM', label: '随机' }
+]
+
+const DISPLAY_STYLE_OPTIONS = [
+  { value: 'SINGLE', label: '单图播放' },
+  { value: 'BENTO', label: 'Bento 拼贴' },
+  { value: 'FRAME_WALL', label: '相框墙' },
+  { value: 'CAROUSEL', label: '轮播墙' }
 ]
 
 const route = useRoute()
@@ -1637,6 +1643,10 @@ function formatDuration(seconds) {
 
 function transitionStyleLabel(value) {
   return TRANSITION_STYLE_OPTIONS.find(option => option.value === value)?.label || '无转场'
+}
+
+function displayStyleLabel(value) {
+  return DISPLAY_STYLE_OPTIONS.find(option => option.value === value)?.label || '单图播放'
 }
 
 function statusColor(status) {

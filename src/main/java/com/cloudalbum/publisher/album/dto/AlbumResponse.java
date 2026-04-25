@@ -35,6 +35,7 @@ public class AlbumResponse {
     private String bgmMediaType;
     private Integer bgmVolume;
     private String transitionStyle;
+    private String displayStyle;
     private String visibility;
     private String status;
     private Integer sortOrder;

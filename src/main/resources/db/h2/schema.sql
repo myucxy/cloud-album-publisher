@@ -87,6 +87,8 @@ ALTER TABLE t_album ADD COLUMN IF NOT EXISTS bgm_content_type VARCHAR(100);
 ALTER TABLE t_album ADD COLUMN IF NOT EXISTS bgm_media_type VARCHAR(20);
 ALTER TABLE t_album ADD COLUMN IF NOT EXISTS transition_style VARCHAR(20) NOT NULL DEFAULT 'NONE';
 UPDATE t_album SET transition_style = 'NONE' WHERE transition_style IS NULL OR transition_style = '';
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS display_style VARCHAR(20) NOT NULL DEFAULT 'SINGLE';
+UPDATE t_album SET display_style = 'SINGLE' WHERE display_style IS NULL OR display_style = '';
 
 CREATE TABLE IF NOT EXISTS t_album_media (
     id                 BIGINT AUTO_INCREMENT PRIMARY KEY,

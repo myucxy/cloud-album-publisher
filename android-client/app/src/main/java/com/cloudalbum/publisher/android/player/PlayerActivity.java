@@ -27,6 +27,7 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.FrameLayout;
+import android.widget.GridLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -76,7 +77,16 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private static final int DRAWER_FOCUS_TOP_EXTRA_DP = 96;
     private static final int DRAWER_HANDLE_SWIPE_THRESHOLD_DP = 36;
     private static final long IMAGE_TRANSITION_DURATION_MS = 650L;
+    private static final int ADVANCED_IMAGE_POOL_SIZE = 8;
     private static final String[] RANDOM_IMAGE_TRANSITIONS = new String[] {"FADE", "SLIDE", "CUBE", "REVEAL", "FLIP"};
+    private static final Set<String> ADVANCED_DISPLAY_STYLES = new HashSet<String>();
+
+    static {
+        ADVANCED_DISPLAY_STYLES.add("BENTO");
+        ADVANCED_DISPLAY_STYLES.add("FRAME_WALL");
+        ADVANCED_DISPLAY_STYLES.add("FRAMEWALL");
+        ADVANCED_DISPLAY_STYLES.add("CAROUSEL");
+    }
     private static final String REFRESH_BUTTON_LABEL = "\u7acb\u5373\u540c\u6b65";
     private static final String SETUP_BUTTON_LABEL = "\u8bbe\u7f6e";
     private static final String APP_UPDATE_TITLE = "\u7248\u672c\u66f4\u65b0";
@@ -168,6 +178,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private LinearLayout currentMediaPanel;
     private ImageView imageStage;
     private ImageView imageStageNext;
+    private FrameLayout advancedImageStage;
     private StyledPlayerView playerView;
     private TextView deviceSummaryText;
     private TextView distributionText;
@@ -342,6 +353,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         currentMediaPanel = findViewById(R.id.currentMediaPanel);
         imageStage = findViewById(R.id.imageStage);
         imageStageNext = findViewById(R.id.imageStageNext);
+        advancedImageStage = findViewById(R.id.advancedImageStage);
         playerView = findViewById(R.id.playerView);
         deviceSummaryText = findViewById(R.id.deviceSummaryText);
         distributionText = findViewById(R.id.distributionText);
@@ -676,6 +688,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         preloadedImageIdentities.clear();
         imageAdvanceRetryCount = 0;
         hideImageStages();
+        hideAdvancedImageStage();
         playerView.setVisibility(View.GONE);
         emptyStateText.setVisibility(View.VISIBLE);
         showPlaybackSelectionMessage(PLAYBACK_SELECTION_WAITING);
@@ -701,6 +714,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             preloadedImageIdentities.clear();
             imageAdvanceRetryCount = 0;
             hideImageStages();
+            hideAdvancedImageStage();
             playerView.setVisibility(View.GONE);
             emptyStateText.setVisibility(View.VISIBLE);
             distributionText.setText(getString(R.string.distribution_label) + ": " + getString(R.string.unknown_value));
@@ -736,9 +750,16 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 if (contentPlayer != null) {
                     contentPlayer.stop();
                 }
-                renderImageMedia(media, currentMediaIdentity, "IMAGE".equalsIgnoreCase(previousMediaType));
+                String displayStyle = resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle());
+                if (isAdvancedDisplayStyle(displayStyle)) {
+                    renderAdvancedImageMedia(displayStyle, currentMediaIdentity);
+                } else {
+                    hideAdvancedImageStage();
+                    renderImageMedia(media, currentMediaIdentity, "IMAGE".equalsIgnoreCase(previousMediaType));
+                }
             } else {
                 hideImageStages();
+                hideAdvancedImageStage();
                 playerView.setVisibility(View.VISIBLE);
                 MediaItem mediaItem = new MediaItem.Builder()
                         .setUri(Uri.parse(media.getUrl()))
@@ -750,7 +771,10 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             }
         } else if ("IMAGE".equalsIgnoreCase(media.getMediaType())) {
             imageHandler.removeCallbacks(imageAdvanceRunnable);
-            preloadNextImage();
+            String displayStyle = resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle());
+            if (!isAdvancedDisplayStyle(displayStyle)) {
+                preloadNextImage();
+            }
             imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
         } else if (!contentPlayer.isPlaying()) {
             contentPlayer.play();
@@ -826,6 +850,181 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             imageStageNext.setVisibility(View.GONE);
             resetImageStage(imageStageNext);
         }
+    }
+
+    private void hideAdvancedImageStage() {
+        if (advancedImageStage != null) {
+            advancedImageStage.setVisibility(View.GONE);
+            advancedImageStage.removeAllViews();
+        }
+    }
+
+    private void renderAdvancedImageMedia(String displayStyle, String mediaIdentity) {
+        hideImageStages();
+        advancedImageStage.removeAllViews();
+        advancedImageStage.setVisibility(View.VISIBLE);
+        List<DevicePullResponse.MediaItem> imageItems = getAdvancedImageItems();
+        if (imageItems.isEmpty()) {
+            playbackEngine.nextMedia();
+            renderPlayback();
+            return;
+        }
+        if ("CAROUSEL".equals(displayStyle)) {
+            renderCarouselLayout(imageItems);
+        } else if ("FRAME_WALL".equals(displayStyle) || "FRAMEWALL".equals(displayStyle)) {
+            renderFrameWallLayout(imageItems);
+        } else {
+            renderBentoLayout(imageItems);
+        }
+        advancedImageStage.setAlpha(0f);
+        advancedImageStage.animate().alpha(1f).setDuration(IMAGE_TRANSITION_DURATION_MS).start();
+        preloadAdvancedImages(imageItems);
+        imageHandler.removeCallbacks(imageAdvanceRunnable);
+        imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+    }
+
+    private void renderBentoLayout(List<DevicePullResponse.MediaItem> imageItems) {
+        int padding = dp(10);
+        advancedImageStage.setPadding(padding, padding, padding, padding);
+        addAdvancedImage(imageItems.get(0), 0f, 0f, 0.62f, 0.62f, dp(6));
+        if (imageItems.size() > 1) {
+            addAdvancedImage(imageItems.get(1), 0.64f, 0f, 0.36f, 0.3f, dp(6));
+        }
+        if (imageItems.size() > 2) {
+            addAdvancedImage(imageItems.get(2), 0.64f, 0.32f, 0.36f, 0.3f, dp(6));
+        }
+        if (imageItems.size() > 3) {
+            addAdvancedImage(imageItems.get(3), 0f, 0.64f, 0.3f, 0.36f, dp(6));
+        }
+        if (imageItems.size() > 4) {
+            addAdvancedImage(imageItems.get(4), 0.32f, 0.64f, 0.32f, 0.36f, dp(6));
+        }
+        if (imageItems.size() > 5) {
+            addAdvancedImage(imageItems.get(5), 0.66f, 0.64f, 0.34f, 0.36f, dp(6));
+        }
+    }
+
+    private void renderFrameWallLayout(List<DevicePullResponse.MediaItem> imageItems) {
+        GridLayout grid = new GridLayout(this);
+        grid.setColumnCount(4);
+        grid.setRowCount(2);
+        int gap = dp(8);
+        grid.setPadding(gap, gap, gap, gap);
+        advancedImageStage.addView(grid, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        int count = Math.min(8, imageItems.size());
+        for (int i = 0; i < count; i += 1) {
+            ImageView imageView = createAdvancedImageView();
+            GridLayout.LayoutParams params = new GridLayout.LayoutParams();
+            params.width = 0;
+            params.height = 0;
+            params.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
+            params.rowSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
+            params.setMargins(gap, gap, gap, gap);
+            grid.addView(imageView, params);
+            AuthenticatedImageLoader.load(imageView, imageItems.get(i).getUrl(), sessionRepository);
+        }
+    }
+
+    private void renderCarouselLayout(List<DevicePullResponse.MediaItem> imageItems) {
+        int count = Math.min(5, imageItems.size());
+        float[] widths = count >= 5 ? new float[] {0.22f, 0.28f, 0.42f, 0.28f, 0.22f} : new float[] {0.28f, 0.42f, 0.28f};
+        float[] centers = count >= 5 ? new float[] {0.08f, 0.27f, 0.5f, 0.73f, 0.92f} : new float[] {0.24f, 0.5f, 0.76f};
+        int start = count >= 5 ? 0 : Math.max(0, count - 3);
+        int layoutCount = count >= 5 ? 5 : Math.min(3, count);
+        for (int i = 0; i < layoutCount; i += 1) {
+            ImageView imageView = createAdvancedImageView();
+            float widthRatio = widths[i];
+            float heightRatio = i == layoutCount / 2 ? 0.78f : 0.56f;
+            int width = Math.max(1, Math.round(getScreenWidth() * widthRatio));
+            int height = Math.max(1, Math.round(getScreenHeight() * heightRatio));
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
+            params.leftMargin = Math.round(getScreenWidth() * centers[i] - width / 2f);
+            params.topMargin = Math.round((getScreenHeight() - height) / 2f);
+            imageView.setAlpha(i == layoutCount / 2 ? 1f : 0.68f);
+            imageView.setElevation(i == layoutCount / 2 ? dp(8) : dp(2));
+            advancedImageStage.addView(imageView, params);
+            AuthenticatedImageLoader.load(imageView, imageItems.get(start + i).getUrl(), sessionRepository);
+        }
+    }
+
+    private void addAdvancedImage(DevicePullResponse.MediaItem media, float leftRatio, float topRatio, float widthRatio, float heightRatio, int margin) {
+        ImageView imageView = createAdvancedImageView();
+        int parentWidth = getScreenWidth();
+        int parentHeight = getScreenHeight();
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                Math.max(1, Math.round(parentWidth * widthRatio) - margin * 2),
+                Math.max(1, Math.round(parentHeight * heightRatio) - margin * 2));
+        params.leftMargin = Math.round(parentWidth * leftRatio) + margin;
+        params.topMargin = Math.round(parentHeight * topRatio) + margin;
+        advancedImageStage.addView(imageView, params);
+        imageView.setScaleX(0.96f);
+        imageView.setScaleY(0.96f);
+        imageView.animate().scaleX(1f).scaleY(1f).setDuration(IMAGE_TRANSITION_DURATION_MS).start();
+        AuthenticatedImageLoader.load(imageView, media.getUrl(), sessionRepository);
+    }
+
+    private ImageView createAdvancedImageView() {
+        ImageView imageView = new ImageView(this);
+        imageView.setBackgroundColor(ContextCompat.getColor(this, R.color.ca_background));
+        imageView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        imageView.setAdjustViewBounds(false);
+        return imageView;
+    }
+
+    private List<DevicePullResponse.MediaItem> getAdvancedImageItems() {
+        List<DevicePullResponse.MediaItem> result = new ArrayList<DevicePullResponse.MediaItem>();
+        List<DevicePullResponse.MediaItem> mediaList = playbackEngine.getCurrentMediaList();
+        DevicePullResponse.MediaItem current = playbackEngine.getCurrentMedia();
+        String currentIdentity = PlaybackEngine.resolveMediaIdentity(current);
+        int startIndex = 0;
+        for (int i = 0; i < mediaList.size(); i += 1) {
+            if (currentIdentity.equals(PlaybackEngine.resolveMediaIdentity(mediaList.get(i)))) {
+                startIndex = i;
+                break;
+            }
+        }
+        for (int offset = 0; offset < mediaList.size() && result.size() < ADVANCED_IMAGE_POOL_SIZE; offset += 1) {
+            DevicePullResponse.MediaItem candidate = mediaList.get((startIndex + offset) % mediaList.size());
+            if (candidate != null && "IMAGE".equalsIgnoreCase(candidate.getMediaType())) {
+                result.add(candidate);
+            }
+        }
+        return result;
+    }
+
+    private void preloadAdvancedImages(List<DevicePullResponse.MediaItem> imageItems) {
+        for (DevicePullResponse.MediaItem imageItem : imageItems) {
+            if (imageItem != null) {
+                AuthenticatedImageLoader.preload(imageStage, imageItem.getUrl(), sessionRepository);
+            }
+        }
+    }
+
+    private String resolveDisplayStyle(String displayStyle, String transitionStyle) {
+        String normalizedDisplay = normalizeStyle(displayStyle);
+        if (isAdvancedDisplayStyle(normalizedDisplay)) {
+            return normalizedDisplay;
+        }
+        String normalizedTransition = normalizeStyle(transitionStyle);
+        return isAdvancedDisplayStyle(normalizedTransition) ? normalizedTransition : "SINGLE";
+    }
+
+    private boolean isAdvancedDisplayStyle(String style) {
+        return ADVANCED_DISPLAY_STYLES.contains(normalizeStyle(style));
+    }
+
+    private String normalizeStyle(String style) {
+        return style == null ? "" : style.trim().toUpperCase(Locale.US);
+    }
+
+    private int getScreenWidth() {
+        return Math.max(1, pageRoot == null ? getResources().getDisplayMetrics().widthPixels : pageRoot.getWidth());
+    }
+
+    private int getScreenHeight() {
+        return Math.max(1, pageRoot == null ? getResources().getDisplayMetrics().heightPixels : pageRoot.getHeight());
     }
 
     private void runImageTransition(final ImageView fromStage, final ImageView toStage, String transitionStyle) {

@@ -66,6 +66,9 @@ public class Album {
     /** 播放转场样式 */
     private String transitionStyle;
 
+    /** 展示布局样式 */
+    private String displayStyle;
+
     /** PUBLIC / PRIVATE / DEVICE_ONLY */
     private String visibility;
 

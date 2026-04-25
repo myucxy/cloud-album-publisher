@@ -45,6 +45,8 @@ public class AlbumServiceImpl implements AlbumService {
 
     private static final Set<String> SUPPORTED_TRANSITION_STYLES = Set.of(
             "NONE", "FADE", "SLIDE", "CUBE", "REVEAL", "FLIP", "RANDOM");
+    private static final Set<String> SUPPORTED_DISPLAY_STYLES = Set.of(
+            "SINGLE", "BENTO", "FRAME_WALL", "CAROUSEL");
 
     private final AlbumMapper albumMapper;
     private final AlbumBgmMapper albumBgmMapper;
@@ -87,9 +89,10 @@ public class AlbumServiceImpl implements AlbumService {
         album.setUserId(userId);
         album.setTitle(request.getTitle());
         album.setDescription(request.getDescription());
-        album.setVisibility(request.getVisibility());
+        album.setVisibility(StringUtils.hasText(request.getVisibility()) ? request.getVisibility() : "PUBLIC");
         album.setTransitionStyle(normalizeTransitionStyle(request.getTransitionStyle()));
-        album.setStatus("DRAFT");
+        album.setDisplayStyle(normalizeDisplayStyle(request.getDisplayStyle()));
+        album.setStatus("PUBLISHED");
         album.setSortOrder(0);
         album.setBgmVolume(80);
         albumMapper.insert(album);
@@ -104,6 +107,7 @@ public class AlbumServiceImpl implements AlbumService {
         if (request.getDescription() != null) album.setDescription(request.getDescription());
         if (StringUtils.hasText(request.getVisibility())) album.setVisibility(request.getVisibility());
         if (request.getTransitionStyle() != null) album.setTransitionStyle(normalizeTransitionStyle(request.getTransitionStyle()));
+        if (request.getDisplayStyle() != null) album.setDisplayStyle(normalizeDisplayStyle(request.getDisplayStyle()));
         if (StringUtils.hasText(request.getStatus())) album.setStatus(request.getStatus());
         if (request.getSortOrder() != null) album.setSortOrder(request.getSortOrder());
         albumMapper.updateById(album);
@@ -423,6 +427,7 @@ public class AlbumServiceImpl implements AlbumService {
         resp.setBgmMediaType(album.getBgmMediaType());
         resp.setBgmVolume(album.getBgmVolume());
         resp.setTransitionStyle(resolveTransitionStyle(album.getTransitionStyle()));
+        resp.setDisplayStyle(resolveDisplayStyle(album.getDisplayStyle()));
         resp.setVisibility(album.getVisibility());
         resp.setStatus(album.getStatus());
         resp.setSortOrder(album.getSortOrder());
@@ -894,6 +899,24 @@ public class AlbumServiceImpl implements AlbumService {
 
     private String resolveTransitionStyle(String transitionStyle) {
         return StringUtils.hasText(transitionStyle) ? transitionStyle : "NONE";
+    }
+
+    private String normalizeDisplayStyle(String displayStyle) {
+        if (!StringUtils.hasText(displayStyle)) {
+            return "SINGLE";
+        }
+        String normalized = displayStyle.trim().toUpperCase(Locale.ROOT);
+        if ("FRAMEWALL".equals(normalized)) {
+            normalized = "FRAME_WALL";
+        }
+        if (!SUPPORTED_DISPLAY_STYLES.contains(normalized)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "不支持的展示布局样式");
+        }
+        return normalized;
+    }
+
+    private String resolveDisplayStyle(String displayStyle) {
+        return StringUtils.hasText(displayStyle) ? displayStyle : "SINGLE";
     }
 
     @Override
