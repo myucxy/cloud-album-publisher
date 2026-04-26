@@ -21,6 +21,10 @@ public class DeviceSessionRepository {
     private static final String KEY_DISABLED_MEDIA_IDENTITIES = "disabled_media_identities";
     private static final String KEY_PLAYBACK_ROTATION_MODE = "playback_rotation_mode";
     private static final String KEY_PLAYBACK_MUTED = "playback_muted";
+    private static final String KEY_MEDIA_CACHE_ENABLED = "media_cache_enabled";
+    private static final String KEY_MEDIA_CACHE_LIMIT_MB = "media_cache_limit_mb";
+
+    public static final int DEFAULT_MEDIA_CACHE_LIMIT_MB = 2048;
 
     public static final String PLAYBACK_ROTATION_AUTO = "auto";
     public static final String PLAYBACK_ROTATION_0 = "0";
@@ -139,6 +143,26 @@ public class DeviceSessionRepository {
         preferences.edit().putBoolean(KEY_PLAYBACK_MUTED, muted).apply();
     }
 
+    public boolean isMediaCacheEnabled() {
+        return preferences.getBoolean(KEY_MEDIA_CACHE_ENABLED, true);
+    }
+
+    public void saveMediaCacheEnabled(boolean enabled) {
+        preferences.edit().putBoolean(KEY_MEDIA_CACHE_ENABLED, enabled).apply();
+    }
+
+    public int getMediaCacheLimitMb() {
+        int value = preferences.getInt(KEY_MEDIA_CACHE_LIMIT_MB, DEFAULT_MEDIA_CACHE_LIMIT_MB);
+        if (value == 512 || value == 1024 || value == 2048 || value == 5120 || value == 10240) {
+            return value;
+        }
+        return DEFAULT_MEDIA_CACHE_LIMIT_MB;
+    }
+
+    public void saveMediaCacheLimitMb(int limitMb) {
+        preferences.edit().putInt(KEY_MEDIA_CACHE_LIMIT_MB, normalizeMediaCacheLimitMb(limitMb)).apply();
+    }
+
     public String getDefaultDeviceName() {
         return getDeviceModel();
     }
@@ -179,5 +203,12 @@ public class DeviceSessionRepository {
             return mode;
         }
         return PLAYBACK_ROTATION_AUTO;
+    }
+
+    private int normalizeMediaCacheLimitMb(int limitMb) {
+        if (limitMb == 512 || limitMb == 1024 || limitMb == 2048 || limitMb == 5120 || limitMb == 10240) {
+            return limitMb;
+        }
+        return DEFAULT_MEDIA_CACHE_LIMIT_MB;
     }
 }

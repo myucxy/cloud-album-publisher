@@ -31,6 +31,9 @@ import android.widget.GridLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -58,6 +61,7 @@ import com.google.android.exoplayer2.audio.AudioAttributes;
 import com.google.android.exoplayer2.source.DefaultMediaSourceFactory;
 import com.google.android.exoplayer2.ui.StyledPlayerView;
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSource;
+import com.google.gson.Gson;
 
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -103,6 +107,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private static final String PLAYBACK_SELECTION_WAITING = "\u7b49\u5f85\u540c\u6b65\u540e\u53ef\u9009\u62e9\u5206\u7ec4";
     private static final String PLAYBACK_SELECTION_ALL_DISABLED = "\u5f53\u524d\u5df2\u5168\u90e8\u5173\u95ed";
     private static final String WAITING_FOR_BINDING_STATUS = "\u7b49\u5f85\u540e\u53f0\u7ed1\u5b9a";
+    private static final String STYLE_SWITCHING_STATUS = "\u6837\u5f0f\u5207\u6362\u4e2d\uff0c\u8bf7\u7a0d\u5019...";
     private static final String ROTATION_TITLE = "\u5c4f\u5e55\u65b9\u5411";
     private static final String ROTATION_AUTO_LABEL = "\u81ea\u52a8\uff08\u8ddf\u968f\u8bbe\u5907\uff09";
     private static final String ROTATION_0_LABEL = "\u4e0d\u65cb\u8f6c";
@@ -113,6 +118,9 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private static final String MUTE_OPTION_LABEL = "\u9759\u97f3\u64ad\u653e";
     private static final String MUTE_ENABLED_LABEL = "\u5f53\u524d\u5df2\u9759\u97f3";
     private static final String MUTE_DISABLED_LABEL = "\u5f53\u524d\u5df2\u5f00\u542f\u58f0\u97f3";
+    private static final String CACHE_TITLE = "\u5a92\u4f53\u7f13\u5b58";
+    private static final String CACHE_ENABLE_LABEL = "\u542f\u7528\u672c\u5730\u7f13\u5b58";
+    private static final String CACHE_CLEAR_LABEL = "\u6e05\u7406\u7f13\u5b58";
     private static final String SYSTEM_CAPABILITY_TITLE = "\u7cfb\u7edf\u80fd\u529b";
     private static final String SYSTEM_CAPABILITY_CLOSE = "\u5173\u95ed";
     private static final String[] SYSTEM_CAPABILITY_MIME_TYPES = new String[] {
@@ -144,6 +152,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private final Handler errorHandler = new Handler(Looper.getMainLooper());
     private final Handler tokenHandler = new Handler(Looper.getMainLooper());
     private final Handler updateHandler = new Handler(Looper.getMainLooper());
+    private final Handler cacheHandler = new Handler(Looper.getMainLooper());
+    private final Gson gson = new Gson();
     private final Rect drawerFocusRect = new Rect();
     private final Runnable imageAdvanceRunnable = new Runnable() {
         @Override
@@ -170,6 +180,12 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             imageHandler.postDelayed(this, 1000L);
         }
     };
+    private final Runnable cacheRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            reapplyCachedPlaylist();
+        }
+    };
     private final Set<String> disabledDistributionIds = new HashSet<String>();
     private final Set<String> preloadedImageIdentities = new HashSet<String>();
     private final List<View> drawerFocusableViews = new ArrayList<View>();
@@ -177,11 +193,13 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private DeviceSessionRepository sessionRepository;
     private PullSyncCoordinator pullSyncCoordinator;
     private AppUpdateChecker appUpdateChecker;
+    private MediaCacheManager mediaCacheManager;
     private PlaybackEngine playbackEngine;
     private SimpleExoPlayer contentPlayer;
     private SimpleExoPlayer bgmPlayer;
 
     private FrameLayout pageRoot;
+    private FrameLayout playbackStageContainer;
     private FrameLayout drawerGestureHandle;
     private DrawerLayout drawerLayout;
     private ScrollView menuDrawer;
@@ -198,10 +216,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private TextView statusText;
     private TextView emptyStateText;
     private FrameLayout calendarStage;
+    private ImageView calendarImageView;
+    private LinearLayout calendarInfoPanel;
     private TextView calendarMonthText;
     private TextView calendarDayText;
     private TextView calendarWeekdayText;
-    private TextView calendarTimeText;
     private LinearLayout timeOverlay;
     private TextView overlayTimeText;
     private TextView overlayDateText;
@@ -209,30 +228,37 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private TextView rotationSummaryText;
     private TextView muteTitleText;
     private TextView muteSummaryText;
+    private TextView cacheTitleText;
+    private TextView cacheSummaryText;
     private TextView playbackSelectionTitleText;
     private TextView playbackSelectionSummaryText;
     private TextView appUpdateTitleText;
     private TextView appUpdateSummaryText;
     private TextView systemCapabilityTitleText;
     private TextView systemCapabilityContentText;
-    private LinearLayout rotationOptionContainer;
     private LinearLayout playbackSelectionContainer;
+    private Spinner rotationSpinner;
+    private Spinner cacheLimitSpinner;
     private FrameLayout systemCapabilityOverlay;
     private CheckBox muteToggleCheckBox;
+    private CheckBox cacheToggleCheckBox;
     private Button refreshButton;
     private Button setupButton;
     private Button appUpdateButton;
     private Button systemCapabilityButton;
     private Button systemCapabilityCloseButton;
+    private Button cacheClearButton;
     private ScrollView systemCapabilityScrollView;
 
     private String lastRenderedMediaIdentity = "";
     private String lastRenderedMediaType = "";
+    private String lastRenderedStyleSignature = "";
     private String lastRenderedBgmIdentity = "";
     private String playbackRotationMode = DeviceSessionRepository.PLAYBACK_ROTATION_AUTO;
     private String playerAccessToken = "";
     private boolean playbackMuted = false;
     private boolean waitingForBinding = false;
+    private DevicePullResponse remotePullResponse;
     private DevicePullResponse lastPullResponse;
     private PageRotationController rotationController;
     private AppUpdateResponse availableUpdate;
@@ -240,14 +266,21 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private boolean advancedNextReady = false;
     private int advancedReadyRetryCount = 0;
     private boolean advancedPrimaryStageActive = true;
+    private int advancedPendingLoadCount = 0;
+    private boolean advancedAnyLoadSuccess = false;
     private final List<ImageView> bentoImageViews = new ArrayList<ImageView>();
+    private final List<ImageView> frameWallImageViews = new ArrayList<ImageView>();
     private int bentoNextSourceIndex = 0;
     private int bentoPreviousSlotIndex = -1;
+    private int frameWallNextSourceIndex = 0;
+    private int frameWallPreviousSlotIndex = -1;
+    private int carouselActiveSourceIndex = 0;
     private float drawerHandleDownX;
     private boolean drawerHandleOpenedBySwipe;
     private boolean primaryImageStageActive = true;
     private int imageAdvanceRetryCount = 0;
     private Animator imageTransitionAnimator;
+    private boolean bindingSpinners = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -261,6 +294,19 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         playbackEngine = new PlaybackEngine();
         pullSyncCoordinator = new PullSyncCoordinator(repository, this);
         appUpdateChecker = new AppUpdateChecker(this, repository);
+        mediaCacheManager = new MediaCacheManager(this, sessionRepository);
+        mediaCacheManager.setListener(new MediaCacheManager.Listener() {
+            @Override
+            public void onCacheChanged() {
+                cacheHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        updateCacheSummary();
+                    }
+                });
+            }
+
+        });
 
         bindViews();
         rotationController = new PageRotationController(this, pageRoot);
@@ -295,6 +341,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         clearScheduledTasks();
         tokenHandler.removeCallbacks(tokenPollRunnable);
         updateHandler.removeCallbacks(updatePollRunnable);
+        cacheHandler.removeCallbacks(cacheRefreshRunnable);
         if (contentPlayer != null) {
             contentPlayer.pause();
         }
@@ -309,7 +356,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         clearScheduledTasks();
         tokenHandler.removeCallbacks(tokenPollRunnable);
         updateHandler.removeCallbacks(updatePollRunnable);
+        cacheHandler.removeCallbacks(cacheRefreshRunnable);
         releasePlayers();
+        if (mediaCacheManager != null) {
+            mediaCacheManager.shutdown();
+        }
     }
 
     @Override
@@ -373,6 +424,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
     private void bindViews() {
         pageRoot = findViewById(R.id.playerRoot);
+        playbackStageContainer = findViewById(R.id.playbackStageContainer);
         drawerGestureHandle = findViewById(R.id.drawerGestureHandle);
         drawerLayout = findViewById(R.id.playerDrawerLayout);
         menuDrawer = findViewById(R.id.menuDrawer);
@@ -383,10 +435,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         advancedImageStage = findViewById(R.id.advancedImageStage);
         advancedImageStageNext = findViewById(R.id.advancedImageStageNext);
         calendarStage = findViewById(R.id.calendarStage);
+        calendarImageView = findViewById(R.id.calendarImageView);
+        calendarInfoPanel = findViewById(R.id.calendarInfoPanel);
         calendarMonthText = findViewById(R.id.calendarMonthText);
         calendarDayText = findViewById(R.id.calendarDayText);
         calendarWeekdayText = findViewById(R.id.calendarWeekdayText);
-        calendarTimeText = findViewById(R.id.calendarTimeText);
         timeOverlay = findViewById(R.id.timeOverlay);
         overlayTimeText = findViewById(R.id.overlayTimeText);
         overlayDateText = findViewById(R.id.overlayDateText);
@@ -400,6 +453,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         rotationSummaryText = findViewById(R.id.rotationSummaryText);
         muteTitleText = findViewById(R.id.muteTitleText);
         muteSummaryText = findViewById(R.id.muteSummaryText);
+        cacheTitleText = findViewById(R.id.cacheTitleText);
+        cacheSummaryText = findViewById(R.id.cacheSummaryText);
         playbackSelectionTitleText = findViewById(R.id.playbackSelectionTitleText);
         playbackSelectionSummaryText = findViewById(R.id.playbackSelectionSummaryText);
         appUpdateTitleText = findViewById(R.id.appUpdateTitleText);
@@ -408,14 +463,17 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         systemCapabilityTitleText = findViewById(R.id.systemCapabilityTitleText);
         systemCapabilityContentText = findViewById(R.id.systemCapabilityContentText);
         systemCapabilityScrollView = findViewById(R.id.systemCapabilityScrollView);
-        rotationOptionContainer = findViewById(R.id.rotationOptionContainer);
         playbackSelectionContainer = findViewById(R.id.playbackSelectionContainer);
+        rotationSpinner = findViewById(R.id.rotationSpinner);
+        cacheLimitSpinner = findViewById(R.id.cacheLimitSpinner);
         muteToggleCheckBox = findViewById(R.id.muteToggleCheckBox);
+        cacheToggleCheckBox = findViewById(R.id.cacheToggleCheckBox);
         refreshButton = findViewById(R.id.refreshButton);
         setupButton = findViewById(R.id.setupButton);
         appUpdateButton = findViewById(R.id.appUpdateButton);
         systemCapabilityButton = findViewById(R.id.systemCapabilityButton);
         systemCapabilityCloseButton = findViewById(R.id.systemCapabilityCloseButton);
+        cacheClearButton = findViewById(R.id.cacheClearButton);
     }
 
     private void loadPlaybackSelection() {
@@ -437,6 +495,13 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         muteToggleCheckBox.setChecked(playbackMuted);
         applyDrawerOptionStyle(muteToggleCheckBox);
         updateMuteSummary();
+        cacheTitleText.setText(CACHE_TITLE);
+        cacheToggleCheckBox.setText(CACHE_ENABLE_LABEL);
+        cacheToggleCheckBox.setChecked(sessionRepository.isMediaCacheEnabled());
+        applyDrawerOptionStyle(cacheToggleCheckBox);
+        cacheClearButton.setText(CACHE_CLEAR_LABEL);
+        rebuildCacheLimitOptions();
+        updateCacheSummary();
         playbackSelectionTitleText.setText(PLAYBACK_SELECTION_TITLE);
         showPlaybackSelectionMessage(PLAYBACK_SELECTION_WAITING);
         appUpdateTitleText.setText(APP_UPDATE_TITLE);
@@ -493,6 +558,32 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 updatePlaybackMuted(isChecked);
+            }
+        });
+        cacheToggleCheckBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                sessionRepository.saveMediaCacheEnabled(isChecked);
+                updateCacheSummary();
+                if (remotePullResponse != null) {
+                    cacheHandler.removeCallbacks(cacheRefreshRunnable);
+                    cacheHandler.post(cacheRefreshRunnable);
+                } else if (!waitingForBinding) {
+                    pullSyncCoordinator.refreshNow();
+                }
+            }
+        });
+        cacheClearButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (mediaCacheManager != null) {
+                    mediaCacheManager.clearCache();
+                }
+                updateCacheSummary();
+                if (remotePullResponse != null) {
+                    cacheHandler.removeCallbacks(cacheRefreshRunnable);
+                    cacheHandler.post(cacheRefreshRunnable);
+                }
             }
         });
         systemCapabilityButton.setOnClickListener(new View.OnClickListener() {
@@ -701,12 +792,39 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
     @Override
     public void onPullSuccess(DevicePullResponse response) {
-        lastPullResponse = response;
-        playbackEngine.update(response);
-        syncPlaybackSelectionState(response);
-        renderPlayback();
+        remotePullResponse = clonePullResponse(response);
+        response = mediaCacheManager == null ? response : mediaCacheManager.applyLocalCache(response);
+        applyPlaybackResponse(response, true);
         updateStatus(getString(R.string.sync_status_ready) + " / "
                 + (playbackEngine.getPulledAt().isEmpty() ? getString(R.string.unknown_value) : playbackEngine.getPulledAt()));
+        updateCacheSummary();
+    }
+
+    private void reapplyCachedPlaylist() {
+        if (remotePullResponse == null || waitingForBinding || mediaCacheManager == null) {
+            return;
+        }
+        DevicePullResponse cachedResponse = mediaCacheManager.applyLocalCache(clonePullResponse(remotePullResponse));
+        lastRenderedMediaIdentity = "";
+        lastRenderedMediaType = "";
+        lastRenderedStyleSignature = "";
+        applyPlaybackResponse(cachedResponse, false);
+    }
+
+    private DevicePullResponse clonePullResponse(DevicePullResponse response) {
+        if (response == null) {
+            return null;
+        }
+        return gson.fromJson(gson.toJson(response), DevicePullResponse.class);
+    }
+
+    private void applyPlaybackResponse(DevicePullResponse response, boolean syncSelection) {
+        lastPullResponse = response;
+        playbackEngine.update(response);
+        if (syncSelection) {
+            syncPlaybackSelectionState(response);
+        }
+        renderPlayback();
     }
 
     @Override
@@ -718,8 +836,10 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private void showWaitingForBinding() {
         clearScheduledTasks();
         lastPullResponse = null;
+        remotePullResponse = null;
         lastRenderedMediaIdentity = "";
         lastRenderedMediaType = "";
+        lastRenderedStyleSignature = "";
         lastRenderedBgmIdentity = "";
         preloadedImageIdentities.clear();
         imageAdvanceRetryCount = 0;
@@ -746,6 +866,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             clearScheduledTasks();
             lastRenderedMediaIdentity = "";
             lastRenderedMediaType = "";
+            lastRenderedStyleSignature = "";
             lastRenderedBgmIdentity = "";
             preloadedImageIdentities.clear();
             imageAdvanceRetryCount = 0;
@@ -779,11 +900,20 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
         String currentMediaIdentity = PlaybackEngine.resolveMediaIdentity(media);
         String displayStyle = resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle());
+        String styleSignature = buildCurrentStyleSignature(displayStyle);
+        boolean styleChanged = !lastRenderedStyleSignature.isEmpty() && !styleSignature.equals(lastRenderedStyleSignature);
+        if (styleChanged) {
+            showStyleSwitchingHint();
+            clearScheduledTasks();
+            lastRenderedMediaIdentity = "";
+            lastRenderedMediaType = "";
+        }
         if ("CALENDAR".equals(displayStyle)) {
             if (!currentMediaIdentity.equals(lastRenderedMediaIdentity) || !"CALENDAR".equals(lastRenderedMediaType)) {
                 clearScheduledTasks();
                 lastRenderedMediaIdentity = currentMediaIdentity;
                 lastRenderedMediaType = "CALENDAR";
+                lastRenderedStyleSignature = styleSignature;
                 renderCalendarMedia();
             } else {
                 imageHandler.removeCallbacks(imageAdvanceRunnable);
@@ -798,6 +928,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             String previousMediaType = lastRenderedMediaType;
             lastRenderedMediaIdentity = currentMediaIdentity;
             lastRenderedMediaType = safeText(media.getMediaType(), "");
+            lastRenderedStyleSignature = styleSignature;
             if ("IMAGE".equalsIgnoreCase(media.getMediaType())) {
                 hideCalendarStage();
                 playerView.setVisibility(View.GONE);
@@ -836,12 +967,38 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         renderBgm();
     }
 
+    private String buildCurrentStyleSignature(String displayStyle) {
+        return safeText(displayStyle, "SINGLE")
+                + "|" + safeText(playbackEngine.getCurrentDisplayVariant(), "DEFAULT")
+                + "|" + safeText(playbackEngine.getCurrentTransitionStyle(), "NONE")
+                + "|" + playbackEngine.isCurrentShowTimeAndDate();
+    }
+
+    private void showStyleSwitchingHint() {
+        updateStatus(STYLE_SWITCHING_STATUS);
+        if (emptyStateText == null) {
+            return;
+        }
+        emptyStateText.setText(STYLE_SWITCHING_STATUS);
+        emptyStateText.setVisibility(View.VISIBLE);
+        emptyStateText.bringToFront();
+        emptyStateText.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (emptyStateText != null && STYLE_SWITCHING_STATUS.contentEquals(emptyStateText.getText())) {
+                    emptyStateText.setVisibility(View.GONE);
+                    emptyStateText.setText(R.string.no_playable_content);
+                }
+            }
+        }, 1500L);
+    }
+
     private void renderImageMedia(final DevicePullResponse.MediaItem media, final String mediaIdentity, final boolean previousWasImage) {
         final ImageView targetStage = getInactiveImageStage();
         final ImageView currentStage = getActiveImageStage();
         resetImageStage(targetStage);
         targetStage.setVisibility(View.INVISIBLE);
-        AuthenticatedImageLoader.load(targetStage, media.getUrl(), sessionRepository, new AuthenticatedImageLoader.Callback() {
+        loadPlaybackImage(targetStage, media, new AuthenticatedImageLoader.Callback() {
             @Override
             public void onSuccess() {
                 if (!mediaIdentity.equals(lastRenderedMediaIdentity)) {
@@ -876,6 +1033,43 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         });
     }
 
+    private void loadPlaybackImage(final ImageView imageView, final DevicePullResponse.MediaItem media, final AuthenticatedImageLoader.Callback callback) {
+        if (media == null) {
+            if (callback != null) callback.onFailure();
+            return;
+        }
+        String url = media.getUrl();
+        if (mediaCacheManager != null && mediaCacheManager.isLocalCacheUrl(url) && !mediaCacheManager.isLocalCacheAvailable(url)) {
+            String remoteUrl = mediaCacheManager.getRemoteUrlForLocalUrl(url);
+            mediaCacheManager.invalidateLocalUrl(url);
+            if (remoteUrl != null && remoteUrl.length() > 0) {
+                media.setUrl(remoteUrl);
+                url = remoteUrl;
+            }
+        }
+        final String requestedUrl = url;
+        AuthenticatedImageLoader.load(imageView, requestedUrl, sessionRepository, new AuthenticatedImageLoader.Callback() {
+            @Override
+            public void onSuccess() {
+                if (callback != null) callback.onSuccess();
+            }
+
+            @Override
+            public void onFailure() {
+                if (mediaCacheManager != null && mediaCacheManager.isLocalCacheUrl(requestedUrl)) {
+                    String remoteUrl = mediaCacheManager.getRemoteUrlForLocalUrl(requestedUrl);
+                    mediaCacheManager.invalidateLocalUrl(requestedUrl);
+                    if (remoteUrl != null && remoteUrl.length() > 0) {
+                        media.setUrl(remoteUrl);
+                        AuthenticatedImageLoader.load(imageView, remoteUrl, sessionRepository, callback);
+                        return;
+                    }
+                }
+                if (callback != null) callback.onFailure();
+            }
+        });
+    }
+
     private void renderCalendarMedia() {
         hideImageStages();
         hideAdvancedImageStage();
@@ -887,6 +1081,22 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         }
         if (calendarStage != null) {
             calendarStage.setVisibility(View.VISIBLE);
+        }
+        layoutCalendarStage();
+        DevicePullResponse.MediaItem media = playbackEngine.getCurrentMedia();
+        if (calendarImageView != null && media != null && "IMAGE".equalsIgnoreCase(media.getMediaType())) {
+            calendarImageView.setAlpha(0.2f);
+            loadPlaybackImage(calendarImageView, media, new AuthenticatedImageLoader.Callback() {
+                @Override
+                public void onSuccess() {
+                    calendarImageView.animate().alpha(1f).setDuration(2500L).start();
+                }
+
+                @Override
+                public void onFailure() {
+                    calendarImageView.setAlpha(1f);
+                }
+            });
         }
         updateClockViews();
         imageHandler.removeCallbacks(clockRunnable);
@@ -900,6 +1110,47 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         if (calendarStage != null) {
             calendarStage.setVisibility(View.GONE);
         }
+        if (calendarImageView != null) {
+            calendarImageView.setImageDrawable(null);
+        }
+    }
+
+    private void layoutCalendarStage() {
+        if (calendarStage == null || calendarImageView == null || calendarInfoPanel == null) {
+            return;
+        }
+        int width = getContainerWidth(calendarStage);
+        int height = getContainerHeight(calendarStage);
+        boolean portrait = height > width;
+        if (portrait) {
+            int imageHeight = Math.round(height * 0.67f);
+            int infoHeight = Math.max(1, height - imageHeight);
+            FrameLayout.LayoutParams imageParams = new FrameLayout.LayoutParams(width, imageHeight);
+            imageParams.leftMargin = 0;
+            imageParams.topMargin = 0;
+            calendarImageView.setLayoutParams(imageParams);
+            FrameLayout.LayoutParams infoParams = new FrameLayout.LayoutParams(width, infoHeight);
+            infoParams.leftMargin = 0;
+            infoParams.topMargin = imageHeight;
+            calendarInfoPanel.setLayoutParams(infoParams);
+            int horizontalPadding = Math.max(dp(18), Math.round(width * 0.06f));
+            int verticalPadding = Math.max(dp(8), Math.round(infoHeight * 0.08f));
+            calendarInfoPanel.setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding);
+            return;
+        }
+        int imageWidth = Math.round(width * 0.67f);
+        int infoWidth = Math.max(1, width - imageWidth);
+        FrameLayout.LayoutParams imageParams = new FrameLayout.LayoutParams(imageWidth, height);
+        imageParams.leftMargin = 0;
+        imageParams.topMargin = 0;
+        calendarImageView.setLayoutParams(imageParams);
+        FrameLayout.LayoutParams infoParams = new FrameLayout.LayoutParams(infoWidth, height);
+        infoParams.leftMargin = imageWidth;
+        infoParams.topMargin = 0;
+        calendarInfoPanel.setLayoutParams(infoParams);
+        int horizontalPadding = Math.max(dp(12), Math.round(infoWidth * 0.08f));
+        int verticalPadding = Math.max(dp(8), Math.round(height * 0.03f));
+        calendarInfoPanel.setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding);
     }
 
     private void updateTimeOverlayVisibility() {
@@ -921,16 +1172,35 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         Calendar calendar = Calendar.getInstance();
         Locale locale = Locale.getDefault();
         String time = new SimpleDateFormat("HH:mm", locale).format(calendar.getTime());
-        String month = new SimpleDateFormat("MMMM", locale).format(calendar.getTime());
-        String day = new SimpleDateFormat("dd", locale).format(calendar.getTime());
-        String weekday = new SimpleDateFormat("EEEE", locale).format(calendar.getTime());
-        String date = new SimpleDateFormat("yyyy/MM/dd EEEE", locale).format(calendar.getTime());
+        String month = String.valueOf(calendar.get(Calendar.MONTH) + 1) + " / " + calendar.get(Calendar.YEAR);
+        String day = String.valueOf(calendar.get(Calendar.DAY_OF_MONTH));
+        String weekday = formatCalendarWeekday(calendar);
+        String date = new SimpleDateFormat("yyyy/MM/dd", locale).format(calendar.getTime()) + " " + weekday;
         if (calendarMonthText != null) calendarMonthText.setText(month);
         if (calendarDayText != null) calendarDayText.setText(day);
         if (calendarWeekdayText != null) calendarWeekdayText.setText(weekday);
-        if (calendarTimeText != null) calendarTimeText.setText(time);
         if (overlayTimeText != null) overlayTimeText.setText(time);
         if (overlayDateText != null) overlayDateText.setText(date);
+    }
+
+    private String formatCalendarWeekday(Calendar calendar) {
+        switch (calendar.get(Calendar.DAY_OF_WEEK)) {
+            case Calendar.MONDAY:
+                return "星期一";
+            case Calendar.TUESDAY:
+                return "星期二";
+            case Calendar.WEDNESDAY:
+                return "星期三";
+            case Calendar.THURSDAY:
+                return "星期四";
+            case Calendar.FRIDAY:
+                return "星期五";
+            case Calendar.SATURDAY:
+                return "星期六";
+            case Calendar.SUNDAY:
+            default:
+                return "星期日";
+        }
     }
 
     private void showImageWithoutTransition(ImageView targetStage, ImageView oldStage) {
@@ -965,6 +1235,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private void hideAdvancedImageStage() {
         pendingAdvancedMediaIdentity = "";
         advancedNextReady = false;
+        advancedPendingLoadCount = 0;
+        advancedAnyLoadSuccess = false;
         bentoImageViews.clear();
         bentoNextSourceIndex = 0;
         bentoPreviousSlotIndex = -1;
@@ -983,6 +1255,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         pendingAdvancedMediaIdentity = mediaIdentity;
         advancedNextReady = false;
         advancedReadyRetryCount = 0;
+        advancedPendingLoadCount = 0;
+        advancedAnyLoadSuccess = false;
         final FrameLayout nextStage = getInactiveAdvancedStage();
         nextStage.removeAllViews();
         nextStage.setPadding(0, 0, 0, 0);
@@ -1059,34 +1333,14 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void renderBentoLayout(FrameLayout container, List<DevicePullResponse.MediaItem> imageItems) {
-        int padding = dp(8);
-        int gap = dp(4);
+        String variant = playbackEngine.getCurrentDisplayVariant();
+        int gapDp = isDenseBentoVariant(variant) ? 2 : 3;
+        int padding = dp(gapDp);
+        int gap = dp(gapDp);
         int count = imageItems.size();
         bentoImageViews.clear();
         container.setPadding(padding, padding, padding, padding);
-        if (count == 1) {
-            addCenteredAdvancedImage(container, imageItems.get(0), 0.82f, 0.92f, gap, true);
-            return;
-        }
-        if (count == 2) {
-            addAdvancedImage(container, imageItems.get(0), 0f, 0f, 0.5f, 1f, gap, true);
-            addAdvancedImage(container, imageItems.get(1), 0.5f, 0f, 0.5f, 1f, gap, false);
-            return;
-        }
-        if (count == 3) {
-            addAdvancedImage(container, imageItems.get(0), 0f, 0f, 0.5f, 1f, gap, true);
-            addAdvancedImage(container, imageItems.get(1), 0.5f, 0f, 0.5f, 0.5f, gap, false);
-            addAdvancedImage(container, imageItems.get(2), 0.5f, 0.5f, 0.5f, 0.5f, gap, false);
-            return;
-        }
-        if (count == 4) {
-            addAdvancedImage(container, imageItems.get(0), 0f, 0f, 0.5f, 0.5f, gap, true);
-            addAdvancedImage(container, imageItems.get(1), 0.5f, 0f, 0.5f, 0.5f, gap, false);
-            addAdvancedImage(container, imageItems.get(2), 0f, 0.5f, 0.5f, 0.5f, gap, false);
-            addAdvancedImage(container, imageItems.get(3), 0.5f, 0.5f, 0.5f, 0.5f, gap, false);
-            return;
-        }
-        float[][] slots = getBentoSlots(playbackEngine.getCurrentDisplayVariant());
+        float[][] slots = getBentoSlots(variant, isPortraitContainer(container));
         int maxCount = Math.min(slots.length, ADVANCED_IMAGE_POOL_SIZE);
         for (int i = 0; i < maxCount; i += 1) {
             float[] slot = slots[i];
@@ -1095,7 +1349,17 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         bentoNextSourceIndex = maxCount % count;
     }
 
-    private float[][] getBentoSlots(String variant) {
+    private boolean isDenseBentoVariant(String variant) {
+        String normalized = normalizeStyle(variant);
+        return "BENTO_6".equals(normalized) || "BENTO_7".equals(normalized);
+    }
+
+    private float[][] getBentoSlots(String variant, boolean portrait) {
+        float[][] slots = getBentoBaseSlots(variant);
+        return portrait ? transposeBentoSlots(slots) : slots;
+    }
+
+    private float[][] getBentoBaseSlots(String variant) {
         String normalized = normalizeStyle(variant);
         if ("DEFAULT".equals(normalized) || normalized.isEmpty()) {
             normalized = "BENTO_5";
@@ -1112,10 +1376,28 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         if ("BENTO_4".equals(normalized)) {
             return new float[][] {{0f, 0f, 0.5f, 2f / 3f}, {0.5f, 0f, 0.25f, 2f / 3f}, {0.75f, 0f, 0.25f, 1f / 3f}, {0f, 2f / 3f, 0.25f, 1f / 3f}, {0.25f, 2f / 3f, 0.25f, 1f / 3f}, {0.5f, 2f / 3f, 0.25f, 1f / 3f}, {0.75f, 1f / 3f, 0.25f, 2f / 3f}};
         }
-        if ("BENTO_6".equals(normalized) || "BENTO_7".equals(normalized)) {
+        if ("BENTO_6".equals(normalized)) {
             return new float[][] {{0f, 0f, 2f / 7f, 0.25f}, {2f / 7f, 0f, 1f / 7f, 0.325f}, {3f / 7f, 0f, 1f / 7f, 0.325f}, {4f / 7f, 0f, 1f / 7f, 0.325f}, {5f / 7f, 0f, 2f / 7f, 0.25f}, {0f, 0.25f, 1f / 7f, 0.25f}, {1f / 7f, 0.25f, 1f / 7f, 0.25f}, {0f, 0.5f, 1f / 7f, 0.25f}, {1f / 7f, 0.5f, 1f / 7f, 0.25f}, {0f, 0.75f, 2f / 7f, 0.25f}, {2f / 7f, 0.325f, 3f / 7f, 0.35f}, {2f / 7f, 0.675f, 1f / 7f, 0.325f}, {3f / 7f, 0.675f, 1f / 7f, 0.325f}, {4f / 7f, 0.675f, 1f / 7f, 0.325f}, {5f / 7f, 0.25f, 1f / 7f, 0.25f}, {6f / 7f, 0.25f, 1f / 7f, 0.25f}, {5f / 7f, 0.5f, 1f / 7f, 0.25f}, {6f / 7f, 0.5f, 1f / 7f, 0.25f}, {5f / 7f, 0.75f, 2f / 7f, 0.25f}};
         }
+        if ("BENTO_7".equals(normalized)) {
+            return new float[][] {{0f, 0f, 2f / 7f, 0.25f}, {2f / 7f, 0f, 1f / 7f, 0.325f}, {3f / 7f, 0f, 1f / 7f, 0.325f}, {4f / 7f, 0f, 1f / 7f, 0.325f}, {5f / 7f, 0f, 2f / 7f, 0.25f}, {0f, 0.25f, 1f / 7f, 0.25f}, {1f / 7f, 0.25f, 1f / 7f, 0.25f}, {0f, 0.5f, 1f / 7f, 0.25f}, {1f / 7f, 0.5f, 1f / 7f, 0.25f}, {0f, 0.75f, 2f / 7f, 0.25f}, {2f / 7f, 0.325f, 3f / 7f, 0.35f}, {2f / 7f, 0.675f, 1f / 7f, 0.325f}, {3f / 7f, 0.675f, 1f / 7f, 0.325f}, {4f / 7f, 0.675f, 1f / 7f, 0.325f}, {5f / 7f, 0.25f, 1f / 7f, 0.25f}, {6f / 7f, 0.25f, 1f / 7f, 0.175f}, {5f / 7f, 0.5f, 1f / 7f, 0.175f}, {6f / 7f, 0.425f, 1f / 7f, 0.25f}, {5f / 7f, 0.675f, 2f / 7f, 0.325f}};
+        }
         return new float[][] {{0f, 0f, 0.75f, 2f / 3f}, {0.75f, 0f, 0.25f, 2f / 3f}, {0f, 2f / 3f, 0.25f, 1f / 3f}, {0.25f, 2f / 3f, 0.5f, 1f / 3f}, {0.75f, 2f / 3f, 0.25f, 1f / 3f}};
+    }
+
+    private float[][] transposeBentoSlots(float[][] slots) {
+        float[][] transposed = new float[slots.length][4];
+        for (int i = 0; i < slots.length; i += 1) {
+            transposed[i][0] = slots[i][1];
+            transposed[i][1] = slots[i][0];
+            transposed[i][2] = slots[i][3];
+            transposed[i][3] = slots[i][2];
+        }
+        return transposed;
+    }
+
+    private boolean isPortraitContainer(View container) {
+        return getContainerHeight(container) > getContainerWidth(container);
     }
 
     private void addCenteredAdvancedImage(FrameLayout container, DevicePullResponse.MediaItem media, float widthRatio, float heightRatio, int margin, boolean marksReady) {
@@ -1125,16 +1407,20 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void renderFrameWallLayout(FrameLayout container, List<DevicePullResponse.MediaItem> imageItems) {
+        frameWallImageViews.clear();
         GridLayout grid = new GridLayout(this);
         grid.setColumnCount(4);
         grid.setRowCount(2);
-        int gap = dp(8);
+        int gap = dp(3);
         grid.setPadding(gap, gap, gap, gap);
         container.addView(grid, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
-        int count = Math.min(8, imageItems.size());
-        for (int i = 0; i < count; i += 1) {
+        int slotCount = 8;
+        if (!imageItems.isEmpty()) {
+            frameWallNextSourceIndex = slotCount % imageItems.size();
+        }
+        for (int i = 0; i < slotCount; i += 1) {
             ImageView imageView = createAdvancedImageView();
             GridLayout.LayoutParams params = new GridLayout.LayoutParams();
             params.width = 0;
@@ -1143,36 +1429,48 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             params.rowSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
             params.setMargins(gap, gap, gap, gap);
             grid.addView(imageView, params);
-            loadAdvancedImage(imageView, imageItems.get(i), i == 0);
+            frameWallImageViews.add(imageView);
+            loadAdvancedImage(imageView, imageItems.get(i % imageItems.size()), i == 0);
         }
     }
 
     private void renderCarouselLayout(FrameLayout container, List<DevicePullResponse.MediaItem> imageItems) {
-        int count = Math.min(5, imageItems.size());
-        float[] widths = count >= 5 ? new float[] {0.22f, 0.28f, 0.42f, 0.28f, 0.22f} : new float[] {0.28f, 0.42f, 0.28f};
-        float[] centers = count >= 5 ? new float[] {0.08f, 0.27f, 0.5f, 0.73f, 0.92f} : new float[] {0.24f, 0.5f, 0.76f};
-        int start = count >= 5 ? 0 : Math.max(0, count - 3);
-        int layoutCount = count >= 5 ? 5 : Math.min(3, count);
+        int parentWidth = getContainerWidth(container);
+        int parentHeight = getContainerHeight(container);
+        int layoutCount = imageItems.size() >= 5 ? 5 : Math.min(3, imageItems.size());
+        if (imageItems.size() < 3) {
+            layoutCount = imageItems.size();
+        }
+        int center = layoutCount / 2;
         for (int i = 0; i < layoutCount; i += 1) {
             ImageView imageView = createAdvancedImageView();
-            float widthRatio = widths[i];
-            float heightRatio = i == layoutCount / 2 ? 0.78f : 0.56f;
-            int width = Math.max(1, Math.round(getScreenWidth() * widthRatio));
-            int height = Math.max(1, Math.round(getScreenHeight() * heightRatio));
+            int sourceIndex = (carouselActiveSourceIndex + i - center) % imageItems.size();
+            if (sourceIndex < 0) {
+                sourceIndex += imageItems.size();
+            }
+            boolean primary = i == center;
+            float offset = i - center;
+            float widthRatio = primary ? 0.42f : 0.24f;
+            float heightRatio = primary ? 0.78f : 0.58f;
+            float centerRatio = 0.5f + offset * 0.22f;
+            int width = Math.max(1, Math.round(parentWidth * widthRatio));
+            int height = Math.max(1, Math.round(parentHeight * heightRatio));
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
-            params.leftMargin = Math.round(getScreenWidth() * centers[i] - width / 2f);
-            params.topMargin = Math.round((getScreenHeight() - height) / 2f);
-            imageView.setAlpha(i == layoutCount / 2 ? 1f : 0.68f);
-            imageView.setElevation(i == layoutCount / 2 ? dp(8) : dp(2));
+            params.leftMargin = Math.round(parentWidth * centerRatio - width / 2f);
+            params.topMargin = Math.round((parentHeight - height) / 2f);
+            imageView.setAlpha(primary ? 1f : 0.68f);
+            imageView.setScaleX(primary ? 1f : 0.9f);
+            imageView.setScaleY(primary ? 1f : 0.9f);
+            ViewCompat.setElevation(imageView, primary ? dp(8) : dp(2));
             container.addView(imageView, params);
-            loadAdvancedImage(imageView, imageItems.get(start + i), i == layoutCount / 2);
+            loadAdvancedImage(imageView, imageItems.get(sourceIndex), primary);
         }
     }
 
     private void addAdvancedImage(FrameLayout container, DevicePullResponse.MediaItem media, float leftRatio, float topRatio, float widthRatio, float heightRatio, int margin, boolean marksReady) {
         ImageView imageView = createAdvancedImageView();
-        int parentWidth = getScreenWidth();
-        int parentHeight = getScreenHeight();
+        int parentWidth = getContainerWidth(container);
+        int parentHeight = getContainerHeight(container);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 Math.max(1, Math.round(parentWidth * widthRatio) - margin * 2),
                 Math.max(1, Math.round(parentHeight * heightRatio) - margin * 2));
@@ -1188,26 +1486,46 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         loadAdvancedImage(imageView, media, marksReady);
     }
 
+    private int getContainerWidth(View container) {
+        if (container != null && container.getWidth() > 0) {
+            return container.getWidth();
+        }
+        return getScreenWidth();
+    }
+
+    private int getContainerHeight(View container) {
+        if (container != null && container.getHeight() > 0) {
+            return container.getHeight();
+        }
+        return getScreenHeight();
+    }
+
     private void loadAdvancedImage(ImageView imageView, DevicePullResponse.MediaItem media, final boolean marksReady) {
-        AuthenticatedImageLoader.load(imageView, media.getUrl(), sessionRepository, new AuthenticatedImageLoader.Callback() {
+        advancedPendingLoadCount += 1;
+        loadPlaybackImage(imageView, media, new AuthenticatedImageLoader.Callback() {
             @Override
             public void onSuccess() {
-                if (marksReady) {
-                    advancedNextReady = true;
-                }
+                advancedAnyLoadSuccess = true;
+                markAdvancedImageLoaded();
             }
 
             @Override
             public void onFailure() {
-                if (marksReady) {
-                    advancedNextReady = false;
-                }
+                markAdvancedImageLoaded();
             }
         });
     }
 
+    private void markAdvancedImageLoaded() {
+        advancedPendingLoadCount = Math.max(0, advancedPendingLoadCount - 1);
+        if (advancedPendingLoadCount == 0) {
+            advancedNextReady = advancedAnyLoadSuccess;
+        }
+    }
+
     private ImageView createAdvancedImageView() {
-        ImageView imageView = new ImageView(this);
+        RoundedImageView imageView = new RoundedImageView(this);
+        imageView.setCornerRadiusDp(8);
         imageView.setBackgroundColor(ContextCompat.getColor(this, R.color.ca_background));
         imageView.setScaleType(ImageView.ScaleType.CENTER_CROP);
         imageView.setAdjustViewBounds(false);
@@ -1286,10 +1604,16 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private int getScreenWidth() {
+        if (playbackStageContainer != null && playbackStageContainer.getWidth() > 0) {
+            return playbackStageContainer.getWidth();
+        }
         return Math.max(1, pageRoot == null ? getResources().getDisplayMetrics().widthPixels : pageRoot.getWidth());
     }
 
     private int getScreenHeight() {
+        if (playbackStageContainer != null && playbackStageContainer.getHeight() > 0) {
+            return playbackStageContainer.getHeight();
+        }
         return Math.max(1, pageRoot == null ? getResources().getDisplayMetrics().heightPixels : pageRoot.getHeight());
     }
 
@@ -1486,9 +1810,24 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         String displayStyle = resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle());
         DevicePullResponse.MediaItem currentMedia = playbackEngine.getCurrentMedia();
         if ("BENTO".equals(displayStyle) && currentMedia != null && "IMAGE".equalsIgnoreCase(currentMedia.getMediaType())) {
+            imageAdvanceRetryCount = 0;
             swapOneBentoImage();
             imageHandler.removeCallbacks(imageAdvanceRunnable);
             imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+            return;
+        }
+        if (("FRAME_WALL".equals(displayStyle) || "FRAMEWALL".equals(displayStyle))
+                && currentMedia != null && "IMAGE".equalsIgnoreCase(currentMedia.getMediaType())) {
+            imageAdvanceRetryCount = 0;
+            swapFrameWallImages();
+            imageHandler.removeCallbacks(imageAdvanceRunnable);
+            imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+            return;
+        }
+        if ("CAROUSEL".equals(displayStyle) && currentMedia != null && "IMAGE".equalsIgnoreCase(currentMedia.getMediaType())) {
+            imageAdvanceRetryCount = 0;
+            carouselActiveSourceIndex += 1;
+            renderAdvancedImageMedia(displayStyle, PlaybackEngine.resolveMediaIdentity(currentMedia));
             return;
         }
         DevicePullResponse.MediaItem nextMedia = playbackEngine.peekNextMedia();
@@ -1514,12 +1853,59 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         }
         int slotIndex = pickNextBentoSlot(bentoImageViews.size());
         final ImageView imageView = bentoImageViews.get(slotIndex);
-        DevicePullResponse.MediaItem nextMedia = imageItems.get(bentoNextSourceIndex % imageItems.size());
+        final DevicePullResponse.MediaItem nextMedia = imageItems.get(bentoNextSourceIndex % imageItems.size());
         bentoNextSourceIndex = (bentoNextSourceIndex + 1) % imageItems.size();
+        animateReplaceAdvancedImage(imageView, nextMedia);
+    }
+
+    private void swapFrameWallImages() {
+        List<DevicePullResponse.MediaItem> imageItems = getAdvancedImageItems();
+        if (imageItems.isEmpty() || frameWallImageViews.isEmpty()) {
+            return;
+        }
+        int replaceCount = Math.max(1, frameWallImageViews.size() / 10 + 1);
+        for (int i = 0; i < replaceCount; i += 1) {
+            final int delay = i * 800;
+            imageHandler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    int slotIndex = pickNextFrameWallSlot(frameWallImageViews.size());
+                    final ImageView imageView = frameWallImageViews.get(slotIndex);
+                    final DevicePullResponse.MediaItem nextMedia = imageItems.get(frameWallNextSourceIndex % imageItems.size());
+                    frameWallNextSourceIndex = (frameWallNextSourceIndex + 1) % imageItems.size();
+                    animateReplaceAdvancedImage(imageView, nextMedia);
+                }
+            }, delay);
+        }
+    }
+
+    private void animateReplaceAdvancedImage(final ImageView imageView, final DevicePullResponse.MediaItem nextMedia) {
+        final boolean flipX = Math.random() > 0.5d;
+        if (flipX) {
+            imageView.animate().rotationX(90f).alpha(0.35f).setDuration(IMAGE_TRANSITION_DURATION_MS / 2).withEndAction(new Runnable() {
+                @Override
+                public void run() {
+                    loadPlaybackImage(imageView, nextMedia, new AuthenticatedImageLoader.Callback() {
+                        @Override
+                        public void onSuccess() {
+                            imageView.setRotationX(-90f);
+                            imageView.setAlpha(0.35f);
+                            imageView.animate().rotationX(0f).alpha(1f).setDuration(IMAGE_TRANSITION_DURATION_MS / 2).start();
+                        }
+
+                        @Override
+                        public void onFailure() {
+                            imageView.animate().rotationX(0f).alpha(1f).setDuration(IMAGE_TRANSITION_DURATION_MS / 2).start();
+                        }
+                    });
+                }
+            }).start();
+            return;
+        }
         imageView.animate().rotationY(90f).alpha(0.35f).setDuration(IMAGE_TRANSITION_DURATION_MS / 2).withEndAction(new Runnable() {
             @Override
             public void run() {
-                AuthenticatedImageLoader.load(imageView, nextMedia.getUrl(), sessionRepository, new AuthenticatedImageLoader.Callback() {
+                loadPlaybackImage(imageView, nextMedia, new AuthenticatedImageLoader.Callback() {
                     @Override
                     public void onSuccess() {
                         imageView.setRotationY(-90f);
@@ -1534,6 +1920,18 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 });
             }
         }).start();
+    }
+
+    private int pickNextFrameWallSlot(int slotCount) {
+        if (slotCount <= 1) {
+            return 0;
+        }
+        int next = (int) Math.floor(Math.random() * slotCount);
+        if (next == frameWallPreviousSlotIndex) {
+            next = (next + 1) % slotCount;
+        }
+        frameWallPreviousSlotIndex = next;
+        return next;
     }
 
     private int pickNextBentoSlot(int slotCount) {
@@ -1674,35 +2072,28 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void rebuildRotationOptions() {
-        rotationOptionContainer.removeAllViews();
-        rotationOptionContainer.addView(createRotationOption(DeviceSessionRepository.PLAYBACK_ROTATION_AUTO, ROTATION_AUTO_LABEL));
-        rotationOptionContainer.addView(createRotationOption(DeviceSessionRepository.PLAYBACK_ROTATION_0, ROTATION_0_LABEL));
-        rotationOptionContainer.addView(createRotationOption(DeviceSessionRepository.PLAYBACK_ROTATION_90, ROTATION_90_LABEL));
-        rotationOptionContainer.addView(createRotationOption(DeviceSessionRepository.PLAYBACK_ROTATION_180, ROTATION_180_LABEL));
-        rotationOptionContainer.addView(createRotationOption(DeviceSessionRepository.PLAYBACK_ROTATION_270, ROTATION_270_LABEL));
-        updateRotationSummary();
-        rebuildDrawerFocusOrder();
-    }
-
-    private View createRotationOption(final String mode, String label) {
-        CheckBox option = new CheckBox(this);
-        option.setId(View.generateViewId());
-        option.setText(label);
-        applyDrawerOptionStyle(option);
-        option.setFocusable(true);
-        option.setFocusableInTouchMode(false);
-        option.setChecked(mode.equals(playbackRotationMode));
-        option.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+        final String[] modes = new String[] {
+                DeviceSessionRepository.PLAYBACK_ROTATION_AUTO,
+                DeviceSessionRepository.PLAYBACK_ROTATION_0,
+                DeviceSessionRepository.PLAYBACK_ROTATION_90,
+                DeviceSessionRepository.PLAYBACK_ROTATION_180,
+                DeviceSessionRepository.PLAYBACK_ROTATION_270
+        };
+        String[] labels = new String[] {ROTATION_AUTO_LABEL, ROTATION_0_LABEL, ROTATION_90_LABEL, ROTATION_180_LABEL, ROTATION_270_LABEL};
+        bindSpinner(rotationSpinner, labels, indexOf(modes, playbackRotationMode), new AdapterView.OnItemSelectedListener() {
             @Override
-            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                if (isChecked) {
-                    updatePlaybackRotationMode(mode);
-                } else if (mode.equals(playbackRotationMode)) {
-                    buttonView.setChecked(true);
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (!bindingSpinners && position >= 0 && position < modes.length) {
+                    updatePlaybackRotationMode(modes[position]);
                 }
             }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
         });
-        return option;
+        updateRotationSummary();
+        rebuildDrawerFocusOrder();
     }
 
     private void applyDrawerOptionStyle(CheckBox option) {
@@ -1716,6 +2107,48 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         );
         params.bottomMargin = dp(8);
         option.setLayoutParams(params);
+    }
+
+    private void bindSpinner(Spinner spinner, String[] labels, int selectedIndex, AdapterView.OnItemSelectedListener listener) {
+        if (spinner == null) {
+            return;
+        }
+        bindingSpinners = true;
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, labels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        spinner.setFocusable(true);
+        spinner.setFocusableInTouchMode(false);
+        spinner.setBackgroundResource(R.drawable.bg_menu_option);
+        spinner.setPadding(dp(12), dp(8), dp(12), dp(8));
+        spinner.setMinimumHeight(dp(48));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.bottomMargin = dp(8);
+        spinner.setLayoutParams(params);
+        spinner.setSelection(Math.max(0, selectedIndex), false);
+        spinner.setOnItemSelectedListener(listener);
+        bindingSpinners = false;
+    }
+
+    private int indexOf(String[] values, String value) {
+        for (int i = 0; i < values.length; i += 1) {
+            if (values[i].equals(value)) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    private int indexOf(int[] values, int value) {
+        for (int i = 0; i < values.length; i += 1) {
+            if (values[i] == value) {
+                return i;
+            }
+        }
+        return 0;
     }
 
     private void updatePlaybackRotationMode(String mode) {
@@ -1741,6 +2174,56 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
     private void updateMuteSummary() {
         muteSummaryText.setText(playbackMuted ? MUTE_ENABLED_LABEL : MUTE_DISABLED_LABEL);
+    }
+
+    private void rebuildCacheLimitOptions() {
+        final int[] limits = new int[] {512, 1024, 2048, 5120, 10240};
+        String[] labels = new String[] {"512 MB", "1 GB", "2 GB", "5 GB", "10 GB"};
+        bindSpinner(cacheLimitSpinner, labels, indexOf(limits, sessionRepository.getMediaCacheLimitMb()), new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (bindingSpinners || position < 0 || position >= limits.length) {
+                    return;
+                }
+                int limitMb = limits[position];
+                if (sessionRepository.getMediaCacheLimitMb() == limitMb) {
+                    return;
+                }
+                sessionRepository.saveMediaCacheLimitMb(limitMb);
+                updateCacheSummary();
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+        rebuildDrawerFocusOrder();
+    }
+
+    private void updateCacheSummary() {
+        if (cacheSummaryText == null || sessionRepository == null) {
+            return;
+        }
+        long usedBytes = mediaCacheManager == null ? 0L : mediaCacheManager.getCacheBytes();
+        int fileCount = mediaCacheManager == null ? 0 : mediaCacheManager.getCacheFileCount();
+        int pending = mediaCacheManager == null ? 0 : mediaCacheManager.getPendingDownloads();
+        int failed = mediaCacheManager == null ? 0 : mediaCacheManager.getFailedDownloads();
+        String enabled = sessionRepository.isMediaCacheEnabled() ? "已启用" : "已关闭";
+        String text = enabled
+                + " / 已用 " + formatBytes(usedBytes)
+                + " / 文件 " + fileCount
+                + " / 上限 " + formatCacheLimit(sessionRepository.getMediaCacheLimitMb());
+        if (pending > 0 || failed > 0) {
+            text += " / 下载中 " + pending + " / 失败 " + failed;
+        }
+        cacheSummaryText.setText(text);
+    }
+
+    private String formatCacheLimit(int limitMb) {
+        if (limitMb >= 1024) {
+            return (limitMb / 1024) + " GB";
+        }
+        return limitMb + " MB";
     }
 
     private void applyPlaybackMutedState() {
@@ -1787,12 +2270,74 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 if (playerView != null) {
                     playerView.requestLayout();
                 }
+                layoutCalendarStage();
+                if (advancedImageStage != null) {
+                    advancedImageStage.requestLayout();
+                }
+                if (advancedImageStageNext != null) {
+                    advancedImageStageNext.requestLayout();
+                }
                 rebuildDrawerFocusOrder();
                 if (isDrawerOpen()) {
                     focusFirstDrawerItem();
                 }
+                pageRoot.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        rerenderAdvancedLayoutAfterResize();
+                    }
+                }, 80L);
+                pageRoot.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        rerenderAdvancedLayoutAfterResize();
+                    }
+                }, 260L);
             }
         });
+    }
+
+    private void rerenderAdvancedLayoutAfterResize() {
+        DevicePullResponse.MediaItem currentMedia = playbackEngine == null ? null : playbackEngine.getCurrentMedia();
+        if (currentMedia == null || !"IMAGE".equalsIgnoreCase(currentMedia.getMediaType())) {
+            return;
+        }
+        String displayStyle = resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle());
+        if (!isAdvancedDisplayStyle(displayStyle)) {
+            return;
+        }
+        final String currentIdentity = PlaybackEngine.resolveMediaIdentity(currentMedia);
+        imageHandler.removeCallbacks(imageAdvanceRunnable);
+        pendingAdvancedMediaIdentity = currentIdentity;
+        advancedNextReady = false;
+        advancedReadyRetryCount = 0;
+        advancedPendingLoadCount = 0;
+        advancedAnyLoadSuccess = false;
+        FrameLayout targetStage = getActiveAdvancedStage();
+        if (targetStage == null) {
+            return;
+        }
+        targetStage.setLayoutParams(new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        targetStage.requestLayout();
+        targetStage.removeAllViews();
+        targetStage.setPadding(0, 0, 0, 0);
+        targetStage.setAlpha(1f);
+        targetStage.setVisibility(View.VISIBLE);
+        bentoImageViews.clear();
+        List<DevicePullResponse.MediaItem> imageItems = getAdvancedImageItems();
+        if (imageItems.isEmpty()) {
+            return;
+        }
+        if ("CAROUSEL".equals(displayStyle)) {
+            renderCarouselLayout(targetStage, imageItems);
+        } else if ("FRAME_WALL".equals(displayStyle) || "FRAMEWALL".equals(displayStyle)) {
+            renderFrameWallLayout(targetStage, imageItems);
+        } else {
+            renderBentoLayout(targetStage, imageItems);
+        }
+        imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
     }
 
     private void showPlaybackSelectionMessage(String message) {
@@ -1911,7 +2456,10 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             return String.format(Locale.US, "%.1f GB", gb);
         }
         double mb = bytes / (1024d * 1024d);
-        return String.format(Locale.US, "%.0f MB", mb);
+        if (mb >= 10d) {
+            return String.format(Locale.US, "%.0f MB", mb);
+        }
+        return String.format(Locale.US, "%.1f MB", mb);
     }
 
     private List<String> findDecoderNames(String mimeType) {
@@ -2109,8 +2657,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         addDrawerFocusableView(refreshButton);
         addDrawerFocusableView(setupButton);
         addDrawerFocusableView(appUpdateButton);
-        collectFocusableChildren(rotationOptionContainer);
+        addDrawerFocusableView(rotationSpinner);
         addDrawerFocusableView(muteToggleCheckBox);
+        addDrawerFocusableView(cacheToggleCheckBox);
+        addDrawerFocusableView(cacheLimitSpinner);
+        addDrawerFocusableView(cacheClearButton);
         collectFocusableChildren(playbackSelectionContainer);
         addDrawerFocusableView(systemCapabilityButton);
 

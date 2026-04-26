@@ -15,6 +15,10 @@ public class DevicePullResponse {
         return distributions;
     }
 
+    public void setDistributions(List<DistributionItem> distributions) {
+        this.distributions = distributions;
+    }
+
     public String getPulledAt() {
         return pulledAt;
     }
@@ -59,6 +63,10 @@ public class DevicePullResponse {
 
         public List<MediaItem> getMediaList() {
             return mediaList;
+        }
+
+        public void setMediaList(List<MediaItem> mediaList) {
+            this.mediaList = mediaList;
         }
     }
 
@@ -173,6 +181,10 @@ public class DevicePullResponse {
             return url;
         }
 
+        public void setUrl(String url) {
+            this.url = url;
+        }
+
         public Integer getSortOrder() {
             return sortOrder;
         }
@@ -224,6 +236,10 @@ public class DevicePullResponse {
 
         public String getUrl() {
             return url;
+        }
+
+        public void setUrl(String url) {
+            this.url = url;
         }
 
         public String getThumbnailUrl() {

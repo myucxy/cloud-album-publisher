@@ -13,10 +13,11 @@
         android:layout_height="match_parent">
 
     <FrameLayout
+        android:id="@+id/playbackStageContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
-        <ImageView
+        <com.cloudalbum.publisher.android.player.RoundedImageView
             android:id="@+id/imageStage"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
@@ -25,7 +26,7 @@
             android:scaleType="fitCenter"
             android:visibility="gone" />
 
-        <ImageView
+        <com.cloudalbum.publisher.android.player.RoundedImageView
             android:id="@+id/imageStageNext"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
@@ -81,45 +82,45 @@
             android:background="#050B18"
             android:visibility="gone">
 
+            <com.cloudalbum.publisher.android.player.RoundedImageView
+                android:id="@+id/calendarImageView"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_gravity="start"
+                android:background="@color/ca_background"
+                android:scaleType="centerCrop" />
+
             <LinearLayout
-                android:layout_width="620dp"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:background="@drawable/bg_overlay"
+                android:id="@+id/calendarInfoPanel"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_gravity="end"
+                android:background="#050B18"
                 android:gravity="center"
                 android:orientation="vertical"
-                android:padding="44dp">
-
-                <TextView
-                    android:id="@+id/calendarMonthText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/ca_text_secondary"
-                    android:textSize="34sp" />
-
-                <TextView
-                    android:id="@+id/calendarDayText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/ca_text_primary"
-                    android:textSize="128sp"
-                    android:textStyle="bold" />
+                android:padding="24dp">
 
                 <TextView
                     android:id="@+id/calendarWeekdayText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:textColor="@color/ca_text_secondary"
-                    android:textSize="30sp" />
+                    android:textSize="24sp" />
 
                 <TextView
-                    android:id="@+id/calendarTimeText"
+                    android:id="@+id/calendarDayText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="18dp"
                     android:textColor="@color/ca_text_primary"
-                    android:textSize="54sp"
+                    android:textSize="96sp"
                     android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/calendarMonthText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/ca_text_secondary"
+                    android:textSize="36sp" />
             </LinearLayout>
         </FrameLayout>
 
@@ -301,12 +302,13 @@
                     android:textColor="@color/ca_text_secondary"
                     android:textSize="14sp" />
 
-                <LinearLayout
-                    android:id="@+id/rotationOptionContainer"
+                <Spinner
+                    android:id="@+id/rotationSpinner"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    android:orientation="vertical" />
+                    android:focusable="true"
+                    android:focusableInTouchMode="false" />
             </LinearLayout>
 
             <LinearLayout
@@ -339,6 +341,56 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cachePanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:background="@drawable/bg_panel"
+                android:orientation="vertical"
+                android:padding="@dimen/panel_padding">
+
+                <TextView
+                    android:id="@+id/cacheTitleText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="媒体缓存"
+                    android:textColor="@color/ca_text_primary"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/cacheSummaryText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:textColor="@color/ca_text_secondary"
+                    android:textSize="14sp" />
+
+                <CheckBox
+                    android:id="@+id/cacheToggleCheckBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="启用本地缓存" />
+
+                <Spinner
+                    android:id="@+id/cacheLimitSpinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:focusable="true"
+                    android:focusableInTouchMode="false" />
+
+                <Button
+                    android:id="@+id/cacheClearButton"
+                    style="@style/Widget.CloudAlbum.Button.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="清理缓存" />
             </LinearLayout>
 
             <LinearLayout

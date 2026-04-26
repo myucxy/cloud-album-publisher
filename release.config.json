@@ -1,0 +1,17 @@
+{
+  "channel": "stable",
+  "downloadsBasePath": "/downloads",
+  "pc": {
+    "version": "0.3.9",
+    "versionCode": 10,
+    "forceUpdate": true,
+    "releaseNotes": "优化"
+  },
+  "android": {
+    "version": "0.3.31",
+    "versionCode": 33,
+    "variant": "debug",
+    "forceUpdate": true,
+    "releaseNotes": "增加客户端更新检查。"
+  }
+}

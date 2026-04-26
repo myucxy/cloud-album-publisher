@@ -13,11 +13,35 @@
     </div>
     <template v-else>
       <div v-if="isCalendarLayout" class="calendar-layout">
+        <div class="calendar-media-pane">
+          <img
+            v-if="media.mediaType === 'IMAGE' && mediaResolvedUrl"
+            :key="`calendar-image-${mediaIdentity}`"
+            class="calendar-image"
+            :src="mediaResolvedUrl"
+            :alt="media.fileName"
+            @load="handleMediaLoaded"
+            @error="handleMediaError"
+          />
+          <video
+            v-else-if="media.mediaType === 'VIDEO' && mediaResolvedUrl"
+            :key="`calendar-video-${mediaIdentity}`"
+            ref="videoRef"
+            class="calendar-image"
+            :src="mediaResolvedUrl"
+            :muted="muted"
+            autoplay
+            playsinline
+            controls
+            @loadeddata="handleMediaLoaded"
+            @ended="$emit('ended')"
+            @error="handleMediaError"
+          />
+        </div>
         <div class="calendar-card">
-          <div class="calendar-month">{{ calendarParts.month }}</div>
-          <div class="calendar-day">{{ calendarParts.day }}</div>
           <div class="calendar-weekday">{{ calendarParts.weekday }}</div>
-          <div class="calendar-time">{{ calendarParts.time }}</div>
+          <div class="calendar-day">{{ calendarParts.day }}</div>
+          <div class="calendar-month">{{ calendarParts.monthNumber }} / {{ calendarParts.year }}</div>
         </div>
       </div>
       <div
@@ -30,7 +54,7 @@
           v-for="(item, index) in displayedAdvancedItems"
           :key="`${item.identity}-${index}-${item.version || 0}`"
           class="advanced-image"
-          :class="{ primary: index === primaryAdvancedIndex }"
+          :class="{ primary: index === primaryAdvancedIndex, 'flip-x': item.flipAxis === 'x', 'flip-y': item.flipAxis !== 'x' }"
           :style="getAdvancedItemStyle(index)"
           :src="item.resolvedUrl"
           :alt="item.media.fileName"
@@ -155,10 +179,17 @@ const advancedReadyEmitted = ref(false)
 const bentoDisplayItems = ref([])
 const bentoNextSourceIndex = ref(0)
 const bentoPreviousSlotIndex = ref(-1)
+const frameWallDisplayItems = ref([])
+const frameWallNextSourceIndex = ref(0)
+const frameWallPreviousSlotIndex = ref(-1)
+const carouselDisplayItems = ref([])
+const carouselActiveSourceIndex = ref(0)
 const viewportVersion = ref(0)
 const now = ref(new Date())
 let clockTimer = null
 let bentoTimer = null
+let frameWallTimer = null
+let carouselTimer = null
 const mediaUrl = computed(() => props.media?.url || '')
 const mediaIdentity = computed(() => resolveMediaIdentity(props.media))
 const normalizedTransitionStyle = computed(() => normalizeTransitionStyle(props.transitionStyle || props.album?.transitionStyle))
@@ -176,10 +207,23 @@ const advancedRenderableItems = computed(() => advancedImageItems.value
   }))
   .filter(item => item.resolvedUrl))
 const isBentoLayout = computed(() => normalizedDisplayStyle.value === 'BENTO')
-const displayedAdvancedItems = computed(() => isBentoLayout.value ? bentoDisplayItems.value : advancedRenderableItems.value)
+const isFrameWallLayout = computed(() => normalizedDisplayStyle.value === 'FRAME_WALL')
+const isCarouselLayout = computed(() => normalizedDisplayStyle.value === 'CAROUSEL')
+const displayedAdvancedItems = computed(() => {
+  if (isBentoLayout.value) return bentoDisplayItems.value
+  if (isFrameWallLayout.value) return frameWallDisplayItems.value
+  if (isCarouselLayout.value) return carouselDisplayItems.value
+  return advancedRenderableItems.value
+})
 const advancedLayoutReady = computed(() => {
   if (isBentoLayout.value) {
     return bentoDisplayItems.value.length > 0 && bentoDisplayItems.value.every(item => item.resolvedUrl)
+  }
+  if (isFrameWallLayout.value) {
+    return frameWallDisplayItems.value.length > 0 && frameWallDisplayItems.value.every(item => item.resolvedUrl)
+  }
+  if (isCarouselLayout.value) {
+    return carouselDisplayItems.value.length > 0 && carouselDisplayItems.value.every(item => item.resolvedUrl)
   }
   return advancedImageItems.value.length > 0 && advancedRenderableItems.value.length === advancedImageItems.value.length
 })
@@ -191,7 +235,7 @@ const advancedLayoutStyle = computed(() => {
     gridTemplateRows: `repeat(${bentoGridSize.value.rows}, minmax(0, 1fr))`
   }
 })
-const primaryAdvancedIndex = computed(() => normalizedDisplayStyle.value === 'CAROUSEL' && advancedImageItems.value.length >= 3 ? Math.floor(advancedImageItems.value.length / 2) : 0)
+const primaryAdvancedIndex = computed(() => normalizedDisplayStyle.value === 'CAROUSEL' && displayedAdvancedItems.value.length >= 3 ? Math.floor(displayedAdvancedItems.value.length / 2) : 0)
 const imageTransitionEnabled = computed(() => enableImageTransition.value && concreteImageTransition.value !== 'NONE')
 const imageTransitionName = computed(() => `image-${concreteImageTransition.value.toLowerCase()}`)
 const calendarParts = computed(() => formatCalendarParts(now.value))
@@ -300,6 +344,24 @@ function getBentoSlotCount() {
 }
 
 function getAdvancedItemStyle(index) {
+  if (normalizedDisplayStyle.value === 'CAROUSEL') {
+    const count = displayedAdvancedItems.value.length
+    const center = Math.floor(count / 2)
+    const offset = index - center
+    const isPrimary = offset === 0
+    const width = isPrimary ? 42 : 24
+    const height = isPrimary ? 78 : 58
+    const left = 50 + offset * 22 - width / 2
+    return {
+      left: `${left}%`,
+      top: `${(100 - height) / 2}%`,
+      width: `${width}%`,
+      height: `${height}%`,
+      zIndex: 20 - Math.abs(offset),
+      opacity: Math.max(0.46, 1 - Math.abs(offset) * 0.18),
+      transform: `scale(${isPrimary ? 1 : Math.max(0.82, 0.94 - Math.abs(offset) * 0.04)})`
+    }
+  }
   if (normalizedDisplayStyle.value !== 'BENTO') return null
   const slot = getBentoSlots(displayedAdvancedItems.value.length)[index]
   if (!slot) return null
@@ -309,10 +371,12 @@ function getAdvancedItemStyle(index) {
 function formatCalendarParts(date) {
   const time = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
   const month = date.toLocaleDateString('zh-CN', { month: 'long' })
+  const monthNumber = String(date.getMonth() + 1).padStart(2, '0')
+  const year = String(date.getFullYear())
   const day = String(date.getDate()).padStart(2, '0')
   const weekday = date.toLocaleDateString('zh-CN', { weekday: 'long' })
   const dateText = date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'long' })
-  return { time, month, day, weekday, dateText }
+  return { time, month, monthNumber, year, day, weekday, dateText }
 }
 
 function getAdvancedImageLimit() {
@@ -351,6 +415,10 @@ function buildBentoImagePool() {
   return props.media?.mediaType === 'IMAGE' ? [props.media] : []
 }
 
+function buildAdvancedImagePool() {
+  return buildBentoImagePool()
+}
+
 function getCurrentImagePoolStartIndex(images) {
   const identity = mediaIdentity.value
   const index = images.findIndex(item => resolveMediaIdentity(item) === identity)
@@ -360,10 +428,34 @@ function getCurrentImagePoolStartIndex(images) {
 async function resolveBentoItem(item) {
   if (!item?.url) return ''
   try {
-    return await warmSecureObjectUrl(item.url)
+    const resolvedUrl = await warmSecureObjectUrl(item.url)
+    const imageUrl = resolvedUrl || item.url
+    await decodeImage(imageUrl)
+    return imageUrl
   } catch (error) {
+    await decodeImage(item.url).catch(() => {})
     return item.url
   }
+}
+
+async function resolveAdvancedPoolItem(item) {
+  return resolveBentoItem(item)
+}
+
+function decodeImage(src) {
+  if (!src) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => {
+      if (image.decode) {
+        image.decode().then(resolve).catch(resolve)
+      } else {
+        resolve()
+      }
+    }
+    image.onerror = reject
+    image.src = src
+  })
 }
 
 function clearBentoTimer() {
@@ -373,8 +465,28 @@ function clearBentoTimer() {
   }
 }
 
-async function initializeBentoDisplay() {
+function clearFrameWallTimer() {
+  if (frameWallTimer) {
+    clearTimeout(frameWallTimer)
+    frameWallTimer = null
+  }
+}
+
+function clearCarouselTimer() {
+  if (carouselTimer) {
+    clearTimeout(carouselTimer)
+    carouselTimer = null
+  }
+}
+
+function clearAdvancedTimers() {
   clearBentoTimer()
+  clearFrameWallTimer()
+  clearCarouselTimer()
+}
+
+async function initializeBentoDisplay() {
+  clearAdvancedTimers()
   if (!isBentoLayout.value || props.media?.mediaType !== 'IMAGE') {
     bentoDisplayItems.value = []
     return
@@ -405,6 +517,140 @@ async function initializeBentoDisplay() {
   scheduleBentoSwap()
 }
 
+function getFrameWallSlotCount() {
+  return 8
+}
+
+async function initializeFrameWallDisplay() {
+  clearAdvancedTimers()
+  if (!isFrameWallLayout.value || props.media?.mediaType !== 'IMAGE') {
+    frameWallDisplayItems.value = []
+    return
+  }
+  const images = buildAdvancedImagePool()
+  if (!images.length) {
+    frameWallDisplayItems.value = []
+    return
+  }
+  const slotCount = getFrameWallSlotCount()
+  const startIndex = getCurrentImagePoolStartIndex(images)
+  const initialItems = []
+  for (let index = 0; index < slotCount; index += 1) {
+    const media = images[(startIndex + index) % images.length]
+    initialItems.push({ media, identity: resolveMediaIdentity(media), resolvedUrl: '', version: 0 })
+  }
+  frameWallDisplayItems.value = initialItems
+  frameWallNextSourceIndex.value = (startIndex + slotCount) % images.length
+  await Promise.all(initialItems.map(async (item, index) => {
+    const resolvedUrl = await resolveAdvancedPoolItem(item.media)
+    frameWallDisplayItems.value[index] = { ...frameWallDisplayItems.value[index], resolvedUrl }
+  }))
+  frameWallDisplayItems.value = [...frameWallDisplayItems.value]
+  if (!advancedReadyEmitted.value) {
+    advancedReadyEmitted.value = true
+    handleMediaLoaded()
+  }
+  scheduleFrameWallSwap()
+}
+
+function scheduleFrameWallSwap() {
+  clearFrameWallTimer()
+  if (!isFrameWallLayout.value || !frameWallDisplayItems.value.length) return
+  const durationSeconds = props.media?.itemDuration || props.album?.itemDuration || 10
+  frameWallTimer = window.setTimeout(swapFrameWallSlots, Math.max(1, durationSeconds) * 1000)
+}
+
+function pickNextFrameWallSlot(slotCount) {
+  if (slotCount <= 1) return 0
+  let next = Math.floor(Math.random() * slotCount)
+  if (next === frameWallPreviousSlotIndex.value) next = (next + 1) % slotCount
+  frameWallPreviousSlotIndex.value = next
+  return next
+}
+
+async function swapFrameWallSlots() {
+  const images = buildAdvancedImagePool()
+  if (!isFrameWallLayout.value || !images.length || !frameWallDisplayItems.value.length) return
+  const replaceCount = Math.max(1, Math.floor(frameWallDisplayItems.value.length / 10) + 1)
+  for (let count = 0; count < replaceCount; count += 1) {
+    const slotIndex = pickNextFrameWallSlot(frameWallDisplayItems.value.length)
+    const media = images[frameWallNextSourceIndex.value % images.length]
+    frameWallNextSourceIndex.value = (frameWallNextSourceIndex.value + 1) % images.length
+    const resolvedUrl = await resolveAdvancedPoolItem(media)
+    const current = frameWallDisplayItems.value[slotIndex]
+    frameWallDisplayItems.value[slotIndex] = {
+      media,
+      identity: resolveMediaIdentity(media),
+      resolvedUrl,
+      flipAxis: Math.random() > 0.5 ? 'x' : 'y',
+      version: (current?.version || 0) + 1
+    }
+    frameWallDisplayItems.value = [...frameWallDisplayItems.value]
+    if (count < replaceCount - 1) await new Promise(resolve => window.setTimeout(resolve, 800))
+  }
+  scheduleFrameWallSwap()
+}
+
+async function initializeCarouselDisplay() {
+  clearAdvancedTimers()
+  if (!isCarouselLayout.value || props.media?.mediaType !== 'IMAGE') {
+    carouselDisplayItems.value = []
+    return
+  }
+  const images = buildAdvancedImagePool()
+  if (!images.length) {
+    carouselDisplayItems.value = []
+    return
+  }
+  carouselActiveSourceIndex.value = getCurrentImagePoolStartIndex(images)
+  await updateCarouselWindow()
+  if (!advancedReadyEmitted.value) {
+    advancedReadyEmitted.value = true
+    handleMediaLoaded()
+  }
+  scheduleCarouselStep()
+}
+
+function getCarouselWindowSize(images) {
+  if (images.length >= 5) return 5
+  if (images.length >= 3) return 3
+  return images.length
+}
+
+async function updateCarouselWindow() {
+  const images = buildAdvancedImagePool()
+  const count = getCarouselWindowSize(images)
+  const center = Math.floor(count / 2)
+  const nextItems = []
+  for (let index = 0; index < count; index += 1) {
+    const sourceIndex = (carouselActiveSourceIndex.value + index - center + images.length) % images.length
+    const media = images[sourceIndex]
+    const resolvedUrl = await resolveAdvancedPoolItem(media)
+    nextItems.push({
+      media,
+      identity: resolveMediaIdentity(media),
+      resolvedUrl,
+      version: carouselActiveSourceIndex.value
+    })
+  }
+  carouselDisplayItems.value = nextItems
+}
+
+function scheduleCarouselStep() {
+  clearCarouselTimer()
+  if (!isCarouselLayout.value || !carouselDisplayItems.value.length) return
+  const durationSeconds = props.media?.itemDuration || props.album?.itemDuration || 10
+  carouselTimer = window.setTimeout(stepCarousel, Math.max(1, durationSeconds) * 1000)
+}
+
+async function stepCarousel() {
+  const images = buildAdvancedImagePool()
+  if (!isCarouselLayout.value || !images.length) return
+  carouselActiveSourceIndex.value = (carouselActiveSourceIndex.value + 1) % images.length
+  await updateCarouselWindow()
+  scheduleCarouselStep()
+}
+
 function scheduleBentoSwap() {
   clearBentoTimer()
   if (!isBentoLayout.value || !bentoDisplayItems.value.length) return
@@ -430,10 +676,11 @@ async function swapOneBentoSlot() {
   bentoNextSourceIndex.value = (bentoNextSourceIndex.value + 1) % images.length
   const resolvedUrl = await resolveBentoItem(media)
   const current = bentoDisplayItems.value[slotIndex]
-  bentoDisplayItems.value[slotIndex] = {
+    bentoDisplayItems.value[slotIndex] = {
     media,
     identity: resolveMediaIdentity(media),
     resolvedUrl,
+    flipAxis: Math.random() > 0.5 ? 'x' : 'y',
     version: (current?.version || 0) + 1
   }
   bentoDisplayItems.value = [...bentoDisplayItems.value]
@@ -566,8 +813,12 @@ watch(
   () => {
     if (isBentoLayout.value) {
       initializeBentoDisplay()
+    } else if (isFrameWallLayout.value) {
+      initializeFrameWallDisplay()
+    } else if (isCarouselLayout.value) {
+      initializeCarouselDisplay()
     } else {
-      clearBentoTimer()
+      clearAdvancedTimers()
       warmAdvancedImages()
     }
   },
@@ -593,7 +844,7 @@ window.addEventListener('resize', handleViewportResize)
 
 onBeforeUnmount(() => {
   if (clockTimer) clearInterval(clockTimer)
-  clearBentoTimer()
+  clearAdvancedTimers()
   window.removeEventListener('resize', handleViewportResize)
 })
 
@@ -683,8 +934,15 @@ watch(
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
 }
 
-.advanced-bento .advanced-image {
+.advanced-bento .advanced-image.flip-y,
+.advanced-frame-wall .advanced-image.flip-y {
   animation: bentoCellFlip 620ms ease-in-out both;
+  transform-origin: center;
+}
+
+.advanced-bento .advanced-image.flip-x,
+.advanced-frame-wall .advanced-image.flip-x {
+  animation: bentoCellFlipX 620ms ease-in-out both;
   transform-origin: center;
 }
 
@@ -696,45 +954,79 @@ watch(
 
 .advanced-frame-wall {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(180px, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
 }
 
 .calendar-layout {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: radial-gradient(circle at top left, #1d4ed8 0, transparent 34%), linear-gradient(135deg, #020617, #0f172a 55%, #111827);
+  display: grid;
+  grid-template-columns: 67fr 33fr;
+  grid-template-rows: 1fr;
+  background: #020617;
   color: #fff;
 }
 
+.calendar-media-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+.calendar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: calendarMediaFade 2500ms ease-in-out both;
+}
+
 .calendar-card {
-  min-width: min(68vw, 760px);
-  padding: 54px 72px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 36px;
-  background: rgba(15, 23, 42, 0.68);
-  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.38);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(24px, 4vw, 72px);
+  background: #050b18;
   text-align: center;
 }
 
 .calendar-month,
 .calendar-weekday {
-  font-size: clamp(28px, 3vw, 48px);
-  opacity: 0.88;
+  padding: 8px 0;
+  font-size: clamp(24px, 3vw, 42px);
+  opacity: 0.9;
 }
 
 .calendar-day {
-  font-size: clamp(120px, 18vw, 260px);
+  font-size: clamp(96px, 14vw, 180px);
   font-weight: 800;
   line-height: 0.95;
 }
 
-.calendar-time {
-  margin-top: 18px;
-  font-size: clamp(44px, 6vw, 88px);
-  font-weight: 700;
+@keyframes calendarMediaFade {
+  from { opacity: 0.2; }
+  to { opacity: 1; }
+}
+
+@media (orientation: portrait) {
+  .calendar-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: 67fr 33fr;
+  }
+
+  .calendar-card {
+    padding: clamp(20px, 6vw, 56px);
+  }
+
+  .calendar-month,
+  .calendar-weekday {
+    font-size: clamp(22px, 6vw, 40px);
+  }
+
+  .calendar-day {
+    font-size: clamp(88px, 22vw, 180px);
+  }
 }
 
 .time-overlay {
@@ -762,67 +1054,25 @@ watch(
 }
 
 .advanced-carousel {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 24px;
-  padding: 36px;
+  display: block;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 16px;
 }
 
 .advanced-carousel .advanced-image {
-  flex: 0 1 18%;
-  max-width: 240px;
-  min-width: 150px;
-  height: min(58%, 520px);
-  min-height: 260px;
-  opacity: 0.66;
-  transform: scale(0.9);
+  position: absolute;
+  transition: left 1000ms ease, transform 1000ms ease, opacity 1000ms ease;
 }
 
 .advanced-carousel .advanced-image.primary {
-  flex-basis: 40%;
-  max-width: 640px;
-  min-width: 360px;
-  height: min(82%, 760px);
-  min-height: 420px;
-  opacity: 1;
-  transform: scale(1);
   z-index: 2;
 }
 
 @media (max-width: 1280px), (max-height: 720px) {
-  .advanced-bento {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: repeat(3, minmax(160px, 1fr));
-  }
-
-  .advanced-bento .advanced-image:nth-child(n) {
-    grid-column: auto;
-    grid-row: auto;
-  }
-
-  .advanced-bento .advanced-image:nth-child(1) {
-    grid-column: span 2;
-  }
-
-  .advanced-frame-wall {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-rows: repeat(3, minmax(150px, 1fr));
-  }
-
   .advanced-carousel {
-    gap: 14px;
-    padding: 22px;
-  }
-
-  .advanced-carousel .advanced-image:not(.primary) {
-    min-width: 120px;
-    min-height: 220px;
-  }
-
-  .advanced-carousel .advanced-image.primary {
-    min-width: 280px;
-    min-height: 340px;
+    padding: 10px;
   }
 }
 
@@ -835,6 +1085,12 @@ watch(
   0% { opacity: 0.18; transform: rotateY(-88deg) scale(0.98); }
   55% { opacity: 0.92; transform: rotateY(8deg) scale(1.01); }
   100% { opacity: 1; transform: rotateY(0deg) scale(1); }
+}
+
+@keyframes bentoCellFlipX {
+  0% { opacity: 0.18; transform: rotateX(-88deg) scale(0.98); }
+  55% { opacity: 0.92; transform: rotateX(8deg) scale(1.01); }
+  100% { opacity: 1; transform: rotateX(0deg) scale(1); }
 }
 
 .image-fade-enter-active,
