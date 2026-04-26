@@ -1,7 +1,7 @@
 <template>
   <div
     class="player-page"
-    :class="{ 'sidebar-hidden': !sidebarVisible }"
+    :class="{ 'sidebar-hidden': effectiveSidebarHidden, fullscreen: fullscreenActive }"
     @mousemove="revealSidebarHandle"
     @mouseleave="hideSidebarHandle"
   >
@@ -38,11 +38,25 @@
         {{ sidebarVisible ? '<' : '>' }}
       </button>
 
+      <button
+        type="button"
+        class="fullscreen-toggle"
+        :aria-label="fullscreenActive ? '退出全屏' : '全屏显示'"
+        :title="fullscreenActive ? '退出全屏' : '全屏显示'"
+        @click="toggleFullscreen"
+      >
+        {{ fullscreenActive ? '还原' : '全屏' }}
+      </button>
+
       <div class="stage">
         <MediaPlayer
           :media="currentMedia"
+          :media-list="player.currentMediaList"
           :album="currentDistribution?.album"
           :transition-style="player.currentTransitionStyle"
+          :display-style="player.currentDisplayStyle"
+          :display-variant="player.currentDisplayVariant"
+          :show-time-and-date="player.showTimeAndDate"
           :muted="player.playbackMuted"
           :loading="player.syncStatus === 'loading' && !player.currentMedia"
           @ended="player.nextMedia"
@@ -72,6 +86,7 @@ const player = usePlayerStore()
 const bgmRef = ref()
 const sidebarVisible = ref(true)
 const showSidebarHandle = ref(false)
+const fullscreenActive = ref(false)
 const imageAdvanceRetryCount = ref(0)
 
 let imageTimer = null
@@ -79,10 +94,13 @@ let syncTimer = null
 let mediaErrorAdvanceTimer = null
 let bgmErrorAdvanceTimer = null
 let sidebarHandleTimer = null
+let removeFullscreenListener = null
 const preloadedImageIdentities = new Set()
 
 const currentDistribution = computed(() => player.currentDistribution)
 const currentMedia = computed(() => player.currentMedia)
+const isBentoPlayback = computed(() => player.currentDisplayStyle === 'BENTO' && currentMedia.value?.mediaType === 'IMAGE')
+const effectiveSidebarHidden = computed(() => !sidebarVisible.value || fullscreenActive.value)
 const sidebarErrorMessage = computed(() => player.errorMessage || player.mediaErrorMessage || player.bgmErrorMessage)
 const resolvedBgmInputUrl = computed(() => player.currentBgmUrl)
 const { resolvedSrc: resolvedBgmUrl, error: bgmResolveError } = useSecureObjectUrl(resolvedBgmInputUrl)
@@ -178,7 +196,7 @@ function scheduleImageAdvance() {
 
   const media = currentMedia.value
   const distribution = currentDistribution.value
-  if (!media || media.mediaType === 'VIDEO' || media.mediaType === 'AUDIO') {
+  if (!media || media.mediaType === 'VIDEO' || media.mediaType === 'AUDIO' || isBentoPlayback.value) {
     return
   }
 
@@ -212,6 +230,7 @@ function scheduleBgmErrorAdvance() {
 
 function handleMediaLoaded() {
   player.clearMediaError()
+  scheduleImageAdvance()
 }
 
 function handleMediaError(message) {
@@ -234,6 +253,25 @@ function handleDistributionToggle(payload) {
 
 function handleMuteToggle(value) {
   player.setPlaybackMuted(value)
+}
+
+async function toggleFullscreen() {
+  if (window.deviceBridge?.toggleFullscreen) {
+    fullscreenActive.value = await window.deviceBridge.toggleFullscreen()
+    return
+  }
+  if (!document.fullscreenElement) {
+    await document.documentElement.requestFullscreen?.()
+  } else {
+    await document.exitFullscreen?.()
+  }
+  fullscreenActive.value = Boolean(document.fullscreenElement)
+}
+
+function handleDocumentFullscreenChange() {
+  if (!window.deviceBridge?.isFullscreen) {
+    fullscreenActive.value = Boolean(document.fullscreenElement)
+  }
 }
 
 async function refresh() {
@@ -269,7 +307,6 @@ watch(
       preloadNextImage()
     }
 
-    scheduleImageAdvance()
   },
   { immediate: true }
 )
@@ -326,6 +363,13 @@ watch(
 
 onMounted(() => {
   revealSidebarHandle()
+  if (window.deviceBridge?.isFullscreen) {
+    window.deviceBridge.isFullscreen().then(value => { fullscreenActive.value = Boolean(value) }).catch(() => {})
+  }
+  removeFullscreenListener = window.deviceBridge?.onFullscreenChanged?.(value => {
+    fullscreenActive.value = value
+  }) || null
+  document.addEventListener('fullscreenchange', handleDocumentFullscreenChange)
   syncAndStart().catch(() => {})
 })
 
@@ -338,6 +382,11 @@ onBeforeUnmount(() => {
     clearInterval(syncTimer)
     syncTimer = null
   }
+  if (removeFullscreenListener) {
+    removeFullscreenListener()
+    removeFullscreenListener = null
+  }
+  document.removeEventListener('fullscreenchange', handleDocumentFullscreenChange)
   bgmRef.value?.pause()
 })
 </script>
@@ -346,10 +395,16 @@ onBeforeUnmount(() => {
 .player-page {
   position: relative;
   height: 100vh;
+  width: 100vw;
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
   overflow: hidden;
   background: linear-gradient(135deg, #020617, #0f172a 45%, #111827);
+}
+
+.player-page.fullscreen {
+  grid-template-columns: 0 minmax(0, 1fr);
+  background: #000;
 }
 
 .player-page.sidebar-hidden {
@@ -387,6 +442,10 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+.player-page.fullscreen .content-panel {
+  padding: 0;
+}
+
 .sidebar-handle {
   position: absolute;
   top: 50%;
@@ -409,8 +468,39 @@ onBeforeUnmount(() => {
   background: rgba(30, 41, 59, 0.94);
 }
 
+.fullscreen-toggle {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 3;
+  min-width: 64px;
+  height: 36px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.68);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  transition: opacity 0.2s ease, background 0.2s ease;
+}
+
+.fullscreen-toggle:hover {
+  background: rgba(30, 41, 59, 0.92);
+}
+
+.player-page.fullscreen .fullscreen-toggle {
+  opacity: 0.18;
+}
+
+.player-page.fullscreen .fullscreen-toggle:hover {
+  opacity: 1;
+}
+
 .stage {
   flex: 1;
+  width: 100%;
+  height: 100%;
   min-height: 0;
   display: flex;
   overflow: hidden;

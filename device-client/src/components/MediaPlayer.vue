@@ -12,9 +12,35 @@
       <div class="placeholder-text">{{ loadErrorMessage }}</div>
     </div>
     <template v-else>
+      <div v-if="isCalendarLayout" class="calendar-layout">
+        <div class="calendar-card">
+          <div class="calendar-month">{{ calendarParts.month }}</div>
+          <div class="calendar-day">{{ calendarParts.day }}</div>
+          <div class="calendar-weekday">{{ calendarParts.weekday }}</div>
+          <div class="calendar-time">{{ calendarParts.time }}</div>
+        </div>
+      </div>
+      <div
+        v-if="isAdvancedImageLayout && advancedLayoutReady"
+        :key="`advanced-${mediaIdentity}-${normalizedDisplayStyle}-${normalizedDisplayVariant}-${viewportVersion}`"
+        :class="['advanced-layout', `advanced-${normalizedDisplayStyle.toLowerCase().replace('_', '-')}`]"
+        :style="advancedLayoutStyle"
+      >
+        <img
+          v-for="(item, index) in displayedAdvancedItems"
+          :key="`${item.identity}-${index}-${item.version || 0}`"
+          class="advanced-image"
+          :class="{ primary: index === primaryAdvancedIndex }"
+          :style="getAdvancedItemStyle(index)"
+          :src="item.resolvedUrl"
+          :alt="item.media.fileName"
+          @load="handleAdvancedImageLoaded(index)"
+          @error="handleAdvancedImageError(index)"
+        />
+      </div>
       <Transition :name="imageTransitionName" :css="imageTransitionEnabled">
         <img
-          v-if="media.mediaType === 'IMAGE' && mediaResolvedUrl"
+          v-if="!isAdvancedImageLayout && media.mediaType === 'IMAGE' && mediaResolvedUrl"
           :key="`image-${mediaIdentity}`"
           class="image-content transition-image"
           :src="mediaResolvedUrl"
@@ -59,13 +85,17 @@
         <a-empty description="暂不支持的媒体类型" />
         <div class="placeholder-text">{{ media.mediaType }} / {{ media.fileName }}</div>
       </div>
+      <div v-if="showClockOverlay" class="time-overlay">
+        <div class="time-overlay-time">{{ calendarParts.time }}</div>
+        <div class="time-overlay-date">{{ calendarParts.dateText }}</div>
+      </div>
     </template>
   </div>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
-import { useSecureObjectUrl } from '@/components/useSecureObjectUrl'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useSecureObjectUrl, warmSecureObjectUrl } from '@/components/useSecureObjectUrl'
 import { resolveMediaIdentity } from '@/stores/player'
 
 const TRANSITION_STYLES = ['NONE', 'FADE', 'SLIDE', 'CUBE', 'REVEAL', 'FLIP', 'RANDOM']
@@ -75,6 +105,10 @@ const props = defineProps({
   media: {
     type: Object,
     default: null
+  },
+  mediaList: {
+    type: Array,
+    default: () => []
   },
   album: {
     type: Object,
@@ -91,6 +125,18 @@ const props = defineProps({
   transitionStyle: {
     type: String,
     default: 'NONE'
+  },
+  displayStyle: {
+    type: String,
+    default: 'SINGLE'
+  },
+  displayVariant: {
+    type: String,
+    default: 'DEFAULT'
+  },
+  showTimeAndDate: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -102,11 +148,53 @@ const previousMediaType = ref('')
 const enableImageTransition = ref(false)
 const concreteImageTransition = ref('NONE')
 const loadErrorMessage = ref('')
+const advancedLoadedIndexes = ref(new Set())
+const advancedFailedIndexes = ref(new Set())
+const advancedResolvedUrls = ref({})
+const advancedReadyEmitted = ref(false)
+const bentoDisplayItems = ref([])
+const bentoNextSourceIndex = ref(0)
+const bentoPreviousSlotIndex = ref(-1)
+const viewportVersion = ref(0)
+const now = ref(new Date())
+let clockTimer = null
+let bentoTimer = null
 const mediaUrl = computed(() => props.media?.url || '')
 const mediaIdentity = computed(() => resolveMediaIdentity(props.media))
 const normalizedTransitionStyle = computed(() => normalizeTransitionStyle(props.transitionStyle || props.album?.transitionStyle))
+const normalizedDisplayStyle = computed(() => normalizeDisplayStyle(props.displayStyle || props.album?.displayStyle))
+const normalizedDisplayVariant = computed(() => normalizeDisplayVariant(props.displayVariant || props.album?.displayVariant))
+const isCalendarLayout = computed(() => normalizedDisplayStyle.value === 'CALENDAR')
+const isAdvancedImageLayout = computed(() => props.media?.mediaType === 'IMAGE' && !isCalendarLayout.value && normalizedDisplayStyle.value !== 'SINGLE')
+const showClockOverlay = computed(() => props.showTimeAndDate && !isCalendarLayout.value)
+const advancedImageItems = computed(() => buildAdvancedImageItems())
+const advancedRenderableItems = computed(() => advancedImageItems.value
+  .map(item => ({
+    media: item,
+    identity: resolveMediaIdentity(item),
+    resolvedUrl: getAdvancedImageSrc(item)
+  }))
+  .filter(item => item.resolvedUrl))
+const isBentoLayout = computed(() => normalizedDisplayStyle.value === 'BENTO')
+const displayedAdvancedItems = computed(() => isBentoLayout.value ? bentoDisplayItems.value : advancedRenderableItems.value)
+const advancedLayoutReady = computed(() => {
+  if (isBentoLayout.value) {
+    return bentoDisplayItems.value.length > 0 && bentoDisplayItems.value.every(item => item.resolvedUrl)
+  }
+  return advancedImageItems.value.length > 0 && advancedRenderableItems.value.length === advancedImageItems.value.length
+})
+const bentoGridSize = computed(() => getBentoGridSize())
+const advancedLayoutStyle = computed(() => {
+  if (normalizedDisplayStyle.value !== 'BENTO') return null
+  return {
+    gridTemplateColumns: `repeat(${bentoGridSize.value.columns}, minmax(0, 1fr))`,
+    gridTemplateRows: `repeat(${bentoGridSize.value.rows}, minmax(0, 1fr))`
+  }
+})
+const primaryAdvancedIndex = computed(() => normalizedDisplayStyle.value === 'CAROUSEL' && advancedImageItems.value.length >= 3 ? Math.floor(advancedImageItems.value.length / 2) : 0)
 const imageTransitionEnabled = computed(() => enableImageTransition.value && concreteImageTransition.value !== 'NONE')
 const imageTransitionName = computed(() => `image-${concreteImageTransition.value.toLowerCase()}`)
+const calendarParts = computed(() => formatCalendarParts(now.value))
 const { resolvedSrc: mediaResolvedUrl, error: mediaResolveError } = useSecureObjectUrl(mediaUrl)
 const isUnsupportedMedia = computed(() => {
   if (!props.media) {
@@ -130,6 +218,275 @@ function normalizeTransitionStyle(value) {
   }
   const normalized = String(value).trim().toUpperCase()
   return TRANSITION_STYLES.includes(normalized) ? normalized : 'NONE'
+}
+
+function normalizeDisplayStyle(value) {
+  if (!value || !String(value).trim()) {
+    return 'SINGLE'
+  }
+  const normalized = String(value).trim().toUpperCase()
+  if (normalized === 'FRAMEWALL') return 'FRAME_WALL'
+  return ['SINGLE', 'BENTO', 'FRAME_WALL', 'CAROUSEL', 'CALENDAR'].includes(normalized) ? normalized : 'SINGLE'
+}
+
+function normalizeDisplayVariant(value) {
+  if (!value || !String(value).trim()) return 'DEFAULT'
+  return String(value).trim().toUpperCase().replace('-', '_')
+}
+
+function getBentoSlots(count) {
+  const variant = normalizedDisplayVariant.value === 'DEFAULT' ? 'BENTO_5' : normalizedDisplayVariant.value
+  const variants = {
+    BENTO_1: [
+      ['1 / span 1', '1 / span 1'], ['2 / span 1', '1 / span 1'], ['3 / span 2', '1 / span 1'],
+      ['5 / span 2', '3 / span 1'], ['1 / span 2', '2 / span 2'], ['3 / span 2', '2 / span 1'],
+      ['5 / span 2', '1 / span 2'], ['3 / span 2', '3 / span 1'], ['5 / span 2', '4 / span 1']
+    ],
+    BENTO_2: [
+      ['1 / span 1', '1 / span 2'], ['1 / span 2', '3 / span 1'], ['2 / span 2', '1 / span 1'],
+      ['4 / span 2', '1 / span 1'], ['4 / span 1', '2 / span 2'], ['2 / span 2', '3 / span 1'],
+      ['2 / span 1', '2 / span 1'], ['3 / span 1', '2 / span 1']
+    ],
+    BENTO_3: [
+      ['1 / span 1', '1 / span 2'], ['2 / span 1', '1 / span 1'], ['3 / span 2', '1 / span 1'],
+      ['1 / span 1', '3 / span 1'], ['2 / span 2', '2 / span 1'], ['4 / span 1', '2 / span 1'],
+      ['2 / span 1', '3 / span 1'], ['3 / span 1', '3 / span 1'], ['4 / span 1', '3 / span 1']
+    ],
+    BENTO_4: [
+      ['1 / span 2', '1 / span 2'], ['3 / span 1', '1 / span 2'], ['4 / span 1', '1 / span 1'],
+      ['1 / span 1', '3 / span 1'], ['2 / span 1', '3 / span 1'], ['3 / span 1', '3 / span 1'],
+      ['4 / span 1', '2 / span 2']
+    ],
+    BENTO_5: [
+      ['1 / span 3', '1 / span 2'], ['4 / span 1', '1 / span 2'], ['1 / span 1', '3 / span 1'],
+      ['2 / span 2', '3 / span 1'], ['4 / span 1', '3 / span 1']
+    ],
+    BENTO_6: [
+      ['1 / span 2', '1 / span 1'], ['3 / span 1', '1 / span 1'], ['4 / span 1', '1 / span 1'],
+      ['5 / span 1', '1 / span 1'], ['6 / span 2', '1 / span 1'], ['1 / span 1', '2 / span 1'],
+      ['2 / span 1', '2 / span 1'], ['1 / span 1', '3 / span 1'], ['2 / span 1', '3 / span 1'],
+      ['1 / span 2', '4 / span 1'], ['3 / span 3', '2 / span 2'], ['3 / span 1', '4 / span 1'],
+      ['4 / span 1', '4 / span 1'], ['5 / span 1', '4 / span 1'], ['6 / span 1', '2 / span 1'],
+      ['7 / span 1', '2 / span 1'], ['6 / span 1', '3 / span 1'], ['7 / span 1', '3 / span 1'],
+      ['6 / span 2', '4 / span 1']
+    ],
+    BENTO_7: [
+      ['1 / span 2', '1 / span 1'], ['3 / span 1', '1 / span 1'], ['4 / span 1', '1 / span 1'],
+      ['5 / span 1', '1 / span 1'], ['6 / span 2', '1 / span 1'], ['1 / span 1', '2 / span 1'],
+      ['2 / span 1', '2 / span 1'], ['1 / span 1', '3 / span 1'], ['2 / span 1', '3 / span 1'],
+      ['1 / span 2', '4 / span 1'], ['3 / span 3', '2 / span 2'], ['3 / span 1', '4 / span 1'],
+      ['4 / span 1', '4 / span 1'], ['5 / span 1', '4 / span 1'], ['6 / span 1', '2 / span 1'],
+      ['7 / span 1', '2 / span 1'], ['6 / span 1', '3 / span 1'], ['7 / span 1', '3 / span 1'],
+      ['6 / span 2', '4 / span 1']
+    ]
+  }
+  const slots = variants[variant] || variants.BENTO_5
+  if (count <= 1) return [['1 / span 6', '1 / span 4']]
+  if (count === 2) return [['1 / span 3', '1 / span 4'], ['4 / span 3', '1 / span 4']]
+  if (count === 3) return [['1 / span 3', '1 / span 4'], ['4 / span 3', '1 / span 2'], ['4 / span 3', '3 / span 2']]
+  if (count === 4) return [['1 / span 3', '1 / span 2'], ['4 / span 3', '1 / span 2'], ['1 / span 3', '3 / span 2'], ['4 / span 3', '3 / span 2']]
+  return slots
+}
+
+function getBentoGridSize() {
+  const variant = normalizedDisplayVariant.value === 'DEFAULT' ? 'BENTO_5' : normalizedDisplayVariant.value
+  if (variant === 'BENTO_6' || variant === 'BENTO_7') return { columns: 7, rows: 4 }
+  if (variant === 'BENTO_2' || variant === 'BENTO_3' || variant === 'BENTO_4' || variant === 'BENTO_5') return { columns: 4, rows: 3 }
+  return { columns: 6, rows: 4 }
+}
+
+function getBentoSlotCount() {
+  return getBentoSlots(99).length
+}
+
+function getAdvancedItemStyle(index) {
+  if (normalizedDisplayStyle.value !== 'BENTO') return null
+  const slot = getBentoSlots(displayedAdvancedItems.value.length)[index]
+  if (!slot) return null
+  return { gridColumn: slot[0], gridRow: slot[1] }
+}
+
+function formatCalendarParts(date) {
+  const time = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const month = date.toLocaleDateString('zh-CN', { month: 'long' })
+  const day = String(date.getDate()).padStart(2, '0')
+  const weekday = date.toLocaleDateString('zh-CN', { weekday: 'long' })
+  const dateText = date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'long' })
+  return { time, month, day, weekday, dateText }
+}
+
+function getAdvancedImageLimit() {
+  if (normalizedDisplayStyle.value === 'BENTO' && ['BENTO_6', 'BENTO_7'].includes(normalizedDisplayVariant.value)) return 19
+  if (normalizedDisplayStyle.value === 'BENTO') return 9
+  const cores = navigator.hardwareConcurrency || 4
+  const memory = navigator.deviceMemory || 4
+  if (cores <= 2 || memory <= 2) return normalizedDisplayStyle.value === 'CAROUSEL' ? 3 : 4
+  if (cores <= 4 || memory <= 4) return normalizedDisplayStyle.value === 'FRAME_WALL' ? 6 : 5
+  return normalizedDisplayStyle.value === 'CAROUSEL' ? 5 : 8
+}
+
+function buildAdvancedImageItems() {
+  if (!props.media || props.media.mediaType !== 'IMAGE') return []
+  if (isBentoLayout.value) return []
+  const images = (props.mediaList || []).filter(item => item?.mediaType === 'IMAGE')
+  if (!images.length) return [props.media]
+  const identity = resolveMediaIdentity(props.media)
+  const start = Math.max(0, images.findIndex(item => resolveMediaIdentity(item) === identity))
+  const result = []
+  const limit = Math.min(getAdvancedImageLimit(), images.length)
+  for (let offset = 0; offset < images.length && result.length < limit; offset += 1) {
+    result.push(images[(start + offset) % images.length])
+  }
+  return result
+}
+
+function getAdvancedImageSrc(item) {
+  const identity = resolveMediaIdentity(item)
+  return advancedResolvedUrls.value[identity] || ''
+}
+
+function buildBentoImagePool() {
+  const images = (props.mediaList || []).filter(item => item?.mediaType === 'IMAGE')
+  if (images.length) return images
+  return props.media?.mediaType === 'IMAGE' ? [props.media] : []
+}
+
+function getCurrentImagePoolStartIndex(images) {
+  const identity = mediaIdentity.value
+  const index = images.findIndex(item => resolveMediaIdentity(item) === identity)
+  return index >= 0 ? index : 0
+}
+
+async function resolveBentoItem(item) {
+  if (!item?.url) return ''
+  try {
+    return await warmSecureObjectUrl(item.url)
+  } catch (error) {
+    return item.url
+  }
+}
+
+function clearBentoTimer() {
+  if (bentoTimer) {
+    clearTimeout(bentoTimer)
+    bentoTimer = null
+  }
+}
+
+async function initializeBentoDisplay() {
+  clearBentoTimer()
+  if (!isBentoLayout.value || props.media?.mediaType !== 'IMAGE') {
+    bentoDisplayItems.value = []
+    return
+  }
+  const images = buildBentoImagePool()
+  if (!images.length) {
+    bentoDisplayItems.value = []
+    return
+  }
+  const slotCount = getBentoSlotCount()
+  const startIndex = getCurrentImagePoolStartIndex(images)
+  const initialItems = []
+  for (let index = 0; index < slotCount; index += 1) {
+    const media = images[(startIndex + index) % images.length]
+    initialItems.push({ media, identity: resolveMediaIdentity(media), resolvedUrl: '', version: 0 })
+  }
+  bentoDisplayItems.value = initialItems
+  bentoNextSourceIndex.value = (startIndex + slotCount) % images.length
+  await Promise.all(initialItems.map(async (item, index) => {
+    const resolvedUrl = await resolveBentoItem(item.media)
+    bentoDisplayItems.value[index] = { ...bentoDisplayItems.value[index], resolvedUrl }
+  }))
+  bentoDisplayItems.value = [...bentoDisplayItems.value]
+  if (!advancedReadyEmitted.value) {
+    advancedReadyEmitted.value = true
+    handleMediaLoaded()
+  }
+  scheduleBentoSwap()
+}
+
+function scheduleBentoSwap() {
+  clearBentoTimer()
+  if (!isBentoLayout.value || !bentoDisplayItems.value.length) return
+  const durationSeconds = props.media?.itemDuration || props.album?.itemDuration || 10
+  bentoTimer = window.setTimeout(swapOneBentoSlot, Math.max(1, durationSeconds) * 1000)
+}
+
+function pickNextBentoSlot(slotCount) {
+  if (slotCount <= 1) return 0
+  let next = Math.floor(Math.random() * slotCount)
+  if (next === bentoPreviousSlotIndex.value) {
+    next = (next + 1) % slotCount
+  }
+  bentoPreviousSlotIndex.value = next
+  return next
+}
+
+async function swapOneBentoSlot() {
+  const images = buildBentoImagePool()
+  if (!isBentoLayout.value || !images.length || !bentoDisplayItems.value.length) return
+  const slotIndex = pickNextBentoSlot(bentoDisplayItems.value.length)
+  const media = images[bentoNextSourceIndex.value % images.length]
+  bentoNextSourceIndex.value = (bentoNextSourceIndex.value + 1) % images.length
+  const resolvedUrl = await resolveBentoItem(media)
+  const current = bentoDisplayItems.value[slotIndex]
+  bentoDisplayItems.value[slotIndex] = {
+    media,
+    identity: resolveMediaIdentity(media),
+    resolvedUrl,
+    version: (current?.version || 0) + 1
+  }
+  bentoDisplayItems.value = [...bentoDisplayItems.value]
+  scheduleBentoSwap()
+}
+
+async function warmAdvancedImages() {
+  const items = advancedImageItems.value
+  if (!isAdvancedImageLayout.value || !items.length) {
+    advancedResolvedUrls.value = {}
+    return
+  }
+  const identitySet = new Set(items.map(item => resolveMediaIdentity(item)))
+  const nextUrls = Object.fromEntries(
+    Object.entries(advancedResolvedUrls.value).filter(([identity]) => identitySet.has(identity))
+  )
+  advancedResolvedUrls.value = nextUrls
+
+  await Promise.all(items.map(async item => {
+    const identity = resolveMediaIdentity(item)
+    if (!item?.url || nextUrls[identity]) return
+    try {
+      const resolvedUrl = await warmSecureObjectUrl(item.url)
+      advancedResolvedUrls.value = {
+        ...advancedResolvedUrls.value,
+        [identity]: resolvedUrl || item.url
+      }
+    } catch (error) {
+      advancedResolvedUrls.value = {
+        ...advancedResolvedUrls.value,
+        [identity]: item.url
+      }
+    }
+  }))
+}
+
+function handleAdvancedImageLoaded(index) {
+  const next = new Set(advancedLoadedIndexes.value)
+  next.add(index)
+  advancedLoadedIndexes.value = next
+  if (index === primaryAdvancedIndex.value && !advancedReadyEmitted.value) {
+    advancedReadyEmitted.value = true
+    handleMediaLoaded()
+  }
+}
+
+function handleAdvancedImageError(index) {
+  const next = new Set(advancedFailedIndexes.value)
+  next.add(index)
+  advancedFailedIndexes.value = next
+  if (index === primaryAdvancedIndex.value) {
+    handleMediaError()
+  }
 }
 
 function resolveConcreteImageTransition(style, identity) {
@@ -192,7 +549,10 @@ watch(
   () => {
     loadErrorMessage.value = ''
     const nextMediaType = props.media?.mediaType || ''
-    enableImageTransition.value = previousMediaType.value === 'IMAGE' && nextMediaType === 'IMAGE'
+    advancedLoadedIndexes.value = new Set()
+    advancedFailedIndexes.value = new Set()
+    advancedReadyEmitted.value = false
+    enableImageTransition.value = !isAdvancedImageLayout.value && previousMediaType.value === 'IMAGE' && nextMediaType === 'IMAGE'
     concreteImageTransition.value = enableImageTransition.value
       ? resolveConcreteImageTransition(normalizedTransitionStyle.value, mediaIdentity.value)
       : 'NONE'
@@ -200,6 +560,42 @@ watch(
   },
   { immediate: true }
 )
+
+watch(
+  () => [mediaIdentity.value, normalizedDisplayStyle.value, normalizedDisplayVariant.value, props.mediaList.map(item => resolveMediaIdentity(item)).join('|')],
+  () => {
+    if (isBentoLayout.value) {
+      initializeBentoDisplay()
+    } else {
+      clearBentoTimer()
+      warmAdvancedImages()
+    }
+  },
+  { immediate: true }
+)
+
+watch(isCalendarLayout, value => {
+  if (value && !advancedReadyEmitted.value) {
+    advancedReadyEmitted.value = true
+    handleMediaLoaded()
+  }
+}, { immediate: true })
+
+clockTimer = setInterval(() => {
+  now.value = new Date()
+}, 1000)
+
+function handleViewportResize() {
+  viewportVersion.value += 1
+}
+
+window.addEventListener('resize', handleViewportResize)
+
+onBeforeUnmount(() => {
+  if (clockTimer) clearInterval(clockTimer)
+  clearBentoTimer()
+  window.removeEventListener('resize', handleViewportResize)
+})
 
 watch(mediaResolveError, value => {
   if (value) {
@@ -265,6 +661,180 @@ watch(
   backface-visibility: hidden;
   transform-style: preserve-3d;
   will-change: opacity, transform, clip-path;
+}
+
+.advanced-layout {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  gap: clamp(6px, 0.8vw, 12px);
+  padding: clamp(10px, 1.2vw, 18px);
+  animation: advancedFadeIn 650ms ease-in-out both;
+}
+
+.advanced-image {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  object-fit: cover;
+  border-radius: 16px;
+  background: #020617;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+}
+
+.advanced-bento .advanced-image {
+  animation: bentoCellFlip 620ms ease-in-out both;
+  transform-origin: center;
+}
+
+.advanced-bento {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  grid-auto-flow: dense;
+}
+
+.advanced-frame-wall {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(180px, 1fr));
+}
+
+.calendar-layout {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at top left, #1d4ed8 0, transparent 34%), linear-gradient(135deg, #020617, #0f172a 55%, #111827);
+  color: #fff;
+}
+
+.calendar-card {
+  min-width: min(68vw, 760px);
+  padding: 54px 72px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 36px;
+  background: rgba(15, 23, 42, 0.68);
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.38);
+  text-align: center;
+}
+
+.calendar-month,
+.calendar-weekday {
+  font-size: clamp(28px, 3vw, 48px);
+  opacity: 0.88;
+}
+
+.calendar-day {
+  font-size: clamp(120px, 18vw, 260px);
+  font-weight: 800;
+  line-height: 0.95;
+}
+
+.calendar-time {
+  margin-top: 18px;
+  font-size: clamp(44px, 6vw, 88px);
+  font-weight: 700;
+}
+
+.time-overlay {
+  position: absolute;
+  right: 32px;
+  bottom: 30px;
+  padding: 16px 22px;
+  border-radius: 22px;
+  background: rgba(2, 6, 23, 0.48);
+  color: #fff;
+  text-align: right;
+  backdrop-filter: blur(14px);
+}
+
+.time-overlay-time {
+  font-size: clamp(34px, 4vw, 64px);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.time-overlay-date {
+  margin-top: 8px;
+  font-size: clamp(14px, 1.4vw, 22px);
+  opacity: 0.88;
+}
+
+.advanced-carousel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 36px;
+}
+
+.advanced-carousel .advanced-image {
+  flex: 0 1 18%;
+  max-width: 240px;
+  min-width: 150px;
+  height: min(58%, 520px);
+  min-height: 260px;
+  opacity: 0.66;
+  transform: scale(0.9);
+}
+
+.advanced-carousel .advanced-image.primary {
+  flex-basis: 40%;
+  max-width: 640px;
+  min-width: 360px;
+  height: min(82%, 760px);
+  min-height: 420px;
+  opacity: 1;
+  transform: scale(1);
+  z-index: 2;
+}
+
+@media (max-width: 1280px), (max-height: 720px) {
+  .advanced-bento {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(3, minmax(160px, 1fr));
+  }
+
+  .advanced-bento .advanced-image:nth-child(n) {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .advanced-bento .advanced-image:nth-child(1) {
+    grid-column: span 2;
+  }
+
+  .advanced-frame-wall {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(3, minmax(150px, 1fr));
+  }
+
+  .advanced-carousel {
+    gap: 14px;
+    padding: 22px;
+  }
+
+  .advanced-carousel .advanced-image:not(.primary) {
+    min-width: 120px;
+    min-height: 220px;
+  }
+
+  .advanced-carousel .advanced-image.primary {
+    min-width: 280px;
+    min-height: 340px;
+  }
+}
+
+@keyframes advancedFadeIn {
+  from { opacity: 0; transform: scale(0.985); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes bentoCellFlip {
+  0% { opacity: 0.18; transform: rotateY(-88deg) scale(0.98); }
+  55% { opacity: 0.92; transform: rotateY(8deg) scale(1.01); }
+  100% { opacity: 1; transform: rotateY(0deg) scale(1); }
 }
 
 .image-fade-enter-active,

@@ -36,6 +36,8 @@ public class AlbumResponse {
     private Integer bgmVolume;
     private String transitionStyle;
     private String displayStyle;
+    private String displayVariant;
+    private Boolean showTimeAndDate;
     private String visibility;
     private String status;
     private Integer sortOrder;

@@ -12,9 +12,7 @@
         <a-button type="primary" size="small" @click="openCoverModal"><picture-outlined /> 更新封面</a-button>
       </template>
       <div style="color:#8c8c8c; margin-top:8px">{{ album?.description || '-' }}</div>
-      <div style="color:#8c8c8c; font-size:12px; margin-top:6px">
-        图片播放时应用该转场样式，视频内容跳过转场效果。
-      </div>
+      <div style="color:#8c8c8c; font-size:12px; margin-top:6px">图片播放时应用该转场样式，视频内容跳过转场效果。</div>
     </a-page-header>
     <a-tabs v-model:activeKey="activeTabKey">
       <a-tab-pane key="media" tab="相册媒体">
@@ -649,7 +647,8 @@ const DISPLAY_STYLE_OPTIONS = [
   { value: 'SINGLE', label: '单图播放' },
   { value: 'BENTO', label: 'Bento 拼贴' },
   { value: 'FRAME_WALL', label: '相框墙' },
-  { value: 'CAROUSEL', label: '轮播墙' }
+  { value: 'CAROUSEL', label: '轮播墙' },
+  { value: 'CALENDAR', label: '日历模式' }
 ]
 
 const route = useRoute()
@@ -1798,4 +1797,8 @@ function sourceTypeLabel(sourceType) {
   vertical-align: middle;
 }
 </style>
+
+
+
+
 

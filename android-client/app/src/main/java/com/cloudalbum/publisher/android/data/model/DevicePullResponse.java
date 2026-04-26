@@ -72,6 +72,8 @@ public class DevicePullResponse {
         private Integer bgmVolume;
         private String transitionStyle;
         private String displayStyle;
+        private String displayVariant;
+        private Boolean showTimeAndDate;
         private String visibility;
 
         public long getId() {
@@ -108,6 +110,14 @@ public class DevicePullResponse {
 
         public String getDisplayStyle() {
             return displayStyle;
+        }
+
+        public String getDisplayVariant() {
+            return displayVariant;
+        }
+
+        public Boolean getShowTimeAndDate() {
+            return showTimeAndDate;
         }
 
         public String getVisibility() {

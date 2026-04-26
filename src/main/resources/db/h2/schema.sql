@@ -59,6 +59,9 @@ CREATE TABLE IF NOT EXISTS t_album (
     bgm_media_type           VARCHAR(20),
     bgm_volume               TINYINT DEFAULT 80,
     transition_style         VARCHAR(20) NOT NULL DEFAULT 'NONE',
+    display_style            VARCHAR(20) NOT NULL DEFAULT 'SINGLE',
+    display_variant          VARCHAR(32) NOT NULL DEFAULT 'DEFAULT',
+    show_time_and_date       TINYINT NOT NULL DEFAULT 0,
     visibility               VARCHAR(20) NOT NULL DEFAULT 'PRIVATE',
     status                   VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
     sort_order               INT DEFAULT 0,
@@ -89,6 +92,10 @@ ALTER TABLE t_album ADD COLUMN IF NOT EXISTS transition_style VARCHAR(20) NOT NU
 UPDATE t_album SET transition_style = 'NONE' WHERE transition_style IS NULL OR transition_style = '';
 ALTER TABLE t_album ADD COLUMN IF NOT EXISTS display_style VARCHAR(20) NOT NULL DEFAULT 'SINGLE';
 UPDATE t_album SET display_style = 'SINGLE' WHERE display_style IS NULL OR display_style = '';
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS display_variant VARCHAR(32) NOT NULL DEFAULT 'DEFAULT';
+UPDATE t_album SET display_variant = 'DEFAULT' WHERE display_variant IS NULL OR display_variant = '';
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS show_time_and_date TINYINT NOT NULL DEFAULT 0;
+UPDATE t_album SET show_time_and_date = 0 WHERE show_time_and_date IS NULL;
 
 CREATE TABLE IF NOT EXISTS t_album_media (
     id                 BIGINT AUTO_INCREMENT PRIMARY KEY,

@@ -210,6 +210,21 @@ public class PlaybackEngine {
         return normalizeDisplayStyle(distribution.getAlbum().getDisplayStyle());
     }
 
+    public String getCurrentDisplayVariant() {
+        DevicePullResponse.DistributionItem distribution = getCurrentDistribution();
+        if (distribution == null || distribution.getAlbum() == null || distribution.getAlbum().getDisplayVariant() == null) {
+            return "DEFAULT";
+        }
+        return distribution.getAlbum().getDisplayVariant().trim().toUpperCase(Locale.US).replace('-', '_');
+    }
+
+    public boolean isCurrentShowTimeAndDate() {
+        DevicePullResponse.DistributionItem distribution = getCurrentDistribution();
+        return distribution != null
+                && distribution.getAlbum() != null
+                && Boolean.TRUE.equals(distribution.getAlbum().getShowTimeAndDate());
+    }
+
     public void nextBgm() {
         List<DevicePullResponse.BgmItem> list = getCurrentBgmList();
         if (list.isEmpty()) {
@@ -256,7 +271,8 @@ public class PlaybackEngine {
         if ("BENTO".equals(normalized)
                 || "FRAME_WALL".equals(normalized)
                 || "FRAMEWALL".equals(normalized)
-                || "CAROUSEL".equals(normalized)) {
+                || "CAROUSEL".equals(normalized)
+                || "CALENDAR".equals(normalized)) {
             return normalized;
         }
         return "SINGLE";

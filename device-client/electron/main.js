@@ -149,6 +149,14 @@ function createWindow() {
     }
   })
 
+  window.on('enter-full-screen', () => {
+    window.webContents.send('app:fullscreen-changed', true)
+  })
+
+  window.on('leave-full-screen', () => {
+    window.webContents.send('app:fullscreen-changed', false)
+  })
+
   if (rendererUrl) {
     window.loadURL(rendererUrl)
     window.webContents.openDevTools({ mode: 'detach' })
@@ -163,6 +171,16 @@ app.whenReady().then(() => {
   ipcMain.handle('app:get-version', () => app.getVersion())
   ipcMain.handle('app:open-external', (_event, url) => openExternalUrl(url))
   ipcMain.handle('app:download-update', (_event, update) => downloadAndInstallUpdate(update))
+  ipcMain.handle('app:set-fullscreen', event => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window) return false
+    window.setFullScreen(!window.isFullScreen())
+    return window.isFullScreen()
+  })
+  ipcMain.handle('app:is-fullscreen', event => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    return window ? window.isFullScreen() : false
+  })
   createWindow()
 
   app.on('activate', () => {

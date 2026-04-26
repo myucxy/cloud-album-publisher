@@ -13,6 +13,11 @@
             登录
           </a-button>
         </a-form-item>
+        <a-form-item>
+          <router-link to="/client-downloads">
+            <a-button block size="large">下载客户端</a-button>
+          </router-link>
+        </a-form-item>
         <div style="text-align:center">
           没有账号？<router-link to="/register">立即注册</router-link>
         </div>

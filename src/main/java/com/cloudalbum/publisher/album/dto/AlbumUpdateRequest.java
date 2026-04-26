@@ -17,6 +17,10 @@ public class AlbumUpdateRequest {
 
     private String displayStyle;
 
+    private String displayVariant;
+
+    private Boolean showTimeAndDate;
+
     private String visibility;
 
     private String status;

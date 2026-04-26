@@ -69,6 +69,12 @@ public class Album {
     /** 展示布局样式 */
     private String displayStyle;
 
+    /** 展示布局子样式 */
+    private String displayVariant;
+
+    /** 是否显示时间日期 */
+    private Boolean showTimeAndDate;
+
     /** PUBLIC / PRIVATE / DEVICE_ONLY */
     private String visibility;
 

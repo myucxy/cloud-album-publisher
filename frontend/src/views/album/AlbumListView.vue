@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div>
     <div style="display:flex; justify-content:space-between; margin-bottom:16px">
       <a-space />
@@ -46,7 +46,7 @@
             </a-select-option>
           </a-select>
           <div style="color:#8c8c8c; font-size:12px; margin-top:6px">
-            转场样式按相册统一配置；客户端仅对图片应用该效果，视频会自动跳过转场效果并正常播放。
+            转场样式按相册统一配置；客户端仅对图片应用该效果，视频会正常播放。
           </div>
         </a-form-item>
         <a-form-item label="展示布局" name="displayStyle">
@@ -56,7 +56,29 @@
             </a-select-option>
           </a-select>
           <div style="color:#8c8c8c; font-size:12px; margin-top:6px">
-            单图使用播放转场；Bento、相框墙、轮播会同时展示多张图片，视频内容仍按原视频播放器播放。
+            单图使用播放转场；Bento、相框墙、轮播墙会同时展示多张图片，视频内容仍按原视频播放器播放。
+          </div>
+        </a-form-item>
+        <a-form-item v-if="form.displayStyle === 'BENTO'" label="Bento 样式" name="displayVariant">
+          <a-radio-group v-model:value="form.displayVariant" style="width:100%">
+            <div class="bento-style-grid">
+              <label v-for="option in BENTO_VARIANT_OPTIONS" :key="option.value" class="bento-style-card">
+                <a-radio :value="option.value">{{ option.label }}</a-radio>
+                <div class="bento-preview">
+                  <span
+                    v-for="(slot, index) in getBentoPreviewSlots(option.value)"
+                    :key="`${option.value}-${index}`"
+                    :style="getBentoPreviewSlotStyle(slot, option.value)"
+                  />
+                </div>
+              </label>
+            </div>
+          </a-radio-group>
+        </a-form-item>
+        <a-form-item label="时间日期">
+          <a-switch v-model:checked="form.showTimeAndDate" checked-children="显示" un-checked-children="隐藏" />
+          <div style="color:#8c8c8c; font-size:12px; margin-top:6px">
+            非日历模式叠加时间日期；日历模式会使用独立日历展示。
           </div>
         </a-form-item>
       </a-form>
@@ -89,6 +111,56 @@ const DISPLAY_STYLE_OPTIONS = [
   { value: 'CAROUSEL', label: '轮播墙' }
 ]
 
+DISPLAY_STYLE_OPTIONS.push({ value: 'CALENDAR', label: '日历模式' })
+
+const BENTO_VARIANT_OPTIONS = [
+  { value: 'DEFAULT', label: '自动' },
+  { value: 'BENTO_1', label: '样式 1' },
+  { value: 'BENTO_2', label: '样式 2' },
+  { value: 'BENTO_3', label: '样式 3' },
+  { value: 'BENTO_4', label: '样式 4' },
+  { value: 'BENTO_5', label: '样式 5' },
+  { value: 'BENTO_6', label: '样式 6' },
+  { value: 'BENTO_7', label: '样式 7' }
+]
+
+const BENTO_PREVIEW_SLOTS = {
+  DEFAULT: [
+    [0, 0, 3, 2], [3, 0, 1, 2], [0, 2, 1, 1], [1, 2, 2, 1], [3, 2, 1, 1]
+  ],
+  BENTO_1: [
+    [0, 0, 1, 1], [1, 0, 1, 1], [2, 0, 2, 1], [4, 2, 1, 1], [5, 2, 1, 1],
+    [0, 1, 2, 2], [2, 1, 2, 1], [4, 0, 2, 2], [2, 2, 2, 1]
+  ],
+  BENTO_2: [
+    [0, 0, 1, 2], [0, 2, 1.5, 1], [1, 0, 1.5, 1], [2.5, 0, 1.5, 1],
+    [3, 1, 1, 2], [1.5, 2, 1.5, 1], [1, 1, 1, 1], [2, 1, 1, 1]
+  ],
+  BENTO_3: [
+    [0, 0, 1, 1.6], [1, 0, 1, 1], [2, 0, 2, 1], [0, 1.6, 1, 1], [1, 1, 2, 1],
+    [3, 1, 1, 1], [1, 2, 1, 0.6], [2, 2, 1, 0.6], [3, 2, 1, 0.6]
+  ],
+  BENTO_4: [
+    [0, 0, 2, 2], [2, 0, 1, 2], [3, 0, 1, 1], [0, 2, 1, 1],
+    [1, 2, 1, 1], [2, 2, 1, 1], [3, 1, 1, 2]
+  ],
+  BENTO_5: [
+    [0, 0, 3, 2], [3, 0, 1, 2], [0, 2, 1, 1], [1, 2, 2, 1], [3, 2, 1, 1]
+  ],
+  BENTO_6: [
+    [0, 0, 2, 1], [2, 0, 1, 1.3], [3, 0, 1, 1.3], [4, 0, 1, 1.3], [5, 0, 2, 1],
+    [0, 1, 1, 1], [1, 1, 1, 1], [0, 2, 1, 1], [1, 2, 1, 1], [0, 3, 2, 1],
+    [2, 1.3, 3, 1.4], [2, 2.7, 1, 1.3], [3, 2.7, 1, 1.3], [4, 2.7, 1, 1.3],
+    [5, 1, 1, 1], [6, 1, 1, 1], [5, 2, 1, 1], [6, 2, 1, 1], [5, 3, 2, 1]
+  ],
+  BENTO_7: [
+    [0, 0, 2, 1], [2, 0, 1, 1.3], [3, 0, 1, 1.3], [4, 0, 1, 1.3], [5, 0, 2, 1],
+    [0, 1, 1, 1], [1, 1, 1, 1], [0, 2, 1, 1], [1, 2, 1, 1], [0, 3, 2, 1],
+    [2, 1.3, 3, 1.4], [2, 2.7, 1, 1.3], [3, 2.7, 1, 1.3], [4, 2.7, 1, 1.3],
+    [5, 1, 1, 1], [6, 1, 1, 0.7], [5, 2, 1, 0.7], [6, 1.7, 1, 1], [5, 2.7, 2, 1.3]
+  ]
+}
+
 const router = useRouter()
 const albums = ref([])
 const total = ref(0)
@@ -98,7 +170,7 @@ const modalOpen = ref(false)
 const saving = ref(false)
 const editingId = ref(null)
 const formRef = ref()
-const form = reactive({ title: '', description: '', visibility: 'PUBLIC', transitionStyle: 'NONE', displayStyle: 'SINGLE', status: 'PUBLISHED' })
+const form = reactive({ title: '', description: '', visibility: 'PUBLIC', transitionStyle: 'NONE', displayStyle: 'SINGLE', displayVariant: 'DEFAULT', showTimeAndDate: false, status: 'PUBLISHED' })
 
 onMounted(load)
 
@@ -110,7 +182,7 @@ async function load() {
 
 function openCreate() {
   editingId.value = null
-  Object.assign(form, { title: '', description: '', visibility: 'PUBLIC', transitionStyle: 'NONE', displayStyle: 'SINGLE', status: 'PUBLISHED' })
+  Object.assign(form, { title: '', description: '', visibility: 'PUBLIC', transitionStyle: 'NONE', displayStyle: 'SINGLE', displayVariant: 'DEFAULT', showTimeAndDate: false, status: 'PUBLISHED' })
   modalOpen.value = true
 }
 
@@ -122,6 +194,8 @@ function openEdit(album) {
     visibility: 'PUBLIC',
     transitionStyle: album.transitionStyle || 'NONE',
     displayStyle: album.displayStyle || 'SINGLE',
+    displayVariant: album.displayVariant || 'DEFAULT',
+    showTimeAndDate: Boolean(album.showTimeAndDate),
     status: 'PUBLISHED'
   })
   modalOpen.value = true
@@ -159,4 +233,61 @@ function displayStyleLabel(value) {
   return DISPLAY_STYLE_OPTIONS.find(option => option.value === value)?.label || '单图播放'
 }
 
+function getBentoPreviewSlots(value) {
+  return BENTO_PREVIEW_SLOTS[value] || BENTO_PREVIEW_SLOTS.DEFAULT
+}
+
+function getBentoPreviewSlotStyle(slot, value) {
+  const slots = getBentoPreviewSlots(value)
+  const maxX = Math.max(...slots.map(item => item[0] + item[2]))
+  const maxY = Math.max(...slots.map(item => item[1] + item[3]))
+  return {
+    left: `${slot[0] / maxX * 100}%`,
+    top: `${slot[1] / maxY * 100}%`,
+    width: `${slot[2] / maxX * 100}%`,
+    height: `${slot[3] / maxY * 100}%`
+  }
+}
+
 </script>
+
+<style scoped>
+.bento-style-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.bento-style-card {
+  display: block;
+  padding: 10px;
+  border: 1px solid #f0f0f0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.bento-preview {
+  position: relative;
+  height: 86px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #f5f7fb;
+}
+
+.bento-preview span {
+  position: absolute;
+  padding: 2px;
+  background: transparent;
+}
+
+.bento-preview span::after {
+  content: '';
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+  background: linear-gradient(135deg, #91caff, #b7eb8f);
+}
+</style>
+

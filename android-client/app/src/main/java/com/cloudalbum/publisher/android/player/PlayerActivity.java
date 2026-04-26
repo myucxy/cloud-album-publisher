@@ -60,6 +60,7 @@ import com.google.android.exoplayer2.ui.StyledPlayerView;
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSource;
 
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -67,6 +68,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.text.SimpleDateFormat;
 
 public class PlayerActivity extends AppCompatActivity implements PullSyncCoordinator.Listener {
     private static final String TAG = "PlayerActivity";
@@ -77,7 +79,9 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private static final int DRAWER_FOCUS_TOP_EXTRA_DP = 96;
     private static final int DRAWER_HANDLE_SWIPE_THRESHOLD_DP = 36;
     private static final long IMAGE_TRANSITION_DURATION_MS = 650L;
-    private static final int ADVANCED_IMAGE_POOL_SIZE = 8;
+    private static final int ADVANCED_IMAGE_POOL_SIZE = 19;
+    private static final long ADVANCED_READY_RETRY_DELAY_MS = 300L;
+    private static final int ADVANCED_READY_MAX_RETRIES = 20;
     private static final String[] RANDOM_IMAGE_TRANSITIONS = new String[] {"FADE", "SLIDE", "CUBE", "REVEAL", "FLIP"};
     private static final Set<String> ADVANCED_DISPLAY_STYLES = new HashSet<String>();
 
@@ -159,6 +163,13 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             checkAppUpdate(false);
         }
     };
+    private final Runnable clockRunnable = new Runnable() {
+        @Override
+        public void run() {
+            updateClockViews();
+            imageHandler.postDelayed(this, 1000L);
+        }
+    };
     private final Set<String> disabledDistributionIds = new HashSet<String>();
     private final Set<String> preloadedImageIdentities = new HashSet<String>();
     private final List<View> drawerFocusableViews = new ArrayList<View>();
@@ -179,12 +190,21 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private ImageView imageStage;
     private ImageView imageStageNext;
     private FrameLayout advancedImageStage;
+    private FrameLayout advancedImageStageNext;
     private StyledPlayerView playerView;
     private TextView deviceSummaryText;
     private TextView distributionText;
     private TextView mediaText;
     private TextView statusText;
     private TextView emptyStateText;
+    private FrameLayout calendarStage;
+    private TextView calendarMonthText;
+    private TextView calendarDayText;
+    private TextView calendarWeekdayText;
+    private TextView calendarTimeText;
+    private LinearLayout timeOverlay;
+    private TextView overlayTimeText;
+    private TextView overlayDateText;
     private TextView rotationTitleText;
     private TextView rotationSummaryText;
     private TextView muteTitleText;
@@ -216,6 +236,13 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private DevicePullResponse lastPullResponse;
     private PageRotationController rotationController;
     private AppUpdateResponse availableUpdate;
+    private String pendingAdvancedMediaIdentity = "";
+    private boolean advancedNextReady = false;
+    private int advancedReadyRetryCount = 0;
+    private boolean advancedPrimaryStageActive = true;
+    private final List<ImageView> bentoImageViews = new ArrayList<ImageView>();
+    private int bentoNextSourceIndex = 0;
+    private int bentoPreviousSlotIndex = -1;
     private float drawerHandleDownX;
     private boolean drawerHandleOpenedBySwipe;
     private boolean primaryImageStageActive = true;
@@ -354,6 +381,15 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         imageStage = findViewById(R.id.imageStage);
         imageStageNext = findViewById(R.id.imageStageNext);
         advancedImageStage = findViewById(R.id.advancedImageStage);
+        advancedImageStageNext = findViewById(R.id.advancedImageStageNext);
+        calendarStage = findViewById(R.id.calendarStage);
+        calendarMonthText = findViewById(R.id.calendarMonthText);
+        calendarDayText = findViewById(R.id.calendarDayText);
+        calendarWeekdayText = findViewById(R.id.calendarWeekdayText);
+        calendarTimeText = findViewById(R.id.calendarTimeText);
+        timeOverlay = findViewById(R.id.timeOverlay);
+        overlayTimeText = findViewById(R.id.overlayTimeText);
+        overlayDateText = findViewById(R.id.overlayDateText);
         playerView = findViewById(R.id.playerView);
         deviceSummaryText = findViewById(R.id.deviceSummaryText);
         distributionText = findViewById(R.id.distributionText);
@@ -715,7 +751,9 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             imageAdvanceRetryCount = 0;
             hideImageStages();
             hideAdvancedImageStage();
+            hideCalendarStage();
             playerView.setVisibility(View.GONE);
+            if (timeOverlay != null) timeOverlay.setVisibility(View.GONE);
             emptyStateText.setVisibility(View.VISIBLE);
             distributionText.setText(getString(R.string.distribution_label) + ": " + getString(R.string.unknown_value));
             mediaText.setText(getString(R.string.media_label) + ": " + getString(R.string.no_playable_content));
@@ -737,8 +775,23 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         emptyStateText.setVisibility(View.GONE);
         distributionText.setText(getString(R.string.distribution_label) + ": " + safeText(distribution.getName(), getString(R.string.unknown_value)));
         mediaText.setText(getString(R.string.media_label) + ": " + safeText(media.getFileName(), getString(R.string.unknown_value)));
+        updateTimeOverlayVisibility();
 
         String currentMediaIdentity = PlaybackEngine.resolveMediaIdentity(media);
+        String displayStyle = resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle());
+        if ("CALENDAR".equals(displayStyle)) {
+            if (!currentMediaIdentity.equals(lastRenderedMediaIdentity) || !"CALENDAR".equals(lastRenderedMediaType)) {
+                clearScheduledTasks();
+                lastRenderedMediaIdentity = currentMediaIdentity;
+                lastRenderedMediaType = "CALENDAR";
+                renderCalendarMedia();
+            } else {
+                imageHandler.removeCallbacks(imageAdvanceRunnable);
+                imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+            }
+            renderBgm();
+            return;
+        }
         if (!currentMediaIdentity.equals(lastRenderedMediaIdentity)) {
             clearScheduledTasks();
             imageAdvanceRetryCount = 0;
@@ -746,11 +799,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             lastRenderedMediaIdentity = currentMediaIdentity;
             lastRenderedMediaType = safeText(media.getMediaType(), "");
             if ("IMAGE".equalsIgnoreCase(media.getMediaType())) {
+                hideCalendarStage();
                 playerView.setVisibility(View.GONE);
                 if (contentPlayer != null) {
                     contentPlayer.stop();
                 }
-                String displayStyle = resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle());
                 if (isAdvancedDisplayStyle(displayStyle)) {
                     renderAdvancedImageMedia(displayStyle, currentMediaIdentity);
                 } else {
@@ -760,6 +813,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             } else {
                 hideImageStages();
                 hideAdvancedImageStage();
+                hideCalendarStage();
                 playerView.setVisibility(View.VISIBLE);
                 MediaItem mediaItem = new MediaItem.Builder()
                         .setUri(Uri.parse(media.getUrl()))
@@ -771,7 +825,6 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             }
         } else if ("IMAGE".equalsIgnoreCase(media.getMediaType())) {
             imageHandler.removeCallbacks(imageAdvanceRunnable);
-            String displayStyle = resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle());
             if (!isAdvancedDisplayStyle(displayStyle)) {
                 preloadNextImage();
             }
@@ -823,6 +876,63 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         });
     }
 
+    private void renderCalendarMedia() {
+        hideImageStages();
+        hideAdvancedImageStage();
+        if (playerView != null) {
+            playerView.setVisibility(View.GONE);
+        }
+        if (contentPlayer != null) {
+            contentPlayer.stop();
+        }
+        if (calendarStage != null) {
+            calendarStage.setVisibility(View.VISIBLE);
+        }
+        updateClockViews();
+        imageHandler.removeCallbacks(clockRunnable);
+        imageHandler.postDelayed(clockRunnable, 1000L);
+        imageHandler.removeCallbacks(imageAdvanceRunnable);
+        imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+    }
+
+    private void hideCalendarStage() {
+        imageHandler.removeCallbacks(clockRunnable);
+        if (calendarStage != null) {
+            calendarStage.setVisibility(View.GONE);
+        }
+    }
+
+    private void updateTimeOverlayVisibility() {
+        boolean calendar = "CALENDAR".equals(resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle()));
+        boolean show = playbackEngine.isCurrentShowTimeAndDate() && !calendar;
+        if (timeOverlay != null) {
+            timeOverlay.setVisibility(show ? View.VISIBLE : View.GONE);
+        }
+        if (show || calendar) {
+            updateClockViews();
+            imageHandler.removeCallbacks(clockRunnable);
+            imageHandler.postDelayed(clockRunnable, 1000L);
+        } else {
+            imageHandler.removeCallbacks(clockRunnable);
+        }
+    }
+
+    private void updateClockViews() {
+        Calendar calendar = Calendar.getInstance();
+        Locale locale = Locale.getDefault();
+        String time = new SimpleDateFormat("HH:mm", locale).format(calendar.getTime());
+        String month = new SimpleDateFormat("MMMM", locale).format(calendar.getTime());
+        String day = new SimpleDateFormat("dd", locale).format(calendar.getTime());
+        String weekday = new SimpleDateFormat("EEEE", locale).format(calendar.getTime());
+        String date = new SimpleDateFormat("yyyy/MM/dd EEEE", locale).format(calendar.getTime());
+        if (calendarMonthText != null) calendarMonthText.setText(month);
+        if (calendarDayText != null) calendarDayText.setText(day);
+        if (calendarWeekdayText != null) calendarWeekdayText.setText(weekday);
+        if (calendarTimeText != null) calendarTimeText.setText(time);
+        if (overlayTimeText != null) overlayTimeText.setText(time);
+        if (overlayDateText != null) overlayDateText.setText(date);
+    }
+
     private void showImageWithoutTransition(ImageView targetStage, ImageView oldStage) {
         cancelImageTransition();
         resetImageStage(targetStage);
@@ -853,16 +963,31 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void hideAdvancedImageStage() {
+        pendingAdvancedMediaIdentity = "";
+        advancedNextReady = false;
+        bentoImageViews.clear();
+        bentoNextSourceIndex = 0;
+        bentoPreviousSlotIndex = -1;
         if (advancedImageStage != null) {
             advancedImageStage.setVisibility(View.GONE);
             advancedImageStage.removeAllViews();
+        }
+        if (advancedImageStageNext != null) {
+            advancedImageStageNext.setVisibility(View.GONE);
+            advancedImageStageNext.removeAllViews();
         }
     }
 
     private void renderAdvancedImageMedia(String displayStyle, String mediaIdentity) {
         hideImageStages();
-        advancedImageStage.removeAllViews();
-        advancedImageStage.setVisibility(View.VISIBLE);
+        pendingAdvancedMediaIdentity = mediaIdentity;
+        advancedNextReady = false;
+        advancedReadyRetryCount = 0;
+        final FrameLayout nextStage = getInactiveAdvancedStage();
+        nextStage.removeAllViews();
+        nextStage.setPadding(0, 0, 0, 0);
+        nextStage.setAlpha(0f);
+        nextStage.setVisibility(View.INVISIBLE);
         List<DevicePullResponse.MediaItem> imageItems = getAdvancedImageItems();
         if (imageItems.isEmpty()) {
             playbackEngine.nextMedia();
@@ -870,47 +995,142 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             return;
         }
         if ("CAROUSEL".equals(displayStyle)) {
-            renderCarouselLayout(imageItems);
+            renderCarouselLayout(nextStage, imageItems);
         } else if ("FRAME_WALL".equals(displayStyle) || "FRAMEWALL".equals(displayStyle)) {
-            renderFrameWallLayout(imageItems);
+            renderFrameWallLayout(nextStage, imageItems);
         } else {
-            renderBentoLayout(imageItems);
+            renderBentoLayout(nextStage, imageItems);
         }
-        advancedImageStage.setAlpha(0f);
-        advancedImageStage.animate().alpha(1f).setDuration(IMAGE_TRANSITION_DURATION_MS).start();
         preloadAdvancedImages(imageItems);
+        waitForAdvancedStageReady(mediaIdentity, nextStage);
+    }
+
+    private void waitForAdvancedStageReady(final String mediaIdentity, final FrameLayout nextStage) {
+        if (!mediaIdentity.equals(pendingAdvancedMediaIdentity)) {
+            return;
+        }
+        if (advancedNextReady) {
+            showPreparedAdvancedStage(nextStage);
+            return;
+        }
+        if (advancedReadyRetryCount >= ADVANCED_READY_MAX_RETRIES) {
+            if (getActiveAdvancedStage().getVisibility() == View.VISIBLE && getActiveAdvancedStage().getChildCount() > 0) {
+                nextStage.removeAllViews();
+                nextStage.setVisibility(View.GONE);
+                playbackEngine.nextMedia();
+                renderPlayback();
+            } else {
+                showPreparedAdvancedStage(nextStage);
+            }
+            return;
+        }
+        advancedReadyRetryCount += 1;
+        imageHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                waitForAdvancedStageReady(mediaIdentity, nextStage);
+            }
+        }, ADVANCED_READY_RETRY_DELAY_MS);
+    }
+
+    private void showPreparedAdvancedStage(final FrameLayout nextStage) {
+        final FrameLayout currentStage = getActiveAdvancedStage();
+        nextStage.setVisibility(View.VISIBLE);
+        nextStage.animate().alpha(1f).setDuration(IMAGE_TRANSITION_DURATION_MS).start();
+        currentStage.animate().alpha(0f).setDuration(IMAGE_TRANSITION_DURATION_MS).withEndAction(new Runnable() {
+            @Override
+            public void run() {
+                currentStage.setVisibility(View.GONE);
+                currentStage.removeAllViews();
+                currentStage.setAlpha(1f);
+            }
+        }).start();
+        advancedPrimaryStageActive = nextStage == advancedImageStage;
         imageHandler.removeCallbacks(imageAdvanceRunnable);
         imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
     }
 
-    private void renderBentoLayout(List<DevicePullResponse.MediaItem> imageItems) {
-        int padding = dp(10);
-        advancedImageStage.setPadding(padding, padding, padding, padding);
-        addAdvancedImage(imageItems.get(0), 0f, 0f, 0.62f, 0.62f, dp(6));
-        if (imageItems.size() > 1) {
-            addAdvancedImage(imageItems.get(1), 0.64f, 0f, 0.36f, 0.3f, dp(6));
-        }
-        if (imageItems.size() > 2) {
-            addAdvancedImage(imageItems.get(2), 0.64f, 0.32f, 0.36f, 0.3f, dp(6));
-        }
-        if (imageItems.size() > 3) {
-            addAdvancedImage(imageItems.get(3), 0f, 0.64f, 0.3f, 0.36f, dp(6));
-        }
-        if (imageItems.size() > 4) {
-            addAdvancedImage(imageItems.get(4), 0.32f, 0.64f, 0.32f, 0.36f, dp(6));
-        }
-        if (imageItems.size() > 5) {
-            addAdvancedImage(imageItems.get(5), 0.66f, 0.64f, 0.34f, 0.36f, dp(6));
-        }
+    private FrameLayout getActiveAdvancedStage() {
+        return advancedPrimaryStageActive ? advancedImageStage : advancedImageStageNext;
     }
 
-    private void renderFrameWallLayout(List<DevicePullResponse.MediaItem> imageItems) {
+    private FrameLayout getInactiveAdvancedStage() {
+        return advancedPrimaryStageActive ? advancedImageStageNext : advancedImageStage;
+    }
+
+    private void renderBentoLayout(FrameLayout container, List<DevicePullResponse.MediaItem> imageItems) {
+        int padding = dp(8);
+        int gap = dp(4);
+        int count = imageItems.size();
+        bentoImageViews.clear();
+        container.setPadding(padding, padding, padding, padding);
+        if (count == 1) {
+            addCenteredAdvancedImage(container, imageItems.get(0), 0.82f, 0.92f, gap, true);
+            return;
+        }
+        if (count == 2) {
+            addAdvancedImage(container, imageItems.get(0), 0f, 0f, 0.5f, 1f, gap, true);
+            addAdvancedImage(container, imageItems.get(1), 0.5f, 0f, 0.5f, 1f, gap, false);
+            return;
+        }
+        if (count == 3) {
+            addAdvancedImage(container, imageItems.get(0), 0f, 0f, 0.5f, 1f, gap, true);
+            addAdvancedImage(container, imageItems.get(1), 0.5f, 0f, 0.5f, 0.5f, gap, false);
+            addAdvancedImage(container, imageItems.get(2), 0.5f, 0.5f, 0.5f, 0.5f, gap, false);
+            return;
+        }
+        if (count == 4) {
+            addAdvancedImage(container, imageItems.get(0), 0f, 0f, 0.5f, 0.5f, gap, true);
+            addAdvancedImage(container, imageItems.get(1), 0.5f, 0f, 0.5f, 0.5f, gap, false);
+            addAdvancedImage(container, imageItems.get(2), 0f, 0.5f, 0.5f, 0.5f, gap, false);
+            addAdvancedImage(container, imageItems.get(3), 0.5f, 0.5f, 0.5f, 0.5f, gap, false);
+            return;
+        }
+        float[][] slots = getBentoSlots(playbackEngine.getCurrentDisplayVariant());
+        int maxCount = Math.min(slots.length, ADVANCED_IMAGE_POOL_SIZE);
+        for (int i = 0; i < maxCount; i += 1) {
+            float[] slot = slots[i];
+            addAdvancedImage(container, imageItems.get(i % count), slot[0], slot[1], slot[2], slot[3], gap, i == 0);
+        }
+        bentoNextSourceIndex = maxCount % count;
+    }
+
+    private float[][] getBentoSlots(String variant) {
+        String normalized = normalizeStyle(variant);
+        if ("DEFAULT".equals(normalized) || normalized.isEmpty()) {
+            normalized = "BENTO_5";
+        }
+        if ("BENTO_1".equals(normalized)) {
+            return new float[][] {{0f, 0f, 1f / 6f, 0.25f}, {1f / 6f, 0f, 1f / 6f, 0.25f}, {2f / 6f, 0f, 2f / 6f, 0.25f}, {4f / 6f, 0.5f, 1f / 6f, 0.25f}, {5f / 6f, 0.5f, 1f / 6f, 0.25f}, {0f, 0.25f, 2f / 6f, 0.5f}, {2f / 6f, 0.25f, 2f / 6f, 0.25f}, {4f / 6f, 0f, 2f / 6f, 0.5f}, {4f / 6f, 0.75f, 2f / 6f, 0.25f}};
+        }
+        if ("BENTO_2".equals(normalized)) {
+            return new float[][] {{0f, 0f, 0.25f, 2f / 3f}, {0f, 2f / 3f, 0.375f, 1f / 3f}, {0.25f, 0f, 0.375f, 1f / 3f}, {0.625f, 0f, 0.375f, 1f / 3f}, {0.75f, 1f / 3f, 0.25f, 2f / 3f}, {0.375f, 2f / 3f, 0.375f, 1f / 3f}, {0.25f, 1f / 3f, 0.25f, 1f / 3f}, {0.5f, 1f / 3f, 0.25f, 1f / 3f}};
+        }
+        if ("BENTO_3".equals(normalized)) {
+            return new float[][] {{0f, 0f, 0.25f, 0.615f}, {0.25f, 0f, 0.25f, 0.385f}, {0.5f, 0f, 0.5f, 0.385f}, {0f, 0.615f, 0.25f, 0.385f}, {0.25f, 0.385f, 0.5f, 0.385f}, {0.75f, 0.385f, 0.25f, 0.385f}, {0.25f, 0.77f, 0.25f, 0.23f}, {0.5f, 0.77f, 0.25f, 0.23f}, {0.75f, 0.77f, 0.25f, 0.23f}};
+        }
+        if ("BENTO_4".equals(normalized)) {
+            return new float[][] {{0f, 0f, 0.5f, 2f / 3f}, {0.5f, 0f, 0.25f, 2f / 3f}, {0.75f, 0f, 0.25f, 1f / 3f}, {0f, 2f / 3f, 0.25f, 1f / 3f}, {0.25f, 2f / 3f, 0.25f, 1f / 3f}, {0.5f, 2f / 3f, 0.25f, 1f / 3f}, {0.75f, 1f / 3f, 0.25f, 2f / 3f}};
+        }
+        if ("BENTO_6".equals(normalized) || "BENTO_7".equals(normalized)) {
+            return new float[][] {{0f, 0f, 2f / 7f, 0.25f}, {2f / 7f, 0f, 1f / 7f, 0.325f}, {3f / 7f, 0f, 1f / 7f, 0.325f}, {4f / 7f, 0f, 1f / 7f, 0.325f}, {5f / 7f, 0f, 2f / 7f, 0.25f}, {0f, 0.25f, 1f / 7f, 0.25f}, {1f / 7f, 0.25f, 1f / 7f, 0.25f}, {0f, 0.5f, 1f / 7f, 0.25f}, {1f / 7f, 0.5f, 1f / 7f, 0.25f}, {0f, 0.75f, 2f / 7f, 0.25f}, {2f / 7f, 0.325f, 3f / 7f, 0.35f}, {2f / 7f, 0.675f, 1f / 7f, 0.325f}, {3f / 7f, 0.675f, 1f / 7f, 0.325f}, {4f / 7f, 0.675f, 1f / 7f, 0.325f}, {5f / 7f, 0.25f, 1f / 7f, 0.25f}, {6f / 7f, 0.25f, 1f / 7f, 0.25f}, {5f / 7f, 0.5f, 1f / 7f, 0.25f}, {6f / 7f, 0.5f, 1f / 7f, 0.25f}, {5f / 7f, 0.75f, 2f / 7f, 0.25f}};
+        }
+        return new float[][] {{0f, 0f, 0.75f, 2f / 3f}, {0.75f, 0f, 0.25f, 2f / 3f}, {0f, 2f / 3f, 0.25f, 1f / 3f}, {0.25f, 2f / 3f, 0.5f, 1f / 3f}, {0.75f, 2f / 3f, 0.25f, 1f / 3f}};
+    }
+
+    private void addCenteredAdvancedImage(FrameLayout container, DevicePullResponse.MediaItem media, float widthRatio, float heightRatio, int margin, boolean marksReady) {
+        float leftRatio = Math.max(0f, (1f - widthRatio) / 2f);
+        float topRatio = Math.max(0f, (1f - heightRatio) / 2f);
+        addAdvancedImage(container, media, leftRatio, topRatio, widthRatio, heightRatio, margin, marksReady);
+    }
+
+    private void renderFrameWallLayout(FrameLayout container, List<DevicePullResponse.MediaItem> imageItems) {
         GridLayout grid = new GridLayout(this);
         grid.setColumnCount(4);
         grid.setRowCount(2);
         int gap = dp(8);
         grid.setPadding(gap, gap, gap, gap);
-        advancedImageStage.addView(grid, new FrameLayout.LayoutParams(
+        container.addView(grid, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
         int count = Math.min(8, imageItems.size());
@@ -923,11 +1143,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             params.rowSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
             params.setMargins(gap, gap, gap, gap);
             grid.addView(imageView, params);
-            AuthenticatedImageLoader.load(imageView, imageItems.get(i).getUrl(), sessionRepository);
+            loadAdvancedImage(imageView, imageItems.get(i), i == 0);
         }
     }
 
-    private void renderCarouselLayout(List<DevicePullResponse.MediaItem> imageItems) {
+    private void renderCarouselLayout(FrameLayout container, List<DevicePullResponse.MediaItem> imageItems) {
         int count = Math.min(5, imageItems.size());
         float[] widths = count >= 5 ? new float[] {0.22f, 0.28f, 0.42f, 0.28f, 0.22f} : new float[] {0.28f, 0.42f, 0.28f};
         float[] centers = count >= 5 ? new float[] {0.08f, 0.27f, 0.5f, 0.73f, 0.92f} : new float[] {0.24f, 0.5f, 0.76f};
@@ -944,12 +1164,12 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             params.topMargin = Math.round((getScreenHeight() - height) / 2f);
             imageView.setAlpha(i == layoutCount / 2 ? 1f : 0.68f);
             imageView.setElevation(i == layoutCount / 2 ? dp(8) : dp(2));
-            advancedImageStage.addView(imageView, params);
-            AuthenticatedImageLoader.load(imageView, imageItems.get(start + i).getUrl(), sessionRepository);
+            container.addView(imageView, params);
+            loadAdvancedImage(imageView, imageItems.get(start + i), i == layoutCount / 2);
         }
     }
 
-    private void addAdvancedImage(DevicePullResponse.MediaItem media, float leftRatio, float topRatio, float widthRatio, float heightRatio, int margin) {
+    private void addAdvancedImage(FrameLayout container, DevicePullResponse.MediaItem media, float leftRatio, float topRatio, float widthRatio, float heightRatio, int margin, boolean marksReady) {
         ImageView imageView = createAdvancedImageView();
         int parentWidth = getScreenWidth();
         int parentHeight = getScreenHeight();
@@ -958,11 +1178,32 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 Math.max(1, Math.round(parentHeight * heightRatio) - margin * 2));
         params.leftMargin = Math.round(parentWidth * leftRatio) + margin;
         params.topMargin = Math.round(parentHeight * topRatio) + margin;
-        advancedImageStage.addView(imageView, params);
+        container.addView(imageView, params);
+        if ("BENTO".equals(resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle()))) {
+            bentoImageViews.add(imageView);
+        }
         imageView.setScaleX(0.96f);
         imageView.setScaleY(0.96f);
         imageView.animate().scaleX(1f).scaleY(1f).setDuration(IMAGE_TRANSITION_DURATION_MS).start();
-        AuthenticatedImageLoader.load(imageView, media.getUrl(), sessionRepository);
+        loadAdvancedImage(imageView, media, marksReady);
+    }
+
+    private void loadAdvancedImage(ImageView imageView, DevicePullResponse.MediaItem media, final boolean marksReady) {
+        AuthenticatedImageLoader.load(imageView, media.getUrl(), sessionRepository, new AuthenticatedImageLoader.Callback() {
+            @Override
+            public void onSuccess() {
+                if (marksReady) {
+                    advancedNextReady = true;
+                }
+            }
+
+            @Override
+            public void onFailure() {
+                if (marksReady) {
+                    advancedNextReady = false;
+                }
+            }
+        });
     }
 
     private ImageView createAdvancedImageView() {
@@ -985,13 +1226,35 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 break;
             }
         }
-        for (int offset = 0; offset < mediaList.size() && result.size() < ADVANCED_IMAGE_POOL_SIZE; offset += 1) {
+        String displayStyle = resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle());
+        int imageLimit = "BENTO".equals(displayStyle) ? mediaList.size() : getAdaptiveAdvancedImagePoolSize();
+        for (int offset = 0; offset < mediaList.size() && result.size() < imageLimit; offset += 1) {
             DevicePullResponse.MediaItem candidate = mediaList.get((startIndex + offset) % mediaList.size());
             if (candidate != null && "IMAGE".equalsIgnoreCase(candidate.getMediaType())) {
                 result.add(candidate);
             }
         }
         return result;
+    }
+
+    private int getAdaptiveAdvancedImagePoolSize() {
+        String displayStyle = resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle());
+        ActivityManager activityManager = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+        int memoryClass = activityManager == null ? 128 : activityManager.getMemoryClass();
+        int cores = Math.max(1, Runtime.getRuntime().availableProcessors());
+        boolean lowMemoryNow = false;
+        if (activityManager != null) {
+            ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();
+            activityManager.getMemoryInfo(memoryInfo);
+            lowMemoryNow = memoryInfo.lowMemory;
+        }
+        if (lowMemoryNow || memoryClass <= 128 || cores <= 2) {
+            return "CAROUSEL".equals(displayStyle) ? 3 : 4;
+        }
+        if (memoryClass <= 256 || cores <= 4) {
+            return "FRAME_WALL".equals(displayStyle) ? 6 : 5;
+        }
+        return "CAROUSEL".equals(displayStyle) ? 5 : ADVANCED_IMAGE_POOL_SIZE;
     }
 
     private void preloadAdvancedImages(List<DevicePullResponse.MediaItem> imageItems) {
@@ -1004,6 +1267,9 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
     private String resolveDisplayStyle(String displayStyle, String transitionStyle) {
         String normalizedDisplay = normalizeStyle(displayStyle);
+        if ("CALENDAR".equals(normalizedDisplay)) {
+            return "CALENDAR";
+        }
         if (isAdvancedDisplayStyle(normalizedDisplay)) {
             return normalizedDisplay;
         }
@@ -1217,6 +1483,14 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void advanceImageWhenReady() {
+        String displayStyle = resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle());
+        DevicePullResponse.MediaItem currentMedia = playbackEngine.getCurrentMedia();
+        if ("BENTO".equals(displayStyle) && currentMedia != null && "IMAGE".equalsIgnoreCase(currentMedia.getMediaType())) {
+            swapOneBentoImage();
+            imageHandler.removeCallbacks(imageAdvanceRunnable);
+            imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+            return;
+        }
         DevicePullResponse.MediaItem nextMedia = playbackEngine.peekNextMedia();
         if (nextMedia != null && "IMAGE".equalsIgnoreCase(nextMedia.getMediaType())) {
             String nextMediaIdentity = PlaybackEngine.resolveMediaIdentity(nextMedia);
@@ -1231,6 +1505,47 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         imageAdvanceRetryCount = 0;
         playbackEngine.nextMedia();
         renderPlayback();
+    }
+
+    private void swapOneBentoImage() {
+        List<DevicePullResponse.MediaItem> imageItems = getAdvancedImageItems();
+        if (imageItems.isEmpty() || bentoImageViews.isEmpty()) {
+            return;
+        }
+        int slotIndex = pickNextBentoSlot(bentoImageViews.size());
+        final ImageView imageView = bentoImageViews.get(slotIndex);
+        DevicePullResponse.MediaItem nextMedia = imageItems.get(bentoNextSourceIndex % imageItems.size());
+        bentoNextSourceIndex = (bentoNextSourceIndex + 1) % imageItems.size();
+        imageView.animate().rotationY(90f).alpha(0.35f).setDuration(IMAGE_TRANSITION_DURATION_MS / 2).withEndAction(new Runnable() {
+            @Override
+            public void run() {
+                AuthenticatedImageLoader.load(imageView, nextMedia.getUrl(), sessionRepository, new AuthenticatedImageLoader.Callback() {
+                    @Override
+                    public void onSuccess() {
+                        imageView.setRotationY(-90f);
+                        imageView.setAlpha(0.35f);
+                        imageView.animate().rotationY(0f).alpha(1f).setDuration(IMAGE_TRANSITION_DURATION_MS / 2).start();
+                    }
+
+                    @Override
+                    public void onFailure() {
+                        imageView.animate().rotationY(0f).alpha(1f).setDuration(IMAGE_TRANSITION_DURATION_MS / 2).start();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private int pickNextBentoSlot(int slotCount) {
+        if (slotCount <= 1) {
+            return 0;
+        }
+        int next = (int) Math.floor(Math.random() * slotCount);
+        if (next == bentoPreviousSlotIndex) {
+            next = (next + 1) % slotCount;
+        }
+        bentoPreviousSlotIndex = next;
+        return next;
     }
 
     private void renderBgm() {

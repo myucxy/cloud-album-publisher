@@ -83,6 +83,12 @@ public class DevicePullResponse {
         @Schema(description = "展示布局样式")
         private String displayStyle;
 
+        @Schema(description = "展示布局子样式")
+        private String displayVariant;
+
+        @Schema(description = "是否显示时间日期")
+        private Boolean showTimeAndDate;
+
         @Schema(description = "可见性")
         private String visibility;
     }

@@ -10,6 +10,7 @@ import org.springframework.util.StreamUtils;
 import org.springframework.util.StringUtils;
 
 import java.io.InputStream;
+import java.util.Locale;
 
 @Slf4j
 @Component
@@ -57,9 +58,33 @@ public class MediaHttpWriter {
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
+            if (isClientAbort(ex)) {
+                log.debug("Client aborted media http response", ex);
+                return;
+            }
             log.error("Write media http response failed", ex);
             throw new BusinessException(ResultCode.INTERNAL_ERROR, failureMessage);
         }
+    }
+
+    private boolean isClientAbort(Throwable ex) {
+        Throwable current = ex;
+        while (current != null) {
+            String className = current.getClass().getName();
+            String message = current.getMessage();
+            String lowerMessage = message == null ? "" : message.toLowerCase(Locale.ROOT);
+            if (className.endsWith("ClientAbortException")
+                    || className.endsWith("AsyncRequestNotUsableException")
+                    || lowerMessage.contains("broken pipe")
+                    || lowerMessage.contains("connection reset")
+                    || lowerMessage.contains("connection aborted")
+                    || lowerMessage.contains("software caused connection abort")
+                    || lowerMessage.contains("你的主机中的软件中止了一个已建立的连接")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private long[] resolveRange(String rangeHeader, long fileSize) {

@@ -21,6 +21,12 @@ public class AlbumCreateRequest {
     /** 展示布局样式，默认单图 */
     private String displayStyle = "SINGLE";
 
+    /** 展示布局子样式，默认自动 */
+    private String displayVariant = "DEFAULT";
+
+    /** 是否显示时间日期 */
+    private Boolean showTimeAndDate = false;
+
     /** PUBLIC / PRIVATE / DEVICE_ONLY，默认PUBLIC */
     private String visibility = "PUBLIC";
 }

@@ -617,6 +617,8 @@ public class DeviceServiceImpl implements DeviceService {
         item.setBgmVolume(album.getBgmVolume());
         item.setTransitionStyle(StringUtils.hasText(album.getTransitionStyle()) ? album.getTransitionStyle() : "NONE");
         item.setDisplayStyle(StringUtils.hasText(album.getDisplayStyle()) ? album.getDisplayStyle() : "SINGLE");
+        item.setDisplayVariant(StringUtils.hasText(album.getDisplayVariant()) ? album.getDisplayVariant() : "DEFAULT");
+        item.setShowTimeAndDate(Boolean.TRUE.equals(album.getShowTimeAndDate()));
         item.setVisibility(album.getVisibility());
         return item;
     }
