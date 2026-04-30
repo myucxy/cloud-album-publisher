@@ -1,3 +1,5 @@
+USE cloud_album;
+
 ALTER TABLE t_album
     ADD COLUMN display_variant VARCHAR(32) NOT NULL DEFAULT 'DEFAULT' COMMENT '展示布局子样式';
 

@@ -6,6 +6,8 @@ import com.cloudalbum.publisher.common.enums.ResultCode;
 import com.cloudalbum.publisher.common.exception.BusinessException;
 import com.cloudalbum.publisher.common.model.PageRequest;
 import com.cloudalbum.publisher.common.model.PageResult;
+import com.cloudalbum.publisher.media.entity.Media;
+import com.cloudalbum.publisher.media.mapper.MediaMapper;
 import com.cloudalbum.publisher.review.dto.ReviewRecordResponse;
 import com.cloudalbum.publisher.review.dto.ReviewRejectRequest;
 import com.cloudalbum.publisher.review.dto.ReviewSettingResponse;
@@ -18,8 +20,15 @@ import com.cloudalbum.publisher.review.service.ReviewService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -29,6 +38,7 @@ public class ReviewServiceImpl implements ReviewService {
 
     private final ReviewRecordMapper reviewRecordMapper;
     private final ReviewSettingMapper reviewSettingMapper;
+    private final MediaMapper mediaMapper;
 
     @Override
     @Transactional
@@ -41,6 +51,13 @@ public class ReviewServiceImpl implements ReviewService {
                         .last("LIMIT 1"));
         if (existing != null) {
             if ("PENDING".equals(existing.getStatus())) {
+                if (autoApproveEnabled) {
+                    LocalDateTime now = LocalDateTime.now();
+                    existing.setStatus("APPROVED");
+                    existing.setReviewedAt(now);
+                    existing.setUpdatedAt(now);
+                    reviewRecordMapper.updateById(existing);
+                }
                 return toResponse(existing);
             }
             if (autoApproveEnabled && "APPROVED".equals(existing.getStatus())) {
@@ -135,6 +152,9 @@ public class ReviewServiceImpl implements ReviewService {
         setting.setAutoApproveEnabled(Boolean.TRUE.equals(request.getAutoApproveEnabled()));
         setting.setUpdatedAt(LocalDateTime.now());
         reviewSettingMapper.updateById(setting);
+        if (Boolean.TRUE.equals(setting.getAutoApproveEnabled())) {
+            approveReadyMedia();
+        }
         return toSettingResponse(setting);
     }
 
@@ -162,11 +182,65 @@ public class ReviewServiceImpl implements ReviewService {
         LocalDateTime now = LocalDateTime.now();
         ReviewSetting created = new ReviewSetting();
         created.setId(REVIEW_SETTING_ID);
-        created.setAutoApproveEnabled(false);
+        created.setAutoApproveEnabled(true);
         created.setCreatedAt(now);
         created.setUpdatedAt(now);
         reviewSettingMapper.insert(created);
         return created;
+    }
+
+    private void approveReadyMedia() {
+        LocalDateTime now = LocalDateTime.now();
+        List<ReviewRecord> pendingRecords = reviewRecordMapper.selectList(
+                new LambdaQueryWrapper<ReviewRecord>()
+                        .eq(ReviewRecord::getStatus, "PENDING"));
+        if (!CollectionUtils.isEmpty(pendingRecords)) {
+            List<Long> mediaIds = pendingRecords.stream()
+                    .map(ReviewRecord::getMediaId)
+                    .distinct()
+                    .toList();
+            Map<Long, Media> readyMediaMap = mediaMapper.selectBatchIds(mediaIds).stream()
+                    .filter(media -> "READY".equals(media.getStatus()))
+                    .collect(Collectors.toMap(Media::getId, Function.identity()));
+            for (ReviewRecord record : pendingRecords) {
+                if (!readyMediaMap.containsKey(record.getMediaId())) {
+                    continue;
+                }
+                record.setStatus("APPROVED");
+                record.setReviewedAt(now);
+                record.setUpdatedAt(now);
+                record.setRejectReason(null);
+                reviewRecordMapper.updateById(record);
+            }
+        }
+
+        List<Media> readyMediaList = mediaMapper.selectList(
+                new LambdaQueryWrapper<Media>()
+                        .eq(Media::getStatus, "READY"));
+        if (CollectionUtils.isEmpty(readyMediaList)) {
+            return;
+        }
+
+        List<ReviewRecord> existingRecords = reviewRecordMapper.selectList(
+                new LambdaQueryWrapper<ReviewRecord>()
+                        .in(ReviewRecord::getMediaId, readyMediaList.stream().map(Media::getId).toList()));
+        Set<Long> reviewedMediaIds = existingRecords.stream()
+                .map(ReviewRecord::getMediaId)
+                .collect(Collectors.toCollection(HashSet::new));
+
+        for (Media media : readyMediaList) {
+            if (reviewedMediaIds.contains(media.getId())) {
+                continue;
+            }
+            ReviewRecord record = new ReviewRecord();
+            record.setMediaId(media.getId());
+            record.setUserId(media.getUserId());
+            record.setStatus("APPROVED");
+            record.setReviewedAt(now);
+            record.setCreatedAt(now);
+            record.setUpdatedAt(now);
+            reviewRecordMapper.insert(record);
+        }
     }
 
     private ReviewRecordResponse toResponse(ReviewRecord record) {

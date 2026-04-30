@@ -651,7 +651,7 @@ const DISPLAY_STYLE_OPTIONS = [
   { value: 'CALENDAR', label: '日历模式' }
 ]
 
-const route = useRoute()
+const route = useRoute(
 const router = useRouter()
 const albumId = route.params.id
 

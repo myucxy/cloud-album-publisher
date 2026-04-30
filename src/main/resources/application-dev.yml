@@ -9,6 +9,8 @@ spring:
     init:
       schema-locations: classpath:db/h2/schema.sql
       mode: always
+  flyway:
+    enabled: false
 
   # H2 Web Console（浏览器访问：http://localhost:8080/h2-console）
   h2:

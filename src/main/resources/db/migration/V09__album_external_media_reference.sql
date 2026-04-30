@@ -1,3 +1,5 @@
+USE cloud_album;
+
 ALTER TABLE t_album
     ADD COLUMN cover_source_id BIGINT NULL COMMENT '外部封面媒体源ID',
     ADD COLUMN cover_source_type VARCHAR(20) NULL COMMENT '外部封面媒体源类型',

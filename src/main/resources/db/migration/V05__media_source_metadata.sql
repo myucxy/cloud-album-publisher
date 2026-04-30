@@ -1,3 +1,5 @@
+USE cloud_album;
+
 ALTER TABLE t_media
     ADD COLUMN source_type VARCHAR(20) NOT NULL DEFAULT 'UPLOAD' COMMENT '来源类型',
     ADD COLUMN source_id BIGINT NULL COMMENT '外部来源ID',

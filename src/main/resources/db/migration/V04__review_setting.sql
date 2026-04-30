@@ -1,3 +1,5 @@
+USE cloud_album;
+
 CREATE TABLE IF NOT EXISTS t_review_setting (
     id BIGINT NOT NULL PRIMARY KEY COMMENT '固定为1的审核设置主键',
     auto_approve_enabled TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否自动审核通过',

@@ -162,8 +162,8 @@ Important rule:
 The repo supports both MySQL migrations and an H2 dev schema.
 
 Key files:
-- MySQL baseline: `src/main/resources/db/migration/V1__init_schema.sql`
-- Incremental migration for external album media: `src/main/resources/db/migration/V9__album_external_media_reference.sql`
+- MySQL baseline: `src/main/resources/db/migration/V01__init_schema.sql`
+- Incremental migration for external album media: `src/main/resources/db/migration/V09__album_external_media_reference.sql`
 - H2 dev schema: `src/main/resources/db/h2/schema.sql`
 
 Important rule:

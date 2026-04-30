@@ -1,6 +1,35 @@
-version: "3.9"
+name: cloud-album-publisher
 
 services:
+  app:
+    image: ${APP_IMAGE:-myucxy/cloud-album-publisher:latest}
+    container_name: cloud-album-app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8080
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: cloud_album
+      DB_USER: root
+      DB_PASSWORD: root
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      RELEASE_MANIFEST_PATH: /app/releases/manifest.json
+      RELEASE_DOWNLOADS_LOCATION: file:/app/releases/
+    ports:
+      - "8080:8080"
+
   mysql:
     image: mysql:8.0
     container_name: cloud-album-mysql
@@ -14,7 +43,6 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./src/main/resources/db/migration:/docker-entrypoint-initdb.d
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]

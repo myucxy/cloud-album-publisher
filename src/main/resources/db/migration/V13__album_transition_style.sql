@@ -1,3 +1,5 @@
+USE cloud_album;
+
 ALTER TABLE t_album
     ADD COLUMN transition_style VARCHAR(20) NOT NULL DEFAULT 'NONE' COMMENT '播放转场样式';
 

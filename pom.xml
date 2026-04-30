@@ -69,6 +69,16 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- Database migration -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+        </dependency>
+
         <!-- H2（开发/测试用文件数据库） -->
         <dependency>
             <groupId>com.h2database</groupId>

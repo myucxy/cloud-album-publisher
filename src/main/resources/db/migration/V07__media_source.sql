@@ -1,3 +1,5 @@
+USE cloud_album;
+
 CREATE TABLE IF NOT EXISTS t_media_source (
     id                  BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '媒体源ID',
     user_id             BIGINT UNSIGNED NOT NULL COMMENT '所属用户ID',

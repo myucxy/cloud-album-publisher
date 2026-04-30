@@ -1,3 +1,5 @@
+USE cloud_album;
+
 CREATE TABLE t_album_bgm (
     id                 BIGINT AUTO_INCREMENT PRIMARY KEY,
     album_id           BIGINT NOT NULL,

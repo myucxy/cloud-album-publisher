@@ -235,6 +235,10 @@ public class DistributionServiceImpl implements DistributionService {
             throw new BusinessException(ResultCode.ALBUM_ACCESS_DENIED);
         }
 
+        if (!"PUBLISHED".equals(album.getStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "Album must be published before activation");
+        }
+
         if ("PRIVATE".equals(album.getVisibility())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "私有相册不能下发到设备，请改为公开或设备专属后再激活");
         }

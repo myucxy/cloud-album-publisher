@@ -1,6 +1,7 @@
 target/
 .m2/
 dist/
+docker-build/
 *.class
 *.jar
 *.war

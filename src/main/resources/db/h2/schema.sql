@@ -200,7 +200,7 @@ CREATE TABLE IF NOT EXISTS t_review_record (
 
 CREATE TABLE IF NOT EXISTS t_review_setting (
     id                   BIGINT PRIMARY KEY,
-    auto_approve_enabled TINYINT NOT NULL DEFAULT 0,
+    auto_approve_enabled TINYINT NOT NULL DEFAULT 1,
     created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

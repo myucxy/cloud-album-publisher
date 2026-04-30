@@ -1,3 +1,5 @@
+USE cloud_album;
+
 ALTER TABLE t_media_source
     ADD COLUMN config_json TEXT NULL COMMENT '媒体源配置JSON',
     ADD COLUMN credential_ciphertext TEXT NULL COMMENT '媒体源凭证密文',

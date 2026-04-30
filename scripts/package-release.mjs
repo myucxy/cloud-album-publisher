@@ -358,6 +358,7 @@ async function writeManifest(artifacts) {
   }
 
   await writeFile(join(releasesDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8')
+  await pruneReleaseArtifacts(manifest)
 }
 
 function buildPlatformManifest(platform, artifact) {
@@ -378,6 +379,45 @@ function buildPlatformManifest(platform, artifact) {
       }
     }
   }
+}
+
+async function pruneReleaseArtifacts(manifest) {
+  const keepFiles = collectManifestArtifactPaths(manifest)
+  const files = await listFiles(releasesDir)
+  for (const file of files) {
+    const relativePath = toUrlPath(relative(releasesDir, file))
+    if (relativePath === 'manifest.json' || keepFiles.has(relativePath)) {
+      continue
+    }
+    await rm(file, { force: true })
+  }
+}
+
+function collectManifestArtifactPaths(manifest) {
+  const keepFiles = new Set()
+  const platforms = manifest.platforms || {}
+  for (const [platform, platformRelease] of Object.entries(platforms)) {
+    const channels = platformRelease?.channels || {}
+    for (const channel of Object.values(channels)) {
+      const relativePath = releasePathFromDownloadUrl(channel?.downloadUrl)
+      if (relativePath) {
+        keepFiles.add(relativePath)
+      } else if (channel?.fileName) {
+        keepFiles.add(toUrlPath(join(platform, channel.fileName)))
+      }
+    }
+  }
+  return keepFiles
+}
+
+function releasePathFromDownloadUrl(downloadUrl) {
+  if (!downloadUrl) {
+    return null
+  }
+  const marker = `${trimTrailingSlash(config.downloadsBasePath || '/downloads')}/`
+  const text = String(downloadUrl)
+  const index = text.indexOf(marker)
+  return index === -1 ? null : text.slice(index + marker.length)
 }
 
 async function findNewestFile(dir, predicate) {

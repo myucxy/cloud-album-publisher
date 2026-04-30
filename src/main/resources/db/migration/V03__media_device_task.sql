@@ -1,6 +1,6 @@
--- V2: 模块B（媒体、设备、任务）表结构
-
 USE cloud_album;
+
+-- V2: 模块B（媒体、设备、任务）表结构
 
 -- 媒体表
 CREATE TABLE IF NOT EXISTS t_media (

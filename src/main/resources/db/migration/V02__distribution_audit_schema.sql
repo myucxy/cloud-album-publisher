@@ -1,3 +1,5 @@
+USE cloud_album;
+
 -- V2: 分发、审核、审计模块（C负责）
 -- 依赖：t_album（V1），t_device（B负责，使用 BIGINT UNSIGNED 关联）
 

@@ -9,6 +9,13 @@ spring:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:cloud_album}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: ${DB_USER:root}
     password: ${DB_PASSWORD:root}
+  flyway:
+    enabled: ${FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+    validate-on-migrate: true
+    connect-retries: 20
+    baseline-on-migrate: true
+    baseline-version: 15
   data:
     redis:
       host: ${REDIS_HOST:localhost}

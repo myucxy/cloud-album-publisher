@@ -1,3 +1,5 @@
+USE cloud_album;
+
 ALTER TABLE t_album
     ADD COLUMN bgm_media_id BIGINT NULL COMMENT '内部BGM媒体ID',
     ADD COLUMN bgm_source_id BIGINT NULL COMMENT '外部BGM媒体源ID',
