@@ -1600,25 +1600,28 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
     private void renderFrameWallLayout(FrameLayout container, List<DevicePullResponse.MediaItem> imageItems) {
         frameWallImageViews.clear();
+        boolean portrait = isPortraitContainer(container);
+        int cols = portrait ? 2 : 4;
+        int rows = portrait ? 4 : 2;
         GridLayout grid = new GridLayout(this);
-        grid.setColumnCount(4);
-        grid.setRowCount(2);
+        grid.setColumnCount(cols);
+        grid.setRowCount(rows);
         int gap = dp(3);
         grid.setPadding(gap, gap, gap, gap);
         container.addView(grid, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
-        int slotCount = 8;
+        int slotCount = cols * rows;
         if (!imageItems.isEmpty()) {
             frameWallNextSourceIndex = slotCount % imageItems.size();
         }
         int parentWidth = Math.max(1, getContainerWidth(container));
         int parentHeight = Math.max(1, getContainerHeight(container));
-        int cellWidth = Math.max(1, (parentWidth - gap * 10) / 4);
-        int cellHeight = Math.max(1, (parentHeight - gap * 6) / 2);
+        int cellWidth = Math.max(1, (parentWidth - gap * (cols + 2)) / cols);
+        int cellHeight = Math.max(1, (parentHeight - gap * (rows + 2)) / rows);
         for (int i = 0; i < slotCount; i += 1) {
             ImageView imageView = createAdvancedImageView();
-            GridLayout.LayoutParams params = createFrameWallCellParams(i, cellWidth, cellHeight);
+            GridLayout.LayoutParams params = createFrameWallCellParams(i, cellWidth, cellHeight, cols);
             params.setMargins(gap, gap, gap, gap);
             grid.addView(imageView, params);
             frameWallImageViews.add(imageView);
@@ -1626,9 +1629,9 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         }
     }
 
-    private GridLayout.LayoutParams createFrameWallCellParams(int index, int fallbackWidth, int fallbackHeight) {
-        int row = index / 4;
-        int column = index % 4;
+    private GridLayout.LayoutParams createFrameWallCellParams(int index, int fallbackWidth, int fallbackHeight, int cols) {
+        int row = index / cols;
+        int column = index % cols;
         GridLayout.LayoutParams params = new GridLayout.LayoutParams();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             params.width = 0;
@@ -1647,6 +1650,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private void renderCarouselLayout(FrameLayout container, List<DevicePullResponse.MediaItem> imageItems) {
         int parentWidth = getContainerWidth(container);
         int parentHeight = getContainerHeight(container);
+        boolean portrait = isPortraitContainer(container);
         int layoutCount = imageItems.size() >= 5 ? 5 : Math.min(3, imageItems.size());
         if (imageItems.size() < 3) {
             layoutCount = imageItems.size();
@@ -1660,14 +1664,32 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             }
             boolean primary = i == center;
             float offset = i - center;
-            float widthRatio = primary ? 0.42f : 0.24f;
-            float heightRatio = primary ? 0.78f : 0.58f;
-            float centerRatio = 0.5f + offset * 0.22f;
-            int width = Math.max(1, Math.round(parentWidth * widthRatio));
-            int height = Math.max(1, Math.round(parentHeight * heightRatio));
+            int width;
+            int height;
+            int leftMargin;
+            int topMargin;
+            if (portrait) {
+                float heightRatio = primary ? 0.42f : 0.24f;
+                float widthRatio = primary ? 0.78f : 0.58f;
+                float spacingRatio = 0.22f;
+                width = Math.max(1, Math.round(parentWidth * widthRatio));
+                height = Math.max(1, Math.round(parentHeight * heightRatio));
+                leftMargin = Math.round((parentWidth - width) / 2f);
+                float centerRatio = 0.5f + offset * spacingRatio;
+                topMargin = Math.round(parentHeight * centerRatio - height / 2f);
+            } else {
+                float widthRatio = primary ? 0.42f : 0.24f;
+                float heightRatio = primary ? 0.78f : 0.58f;
+                float spacingRatio = 0.22f;
+                width = Math.max(1, Math.round(parentWidth * widthRatio));
+                height = Math.max(1, Math.round(parentHeight * heightRatio));
+                float centerRatio = 0.5f + offset * spacingRatio;
+                leftMargin = Math.round(parentWidth * centerRatio - width / 2f);
+                topMargin = Math.round((parentHeight - height) / 2f);
+            }
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
-            params.leftMargin = Math.round(parentWidth * centerRatio - width / 2f);
-            params.topMargin = Math.round((parentHeight - height) / 2f);
+            params.leftMargin = leftMargin;
+            params.topMargin = topMargin;
             imageView.setAlpha(primary ? 1f : 0.68f);
             imageView.setScaleX(primary ? 1f : 0.9f);
             imageView.setScaleY(primary ? 1f : 0.9f);

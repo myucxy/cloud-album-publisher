@@ -10,8 +10,8 @@ android {
         applicationId "com.cloudalbum.publisher.android"
         minSdk 19
         targetSdk 34
-        versionCode 41
-        versionName "0.3.39"
+        versionCode 43
+        versionName "0.3.41"
         multiDexEnabled true
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
