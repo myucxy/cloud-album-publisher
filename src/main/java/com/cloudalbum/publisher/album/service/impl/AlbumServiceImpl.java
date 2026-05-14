@@ -92,7 +92,7 @@ public class AlbumServiceImpl implements AlbumService {
         album.setVisibility(StringUtils.hasText(request.getVisibility()) ? request.getVisibility() : "PUBLIC");
         album.setTransitionStyle(normalizeTransitionStyle(request.getTransitionStyle()));
         album.setDisplayStyle(normalizeDisplayStyle(request.getDisplayStyle()));
-        album.setDisplayVariant(normalizeDisplayVariant(request.getDisplayVariant()));
+        album.setDisplayVariant(normalizeDisplayVariant(request.getDisplayVariant(), album.getDisplayStyle()));
         album.setShowTimeAndDate(Boolean.TRUE.equals(request.getShowTimeAndDate()));
         album.setStatus("PUBLISHED");
         album.setSortOrder(0);
@@ -110,7 +110,7 @@ public class AlbumServiceImpl implements AlbumService {
         if (StringUtils.hasText(request.getVisibility())) album.setVisibility(request.getVisibility());
         if (request.getTransitionStyle() != null) album.setTransitionStyle(normalizeTransitionStyle(request.getTransitionStyle()));
         if (request.getDisplayStyle() != null) album.setDisplayStyle(normalizeDisplayStyle(request.getDisplayStyle()));
-        if (request.getDisplayVariant() != null) album.setDisplayVariant(normalizeDisplayVariant(request.getDisplayVariant()));
+        if (request.getDisplayVariant() != null) album.setDisplayVariant(normalizeDisplayVariant(request.getDisplayVariant(), album.getDisplayStyle()));
         if (request.getShowTimeAndDate() != null) album.setShowTimeAndDate(request.getShowTimeAndDate());
         if (StringUtils.hasText(request.getStatus())) album.setStatus(request.getStatus());
         if (request.getSortOrder() != null) album.setSortOrder(request.getSortOrder());
@@ -925,13 +925,21 @@ public class AlbumServiceImpl implements AlbumService {
         return StringUtils.hasText(displayStyle) ? displayStyle : "SINGLE";
     }
 
-    private String normalizeDisplayVariant(String displayVariant) {
+    private String normalizeDisplayVariant(String displayVariant, String displayStyle) {
         if (!StringUtils.hasText(displayVariant)) {
             return "DEFAULT";
         }
         String normalized = displayVariant.trim().toUpperCase(Locale.ROOT).replace('-', '_');
         if (!normalized.matches("[A-Z0-9_]{1,32}")) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "不支持的展示布局子样式");
+        }
+        if ("FRAME_WALL".equals(displayStyle)) {
+            if ("DEFAULT".equals(normalized)) {
+                return "FRAME_WALL_8";
+            }
+            if (!java.util.Set.of("FRAME_WALL_2", "FRAME_WALL_4", "FRAME_WALL_6", "FRAME_WALL_8").contains(normalized)) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "不支持的相框墙子样式");
+            }
         }
         return normalized;
     }

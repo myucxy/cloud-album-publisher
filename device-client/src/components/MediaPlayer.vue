@@ -229,11 +229,26 @@ const advancedLayoutReady = computed(() => {
 })
 const bentoGridSize = computed(() => getBentoGridSize())
 const advancedLayoutStyle = computed(() => {
-  if (normalizedDisplayStyle.value !== 'BENTO') return null
-  return {
-    gridTemplateColumns: `repeat(${bentoGridSize.value.columns}, minmax(0, 1fr))`,
-    gridTemplateRows: `repeat(${bentoGridSize.value.rows}, minmax(0, 1fr))`
+  if (normalizedDisplayStyle.value === 'BENTO') {
+    void viewportVersion.value
+    const portrait = window.innerWidth < window.innerHeight
+    const size = bentoGridSize.value
+    const cols = portrait ? size.rows : size.columns
+    const rows = portrait ? size.columns : size.rows
+    return {
+      gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+      gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`
+    }
   }
+  if (normalizedDisplayStyle.value === 'FRAME_WALL') {
+    void viewportVersion.value // re-evaluate on viewport resize
+    const dim = getFrameWallGridDimensions()
+    return {
+      gridTemplateColumns: `repeat(${dim.cols}, minmax(0, 1fr))`,
+      gridTemplateRows: `repeat(${dim.rows}, minmax(0, 1fr))`
+    }
+  }
+  return null
 })
 const primaryAdvancedIndex = computed(() => normalizedDisplayStyle.value === 'CAROUSEL' && displayedAdvancedItems.value.length >= 3 ? Math.floor(displayedAdvancedItems.value.length / 2) : 0)
 const imageTransitionEnabled = computed(() => enableImageTransition.value && concreteImageTransition.value !== 'NONE')
@@ -344,11 +359,27 @@ function getBentoSlotCount() {
 }
 
 function getAdvancedItemStyle(index) {
+  void viewportVersion.value
+  const portrait = window.innerWidth < window.innerHeight
   if (normalizedDisplayStyle.value === 'CAROUSEL') {
     const count = displayedAdvancedItems.value.length
     const center = Math.floor(count / 2)
     const offset = index - center
     const isPrimary = offset === 0
+    if (portrait) {
+      const width = isPrimary ? 78 : 58
+      const height = isPrimary ? 42 : 24
+      const top = 50 + offset * 22 - height / 2
+      return {
+        left: `${(100 - width) / 2}%`,
+        top: `${top}%`,
+        width: `${width}%`,
+        height: `${height}%`,
+        zIndex: 20 - Math.abs(offset),
+        opacity: Math.max(0.46, 1 - Math.abs(offset) * 0.18),
+        transform: `scale(${isPrimary ? 1 : Math.max(0.82, 0.94 - Math.abs(offset) * 0.04)})`
+      }
+    }
     const width = isPrimary ? 42 : 24
     const height = isPrimary ? 78 : 58
     const left = 50 + offset * 22 - width / 2
@@ -365,6 +396,9 @@ function getAdvancedItemStyle(index) {
   if (normalizedDisplayStyle.value !== 'BENTO') return null
   const slot = getBentoSlots(displayedAdvancedItems.value.length)[index]
   if (!slot) return null
+  if (portrait) {
+    return { gridColumn: slot[1], gridRow: slot[0] }
+  }
   return { gridColumn: slot[0], gridRow: slot[1] }
 }
 
@@ -518,7 +552,24 @@ async function initializeBentoDisplay() {
 }
 
 function getFrameWallSlotCount() {
+  const variant = (props.displayVariant || '').toUpperCase().replace(/-/g, '_')
+  if (variant.startsWith('FRAME_WALL_')) {
+    const count = parseInt(variant.substring('FRAME_WALL_'.length), 10)
+    if (count === 2 || count === 4 || count === 6 || count === 8) return count
+  }
   return 8
+}
+
+function getFrameWallGridDimensions() {
+  const total = getFrameWallSlotCount()
+  const portrait = window.innerWidth < window.innerHeight
+  let cols, rows
+  if (total <= 2) { cols = 2; rows = 1 }
+  else if (total <= 4) { cols = 2; rows = 2 }
+  else if (total <= 6) { cols = 3; rows = 2 }
+  else { cols = 4; rows = 2 }
+  if (portrait) { const tmp = cols; cols = rows; rows = tmp }
+  return { cols, rows }
 }
 
 async function initializeFrameWallDisplay() {
@@ -953,8 +1004,6 @@ watch(
 }
 
 .advanced-frame-wall {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
 }
 
 .calendar-layout {

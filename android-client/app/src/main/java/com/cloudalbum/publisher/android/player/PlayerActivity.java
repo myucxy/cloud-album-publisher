@@ -1598,11 +1598,45 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         addAdvancedImage(container, media, leftRatio, topRatio, widthRatio, heightRatio, margin, marksReady);
     }
 
+    private int resolveFrameWallSlotCount() {
+        String variant = playbackEngine.getCurrentDisplayVariant();
+        if (variant == null) {
+            return 8;
+        }
+        String normalized = variant.trim().toUpperCase(Locale.getDefault()).replace('-', '_');
+        if (normalized.startsWith("FRAME_WALL_")) {
+            try {
+                int count = Integer.parseInt(normalized.substring("FRAME_WALL_".length()));
+                if (count == 2 || count == 4 || count == 6 || count == 8) {
+                    return count;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return 8;
+    }
+
     private void renderFrameWallLayout(FrameLayout container, List<DevicePullResponse.MediaItem> imageItems) {
         frameWallImageViews.clear();
         boolean portrait = isPortraitContainer(container);
-        int cols = portrait ? 2 : 4;
-        int rows = portrait ? 4 : 2;
+        int totalSlots = resolveFrameWallSlotCount();
+        int landscapeCols;
+        int landscapeRows;
+        if (totalSlots <= 2) {
+            landscapeCols = 2;
+            landscapeRows = 1;
+        } else if (totalSlots <= 4) {
+            landscapeCols = 2;
+            landscapeRows = 2;
+        } else if (totalSlots <= 6) {
+            landscapeCols = 3;
+            landscapeRows = 2;
+        } else {
+            landscapeCols = 4;
+            landscapeRows = 2;
+        }
+        int cols = portrait ? landscapeRows : landscapeCols;
+        int rows = portrait ? landscapeCols : landscapeRows;
         GridLayout grid = new GridLayout(this);
         grid.setColumnCount(cols);
         grid.setRowCount(rows);

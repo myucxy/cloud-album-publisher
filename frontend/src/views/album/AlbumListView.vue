@@ -50,7 +50,7 @@
           </div>
         </a-form-item>
         <a-form-item label="展示布局" name="displayStyle">
-          <a-select v-model:value="form.displayStyle">
+          <a-select v-model:value="form.displayStyle" @change="onDisplayStyleChange">
             <a-select-option v-for="option in DISPLAY_STYLE_OPTIONS" :key="option.value" :value="option.value">
               {{ option.label }}
             </a-select-option>
@@ -69,6 +69,22 @@
                     v-for="(slot, index) in getBentoPreviewSlots(option.value)"
                     :key="`${option.value}-${index}`"
                     :style="getBentoPreviewSlotStyle(slot, option.value)"
+                  />
+                </div>
+              </label>
+            </div>
+          </a-radio-group>
+        </a-form-item>
+        <a-form-item v-if="form.displayStyle === 'FRAME_WALL'" label="相框数量" name="displayVariant">
+          <a-radio-group v-model:value="form.displayVariant" style="width:100%">
+            <div class="bento-style-grid">
+              <label v-for="option in FRAME_WALL_VARIANT_OPTIONS" :key="option.value" class="bento-style-card">
+                <a-radio :value="option.value">{{ option.label }}</a-radio>
+                <div class="bento-preview">
+                  <span
+                    v-for="(slot, index) in getFrameWallPreviewSlots(option.value)"
+                    :key="`${option.value}-${index}`"
+                    :style="getFrameWallPreviewSlotStyle(slot, option.value)"
                   />
                 </div>
               </label>
@@ -122,6 +138,13 @@ const BENTO_VARIANT_OPTIONS = [
   { value: 'BENTO_5', label: '样式 5' },
   { value: 'BENTO_6', label: '样式 6' },
   { value: 'BENTO_7', label: '样式 7' }
+]
+
+const FRAME_WALL_VARIANT_OPTIONS = [
+  { value: 'FRAME_WALL_2', label: '2 张', cols: 2, rows: 1 },
+  { value: 'FRAME_WALL_4', label: '4 张', cols: 2, rows: 2 },
+  { value: 'FRAME_WALL_6', label: '6 张', cols: 3, rows: 2 },
+  { value: 'FRAME_WALL_8', label: '8 张', cols: 4, rows: 2 }
 ]
 
 const BENTO_PREVIEW_SLOTS = {
@@ -246,6 +269,39 @@ function getBentoPreviewSlotStyle(slot, value) {
     top: `${slot[1] / maxY * 100}%`,
     width: `${slot[2] / maxX * 100}%`,
     height: `${slot[3] / maxY * 100}%`
+  }
+}
+
+function onDisplayStyleChange(style) {
+  if (style === 'BENTO' && !form.displayVariant?.startsWith('BENTO_')) {
+    form.displayVariant = 'DEFAULT'
+  } else if (style === 'FRAME_WALL' && !form.displayVariant?.startsWith('FRAME_WALL_')) {
+    form.displayVariant = 'FRAME_WALL_8'
+  } else if (style !== 'BENTO' && style !== 'FRAME_WALL') {
+    form.displayVariant = 'DEFAULT'
+  }
+}
+
+function getFrameWallPreviewSlots(value) {
+  const option = FRAME_WALL_VARIANT_OPTIONS.find(o => o.value === value) || FRAME_WALL_VARIANT_OPTIONS[3]
+  const { cols, rows } = option
+  const slots = []
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      slots.push([c, r, 1, 1])
+    }
+  }
+  return slots
+}
+
+function getFrameWallPreviewSlotStyle(slot, value) {
+  const option = FRAME_WALL_VARIANT_OPTIONS.find(o => o.value === value) || FRAME_WALL_VARIANT_OPTIONS[3]
+  const { cols, rows } = option
+  return {
+    left: `${slot[0] / cols * 100}%`,
+    top: `${slot[1] / rows * 100}%`,
+    width: `${slot[2] / cols * 100}%`,
+    height: `${slot[3] / rows * 100}%`
   }
 }
 
