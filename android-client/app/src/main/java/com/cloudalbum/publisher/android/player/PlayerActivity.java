@@ -665,7 +665,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 .build();
         contentPlayer.setAudioAttributes(new AudioAttributes.Builder()
                 .setUsage(com.google.android.exoplayer2.C.USAGE_MEDIA)
-                .setContentType(com.google.android.exoplayer2.C.CONTENT_TYPE_MOVIE)
+                .setContentType(com.google.android.exoplayer2.C.AUDIO_CONTENT_TYPE_MOVIE)
                 .build(), true);
         playerView.setPlayer(contentPlayer);
         contentPlayer.addListener(new Player.Listener() {
@@ -695,7 +695,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 .build();
         bgmPlayer.setAudioAttributes(new AudioAttributes.Builder()
                 .setUsage(com.google.android.exoplayer2.C.USAGE_MEDIA)
-                .setContentType(com.google.android.exoplayer2.C.CONTENT_TYPE_MUSIC)
+                .setContentType(com.google.android.exoplayer2.C.AUDIO_CONTENT_TYPE_MUSIC)
                 .build(), false);
         bgmPlayer.setRepeatMode(Player.REPEAT_MODE_OFF);
         bgmPlayer.addListener(new Player.Listener() {
@@ -829,6 +829,15 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
     @Override
     public void onPullError(Exception error) {
+        if (CloudAlbumRepository.isDeviceSessionInvalid(error)) {
+            pullSyncCoordinator.stop();
+            sessionRepository.clearDeviceSession();
+            waitingForBinding = true;
+            showWaitingForBinding();
+            updateStatus(error.getMessage() == null ? WAITING_FOR_BINDING_STATUS : error.getMessage());
+            attemptAcquireToken(false);
+            return;
+        }
         updateStatus(getString(R.string.sync_status_error) + " / "
                 + (error.getMessage() == null ? getString(R.string.toast_sync_failed) : error.getMessage()));
     }
@@ -1420,18 +1429,36 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         if (!imageItems.isEmpty()) {
             frameWallNextSourceIndex = slotCount % imageItems.size();
         }
+        int parentWidth = Math.max(1, getContainerWidth(container));
+        int parentHeight = Math.max(1, getContainerHeight(container));
+        int cellWidth = Math.max(1, (parentWidth - gap * 10) / 4);
+        int cellHeight = Math.max(1, (parentHeight - gap * 6) / 2);
         for (int i = 0; i < slotCount; i += 1) {
             ImageView imageView = createAdvancedImageView();
-            GridLayout.LayoutParams params = new GridLayout.LayoutParams();
-            params.width = 0;
-            params.height = 0;
-            params.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
-            params.rowSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
+            GridLayout.LayoutParams params = createFrameWallCellParams(i, cellWidth, cellHeight);
             params.setMargins(gap, gap, gap, gap);
             grid.addView(imageView, params);
             frameWallImageViews.add(imageView);
             loadAdvancedImage(imageView, imageItems.get(i % imageItems.size()), i == 0);
         }
+    }
+
+    private GridLayout.LayoutParams createFrameWallCellParams(int index, int fallbackWidth, int fallbackHeight) {
+        int row = index / 4;
+        int column = index % 4;
+        GridLayout.LayoutParams params = new GridLayout.LayoutParams();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            params.width = 0;
+            params.height = 0;
+            params.columnSpec = GridLayout.spec(column, 1f);
+            params.rowSpec = GridLayout.spec(row, 1f);
+        } else {
+            params.width = fallbackWidth;
+            params.height = fallbackHeight;
+            params.columnSpec = GridLayout.spec(column);
+            params.rowSpec = GridLayout.spec(row);
+        }
+        return params;
     }
 
     private void renderCarouselLayout(FrameLayout container, List<DevicePullResponse.MediaItem> imageItems) {

@@ -1,6 +1,7 @@
 package com.cloudalbum.publisher.device.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.cloudalbum.publisher.album.entity.Album;
 import com.cloudalbum.publisher.album.entity.AlbumBgm;
 import com.cloudalbum.publisher.album.entity.AlbumMedia;
@@ -93,7 +94,6 @@ public class DeviceServiceImpl implements DeviceService {
     @Override
     public List<DeviceResponse> listUnboundDevices() {
         return deviceMapper.selectList(new LambdaQueryWrapper<Device>()
-                        .isNull(Device::getUserId)
                         .eq(Device::getStatus, DeviceStatus.UNBOUND.name())
                         .orderByDesc(Device::getUpdatedAt))
                 .stream().map(this::toDeviceResponse).toList();
@@ -106,22 +106,34 @@ public class DeviceServiceImpl implements DeviceService {
                 .eq(Device::getDeviceUid, request.getDeviceUid())
                 .last("limit 1"));
 
-        if (exists != null && exists.getUserId() != null) {
+        if (exists != null
+                && exists.getUserId() != null
+                && !DeviceStatus.UNBOUND.name().equals(exists.getStatus())) {
             return toDeviceResponse(exists);
         }
 
         Device device = exists == null ? new Device() : exists;
+        LocalDateTime now = LocalDateTime.now();
         device.setUserId(null);
         device.setDeviceUid(request.getDeviceUid());
         device.setType(request.getType());
         device.setName(StringUtils.hasText(request.getName()) ? request.getName() : request.getDeviceUid());
         device.setStatus(DeviceStatus.UNBOUND.name());
-        device.setLastHeartbeatAt(LocalDateTime.now());
+        device.setLastHeartbeatAt(now);
 
         if (exists == null) {
             deviceMapper.insert(device);
         } else {
-            deviceMapper.updateById(device);
+            device.setUpdatedAt(now);
+            deviceMapper.update(null, new LambdaUpdateWrapper<Device>()
+                    .eq(Device::getId, device.getId())
+                    .set(Device::getUserId, null)
+                    .set(Device::getDeviceUid, device.getDeviceUid())
+                    .set(Device::getType, device.getType())
+                    .set(Device::getName, device.getName())
+                    .set(Device::getStatus, device.getStatus())
+                    .set(Device::getLastHeartbeatAt, device.getLastHeartbeatAt())
+                    .set(Device::getUpdatedAt, device.getUpdatedAt()));
         }
         return toDeviceResponse(device);
     }
@@ -159,10 +171,11 @@ public class DeviceServiceImpl implements DeviceService {
     @Transactional
     public DeviceResponse bindUnboundDevice(Long userId, Long deviceId, AdminDeviceBindRequest request) {
         Device device = getDevice(deviceId);
-        if (device.getUserId() != null && !Objects.equals(device.getUserId(), userId)) {
+        boolean unbound = device.getUserId() == null || DeviceStatus.UNBOUND.name().equals(device.getStatus());
+        if (!unbound && device.getUserId() != null && !Objects.equals(device.getUserId(), userId)) {
             throw new BusinessException(ResultCode.DEVICE_ALREADY_BOUND);
         }
-        if (device.getUserId() != null && Objects.equals(device.getUserId(), userId)) {
+        if (!unbound && device.getUserId() != null && Objects.equals(device.getUserId(), userId)) {
             device.setName(request.getName());
             deviceMapper.updateById(device);
             return toDeviceResponse(device);
@@ -213,10 +226,17 @@ public class DeviceServiceImpl implements DeviceService {
     @Transactional
     public void unbindDevice(Long userId, Long deviceId) {
         Device device = getOwnedDevice(userId, deviceId);
+        LocalDateTime now = LocalDateTime.now();
         device.setUserId(null);
         device.setStatus(DeviceStatus.UNBOUND.name());
-        device.setUnboundAt(LocalDateTime.now());
-        deviceMapper.updateById(device);
+        device.setUnboundAt(now);
+        device.setUpdatedAt(now);
+        deviceMapper.update(null, new LambdaUpdateWrapper<Device>()
+                .eq(Device::getId, deviceId)
+                .set(Device::getUserId, null)
+                .set(Device::getStatus, DeviceStatus.UNBOUND.name())
+                .set(Device::getUnboundAt, now)
+                .set(Device::getUpdatedAt, now));
 
         deviceGroupRelMapper.delete(new LambdaQueryWrapper<DeviceGroupRel>()
                 .eq(DeviceGroupRel::getDeviceId, deviceId));

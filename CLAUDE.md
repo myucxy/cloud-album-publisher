@@ -47,8 +47,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 
 - Default `application.yml` uses MySQL + Redis + MinIO; default profile is `dev`.
-- `application-dev.yml` switches the backend to H2 file DB at `./data/cloud_album.mv.db` and always runs `src/main/resources/db/h2/schema.sql` on startup.
-- If H2 dev schema seems stale after code changes, restart once so schema upgrades run. If the local file DB is still inconsistent, delete `data/cloud_album.*` and restart.
+- `application-dev.yml` keeps the MySQL datasource from `application.yml`; development startup uses MySQL by default.
+- H2 is only an explicit optional profile via `application-h2.yml`, using `./data/cloud_album.mv.db` and `src/main/resources/db/h2/schema.sql`.
 - Backend logs now go to:
   - all logs: `logs/cloud-album-publisher.log`
   - error-only logs: `logs/cloud-album-publisher-error.log`
@@ -158,20 +158,17 @@ Important rule:
   - device pull filtering
   - distribution UI messaging
 
-### 5. H2 and MySQL schema drift is a real risk
-The repo supports both MySQL migrations and an H2 dev schema.
+### 5. Database migrations
+The default development database is MySQL and schema changes are managed by Flyway migrations.
 
 Key files:
 - MySQL baseline: `src/main/resources/db/migration/V01__init_schema.sql`
 - Incremental migration for external album media: `src/main/resources/db/migration/V09__album_external_media_reference.sql`
-- H2 dev schema: `src/main/resources/db/h2/schema.sql`
+- Optional H2 schema: `src/main/resources/db/h2/schema.sql`
 
 Important rule:
-- Any DB change that affects runtime code must be reflected in both:
-  - MySQL migration files
-  - H2 `schema.sql`
-- H2 dev issues have previously appeared when `t_album_media.media_id` remained NOT NULL while external album media inserts used `media_id = null`.
-- Before claiming a DB-related fix is done, make sure H2 startup upgrade logic covers existing local file DBs, not just fresh databases.
+- Any DB change that affects runtime code must be reflected in MySQL migration files.
+- If the optional H2 profile is kept working for the same feature, update H2 `schema.sql` too.
 
 ## Frontend architecture notes
 
@@ -228,7 +225,7 @@ When investigating “device did not receive new queue data”, always check in 
 5. Does `/api/v1/devices/pull` or `/api/v1/devices/pull/current` include the distribution?
 
 When investigating “cannot add external media to album”, check in order:
-1. H2/MySQL schema matches the current album external-media model
+1. MySQL schema matches the current album external-media model
 2. `t_album_media.media_id` can be null for external items
 3. external source browse returns the target file under the requested/bound path
 4. the album add-content request includes `externalMediaKey`, `sourceId`, and normalized `path`

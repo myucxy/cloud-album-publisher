@@ -11,7 +11,7 @@ Spring Boot 3 后端主工程，承载认证、用户、相册、媒体源、设
 | Spring Security | 6.x |
 | MyBatis-Plus | 3.5.7 |
 | MySQL | 8.0 |
-| H2 | 运行时（dev 文件库） |
+| H2 | 测试 / 可选本地文件库 |
 | Redis | 7.0 |
 | MinIO | 8.5.11 |
 | SpringDoc OpenAPI | 2.5.0 |
@@ -91,22 +91,21 @@ npm run dev
 
 - Swagger UI：`http://localhost:8080/swagger-ui.html`
 - 健康检查：`http://localhost:8080/actuator/health`
-- H2 控制台（dev）：`http://localhost:8080/h2-console`
+- 数据库：默认连接 MySQL（`localhost:3306/cloud_album`，可通过 `DB_*` 环境变量覆盖）
 
 ## 开发环境与数据库说明
 
 - 默认 `application.yml` 使用 MySQL + Redis + MinIO。
-- 默认激活 profile 是 `dev`，`application-dev.yml` 会切换到 H2 文件库：
+- 默认激活 profile 是 `dev`，`application-dev.yml` 不再覆盖数据源，因此开发启动默认也是 MySQL。
+- MySQL 连接默认值：
+  - `DB_HOST=localhost`
+  - `DB_PORT=3306`
+  - `DB_NAME=cloud_album`
+  - `DB_USER=root`
+  - `DB_PASSWORD=root`
+- 如需临时使用 H2 文件库，显式指定 `SPRING_PROFILES_ACTIVE=h2`，会使用：
   - `./data/cloud_album.mv.db`
-- dev 启动时会执行：
   - `src/main/resources/db/h2/schema.sql`
-- 该 H2 schema 不只是初始化新表，也承担**旧本地库增量升级**职责。
-
-如果升级代码后 H2 本地库状态异常：
-1. 先重启一次应用，让 schema 升级逻辑执行
-2. 若仍异常，再删除：
-   - `data/cloud_album.*`
-3. 然后重新启动后端
 
 ## 日志
 
@@ -185,17 +184,17 @@ npm run dev
 3. 相册是否是 `PUBLIC` 或 `DEVICE_ONLY`
 4. 相册内容是否全部通过内部/外部媒体校验
 
-### H2 / MySQL 双维护
+### 数据库变更
 数据库变更必须同时关注：
 - MySQL migration：`src/main/resources/db/migration/*.sql`
-- H2 dev schema：`src/main/resources/db/h2/schema.sql`
+- 如果仍需支持 H2 profile，同步维护：`src/main/resources/db/h2/schema.sql`
 
 尤其是相册外部媒体模型相关字段：
 - `t_album` 外部封面字段
 - `t_album_media` 外部媒体引用字段
 - `t_album_media.media_id` 必须允许为 `NULL`
 
-如果只改了 migration 没改 H2 schema，本地 dev 很容易出现运行时问题。
+默认 dev 使用 MySQL，数据库结构以 Flyway migration 为准。
 
 ### 媒体源路径范围
 媒体源 browse / 预览严格受 `boundPath` 限制。

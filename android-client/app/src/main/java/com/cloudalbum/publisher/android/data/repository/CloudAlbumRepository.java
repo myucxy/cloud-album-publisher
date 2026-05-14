@@ -25,6 +25,10 @@ import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
 
 public class CloudAlbumRepository {
+    private static final int CODE_UNAUTHORIZED = 401;
+    private static final int CODE_DEVICE_NOT_FOUND = 404;
+    private static final int CODE_DEVICE_NOT_BOUND = 409;
+
     private final DeviceSessionRepository sessionRepository;
 
     public CloudAlbumRepository(Context context) {
@@ -116,7 +120,7 @@ public class CloudAlbumRepository {
                 throw new IOException("响应为空");
             }
             if (body.getCode() != 200) {
-                throw new IOException(body.getMessage() == null ? "请求失败" : body.getMessage());
+                throw new ApiException(body.getCode(), body.getMessage() == null ? "请求失败" : body.getMessage(), true);
             }
             return body;
         } catch (SocketTimeoutException error) {
@@ -126,7 +130,7 @@ public class CloudAlbumRepository {
 
     private IOException httpError(int code) {
         if (code == 401) {
-            return new IOException("鉴权失败，请重新绑定设备");
+            return new ApiException(code, "鉴权失败，请重新绑定设备", false);
         }
         if (code == 403) {
             return new IOException("无权限访问该设备接口");
@@ -135,8 +139,39 @@ public class CloudAlbumRepository {
             return new IOException("服务器地址无效或接口不存在");
         }
         if (code == 409) {
-            return new IOException("设备尚未绑定，请先在后台设备管理中绑定");
+            return new ApiException(code, "设备尚未绑定，请先在后台设备管理中绑定", false);
         }
         return new IOException("HTTP " + code);
+    }
+
+    public static boolean isDeviceSessionInvalid(Throwable error) {
+        if (!(error instanceof ApiException)) {
+            return false;
+        }
+        ApiException apiException = (ApiException) error;
+        int code = apiException.getCode();
+        if (apiException.isApiResultCode() && code == CODE_DEVICE_NOT_FOUND) {
+            return true;
+        }
+        return code == CODE_UNAUTHORIZED || code == CODE_DEVICE_NOT_BOUND;
+    }
+
+    public static class ApiException extends IOException {
+        private final int code;
+        private final boolean apiResultCode;
+
+        public ApiException(int code, String message, boolean apiResultCode) {
+            super(message);
+            this.code = code;
+            this.apiResultCode = apiResultCode;
+        }
+
+        public int getCode() {
+            return code;
+        }
+
+        public boolean isApiResultCode() {
+            return apiResultCode;
+        }
     }
 }

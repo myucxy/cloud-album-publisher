@@ -64,11 +64,12 @@ copy /y run.bat "%DIST_DIR%\run.bat" >nul
 mkdir "%DIST_DIR%\config"
 copy /y src\main\resources\application.yml      "%DIST_DIR%\config\application.yml" >nul
 copy /y src\main\resources\application-dev.yml  "%DIST_DIR%\config\application-dev.yml" >nul
+copy /y src\main\resources\application-h2.yml   "%DIST_DIR%\config\application-h2.yml" >nul
 copy /y src\main\resources\application-prod.yml "%DIST_DIR%\config\application-prod.yml" >nul
 
 :: 数据目录占位
 mkdir "%DIST_DIR%\data"
-echo This directory stores H2 database files.> "%DIST_DIR%\data\.gitkeep"
+echo This directory stores application data files.> "%DIST_DIR%\data\.gitkeep"
 
 :: 日志目录占位
 mkdir "%DIST_DIR%\logs"

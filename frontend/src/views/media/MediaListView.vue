@@ -490,22 +490,35 @@
         <a-upload-dragger
           :before-upload="onFileSelected"
           :show-upload-list="false"
+          multiple
           accept="image/*,video/*,audio/*"
         >
           <p class="ant-upload-drag-icon"><inbox-outlined /></p>
           <p class="ant-upload-text">点击或拖拽文件到此区域</p>
-          <p class="ant-upload-hint">支持图片、视频和音频文件</p>
+          <p class="ant-upload-hint">支持图片、视频和音频文件，可一次选择多个文件</p>
         </a-upload-dragger>
-        <div v-if="selectedFile" style="margin-top:16px">
-          <a-descriptions :column="1" size="small" bordered>
-            <a-descriptions-item label="文件名">{{ selectedFile.name }}</a-descriptions-item>
-            <a-descriptions-item label="大小">{{ formatSize(selectedFile.size) }}</a-descriptions-item>
-            <a-descriptions-item label="类型">{{ selectedFile.type || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="来源">自行上传</a-descriptions-item>
-          </a-descriptions>
+        <div v-if="selectedFiles.length" style="margin-top:16px">
+          <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:8px">
+            <span style="font-weight:500">已选择 {{ selectedFiles.length }} 个文件</span>
+            <a-button type="link" size="small" @click="clearSelectedFiles">清空</a-button>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:8px">
+            <div
+              v-for="file in selectedFiles"
+              :key="uploadFileKey(file)"
+              style="display:flex; justify-content:space-between; gap:12px; align-items:center; border:1px solid #f0f0f0; border-radius:8px; padding:8px 10px"
+            >
+              <div style="min-width:0">
+                <div style="font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ file.name }}</div>
+                <div style="color:#8c8c8c; font-size:12px">{{ formatSize(file.size) }} · {{ file.type || '-' }}</div>
+              </div>
+              <a-button type="link" size="small" danger @click="removeSelectedFile(file)">移除</a-button>
+            </div>
+          </div>
 
           <div v-if="selectedPreviewUrl" style="margin-top:16px">
-            <div style="margin-bottom:8px; color:#8c8c8c">本地预览</div>
+            <div style="margin-bottom:8px; color:#8c8c8c">首个文件本地预览</div>
             <div style="background:#fafafa; border-radius:8px; padding:12px; text-align:center">
               <img
                 v-if="selectedPreviewType === 'IMAGE'"
@@ -530,7 +543,7 @@
           </div>
 
           <a-button type="primary" block style="margin-top:16px" :loading="uploading" @click="startUpload">
-            开始上传
+            开始上传 {{ selectedFiles.length }} 个文件
           </a-button>
         </div>
       </div>
@@ -543,7 +556,7 @@
       <div v-if="uploadStep === 2" style="text-align:center; padding:40px 0">
         <check-circle-outlined style="font-size:64px; color:#52c41a" />
         <div style="margin-top:16px; font-size:16px">上传成功！</div>
-        <div style="color:#8c8c8c; margin-top:8px">文件已提交处理，处理成功后会进入“自行上传”来源</div>
+        <div style="color:#8c8c8c; margin-top:8px">{{ uploadCompleteText }}</div>
         <a-button type="primary" style="margin-top:24px" @click="resetUpload">继续上传</a-button>
       </div>
     </a-drawer>
@@ -705,12 +718,13 @@ const externalBrowsePageSize = 12
 
 const uploadDrawerOpen = ref(false)
 const uploadStep = ref(0)
-const selectedFile = ref(null)
+const selectedFiles = ref([])
 const selectedPreviewUrl = ref('')
 const selectedPreviewType = ref('')
 const uploading = ref(false)
 const uploadProgress = ref(0)
 const uploadStatusText = ref('')
+const uploadCompleteText = ref('')
 
 const detailModalOpen = ref(false)
 const selectedMedia = ref(null)
@@ -1568,49 +1582,34 @@ function draftSourceSummary(form) {
 }
 
 function onFileSelected(file) {
-  clearSelectedPreview()
-  selectedFile.value = file
-  selectedPreviewType.value = detectMediaType(file.type)
-  if (selectedPreviewType.value === 'IMAGE' || selectedPreviewType.value === 'VIDEO' || selectedPreviewType.value === 'AUDIO') {
-    selectedPreviewUrl.value = URL.createObjectURL(file)
+  const key = uploadFileKey(file)
+  if (!selectedFiles.value.some(item => uploadFileKey(item) === key)) {
+    selectedFiles.value.push(file)
   }
+  refreshSelectedPreview()
   return false
 }
 
 async function startUpload() {
-  if (!selectedFile.value) return
+  if (!selectedFiles.value.length) return
   uploading.value = true
   uploadStep.value = 1
   uploadProgress.value = 0
   uploadStatusText.value = '初始化上传...'
+  uploadCompleteText.value = ''
 
   try {
-    const file = selectedFile.value
-    const initRes = await mediaApi.initUpload({
-      fileName: file.name,
-      fileSize: file.size,
-      contentType: file.type || 'application/octet-stream'
-    })
-    const { uploadId, partSize, totalParts } = initRes.data
-    const parts = []
-
-    uploadStatusText.value = `上传分片 (0/${totalParts})...`
-
-    for (let i = 0; i < totalParts; i++) {
-      const start = i * partSize
-      const end = Math.min(start + partSize, file.size)
-      const chunk = file.slice(start, end)
-      const partNumber = i + 1
-      const uploadRes = await mediaApi.uploadPart(uploadId, partNumber, chunk, file.name)
-      parts.push({ partNumber, etag: uploadRes.data.etag })
-      uploadProgress.value = Math.round((partNumber / totalParts) * 90)
-      uploadStatusText.value = `上传分片 (${partNumber}/${totalParts})...`
+    const files = [...selectedFiles.value]
+    for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+      const file = files[fileIndex]
+      await uploadSingleFile(file, fileIndex, files.length)
+      selectedFiles.value = selectedFiles.value.filter(item => uploadFileKey(item) !== uploadFileKey(file))
     }
+    clearSelectedPreview()
 
-    uploadStatusText.value = '合并文件并触发处理...'
-    await mediaApi.completeUpload(uploadId, { parts })
     uploadProgress.value = 100
     uploadStep.value = 2
+    uploadCompleteText.value = `${files.length} 个文件已提交处理，处理成功后会进入“自行上传”来源`
     await Promise.all([load(), loadGroups(), loadMediaSources()])
   } catch (e) {
     message.error('上传失败：' + (e.response?.data?.message || e.message || '未知错误'))
@@ -1620,13 +1619,68 @@ async function startUpload() {
   }
 }
 
+async function uploadSingleFile(file, fileIndex, fileCount) {
+  const fileLabel = `(${fileIndex + 1}/${fileCount}) ${file.name}`
+  uploadStatusText.value = `初始化上传 ${fileLabel}...`
+
+  const initRes = await mediaApi.initUpload({
+    fileName: file.name,
+    fileSize: file.size,
+    contentType: file.type || 'application/octet-stream'
+  })
+  const { uploadId, partSize, totalParts } = initRes.data
+  const parts = []
+
+  uploadStatusText.value = `上传分片 ${fileLabel} (0/${totalParts})...`
+
+  for (let i = 0; i < totalParts; i++) {
+    const start = i * partSize
+    const end = Math.min(start + partSize, file.size)
+    const chunk = file.slice(start, end)
+    const partNumber = i + 1
+    const uploadRes = await mediaApi.uploadPart(uploadId, partNumber, chunk, file.name)
+    parts.push({ partNumber, etag: uploadRes.data.etag })
+
+    const currentFileProgress = (partNumber / totalParts) * 90
+    uploadProgress.value = Math.round(((fileIndex + currentFileProgress / 100) / fileCount) * 100)
+    uploadStatusText.value = `上传分片 ${fileLabel} (${partNumber}/${totalParts})...`
+  }
+
+  uploadStatusText.value = `合并文件并触发处理 ${fileLabel}...`
+  await mediaApi.completeUpload(uploadId, { parts })
+  uploadProgress.value = Math.round(((fileIndex + 1) / fileCount) * 100)
+}
+
 function resetUpload() {
   uploadStep.value = 0
-  selectedFile.value = null
-  selectedPreviewType.value = ''
-  clearSelectedPreview()
+  clearSelectedFiles()
   uploadProgress.value = 0
   uploadStatusText.value = ''
+  uploadCompleteText.value = ''
+}
+
+function removeSelectedFile(file) {
+  selectedFiles.value = selectedFiles.value.filter(item => uploadFileKey(item) !== uploadFileKey(file))
+  refreshSelectedPreview()
+}
+
+function clearSelectedFiles() {
+  selectedFiles.value = []
+  selectedPreviewType.value = ''
+  clearSelectedPreview()
+}
+
+function refreshSelectedPreview() {
+  clearSelectedPreview()
+  const file = selectedFiles.value[0]
+  if (!file) {
+    selectedPreviewType.value = ''
+    return
+  }
+  selectedPreviewType.value = detectMediaType(file.type)
+  if (selectedPreviewType.value === 'IMAGE' || selectedPreviewType.value === 'VIDEO' || selectedPreviewType.value === 'AUDIO') {
+    selectedPreviewUrl.value = URL.createObjectURL(file)
+  }
 }
 
 function clearSelectedPreview() {
@@ -1634,6 +1688,10 @@ function clearSelectedPreview() {
     URL.revokeObjectURL(selectedPreviewUrl.value)
     selectedPreviewUrl.value = ''
   }
+}
+
+function uploadFileKey(file) {
+  return file.uid || `${file.name}-${file.size}-${file.lastModified || 0}`
 }
 
 function detectMediaType(contentType) {

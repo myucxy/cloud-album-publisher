@@ -9,6 +9,11 @@ set PATH=%JAVA_HOME%\bin;%PATH%
 if not defined SPRING_PROFILES_ACTIVE set SPRING_PROFILES_ACTIVE=dev
 if not defined SERVER_PORT               set SERVER_PORT=8080
 if not defined JVM_OPTS                  set JVM_OPTS=-Xms256m -Xmx512m
+if not defined DB_HOST                   set DB_HOST=localhost
+if not defined DB_PORT                   set DB_PORT=3306
+if not defined DB_NAME                   set DB_NAME=cloud_album
+if not defined DB_USER                   set DB_USER=root
+if not defined DB_PASSWORD               set DB_PASSWORD=root
 
 :: ── 检查 JAR ────────────────────────────────────────────────────
 if not exist "%~dp0app.jar" (
@@ -33,7 +38,7 @@ echo  JVM     : %JVM_OPTS%
 echo ============================================================
 echo  访问地址 : http://localhost:%SERVER_PORT%
 echo  Swagger  : http://localhost:%SERVER_PORT%/swagger-ui.html
-echo  H2 控制台: http://localhost:%SERVER_PORT%/h2-console  (dev模式)
+echo  Database : MySQL (%DB_HOST%:%DB_PORT%/%DB_NAME%)
 echo  按 Ctrl+C 停止服务
 echo ============================================================
 echo.

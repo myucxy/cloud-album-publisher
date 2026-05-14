@@ -96,7 +96,7 @@
               <div class="card-title">设备列表</div>
               <div class="card-hint">{{ deviceListHint }}</div>
             </div>
-            <a-radio-group v-model:value="deviceFilter" size="small">
+            <a-radio-group v-model:value="deviceFilter" size="small" @change="onDeviceFilterChange">
               <a-radio-button value="ALL">全部</a-radio-button>
               <a-radio-button value="BOUND">已绑定</a-radio-button>
               <a-radio-button value="UNBOUND">未绑定</a-radio-button>
@@ -278,7 +278,7 @@ const statusFilteredDevices = computed(() => {
   return allDevices.value
 })
 const filteredDevices = computed(() => {
-  if (selectedGroupId.value === null) {
+  if (selectedGroupId.value === null || deviceFilter.value === 'UNBOUND') {
     return statusFilteredDevices.value
   }
   return statusFilteredDevices.value.filter(device => device.groupIds?.includes(selectedGroupId.value))
@@ -337,6 +337,12 @@ async function loadGroups() {
 
 function selectGroup(groupId) {
   selectedGroupId.value = selectedGroupId.value === groupId ? null : groupId
+}
+
+function onDeviceFilterChange(event) {
+  if (event?.target?.value === 'UNBOUND') {
+    selectedGroupId.value = null
+  }
 }
 
 function deviceFilterLabel(value) {
