@@ -23096,3 +23096,12 @@ node_modules/
 /android-client/.android-user-home/
 /android-client/.gradle-user-home/
 /android-client/.tools/
+
+# Local tools and reference files
+/adb/
+/yangli/
+/build_output.txt
+/application-h2.yml
+
+# Claude Code diagnostic pages
+/src/main/resources/static/__cc_*.html
