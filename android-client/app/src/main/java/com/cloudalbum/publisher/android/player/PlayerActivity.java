@@ -9,6 +9,10 @@ import android.animation.ValueAnimator;
 import android.app.ActivityManager;
 import android.content.Intent;
 import android.content.res.Configuration;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.graphics.Rect;
 import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
@@ -76,16 +80,18 @@ import java.text.SimpleDateFormat;
 
 public class PlayerActivity extends AppCompatActivity implements PullSyncCoordinator.Listener {
     private static final String TAG = "PlayerActivity";
-    private static final long TOKEN_POLL_INTERVAL_MS = 15000L;
+    private static final long TOKEN_POLL_BASE_MS = 15000L;
+    private static final long TOKEN_POLL_MAX_MS = 120000L;
+    private static final int TOKEN_MAX_RETRIES = 10;
     private static final long UPDATE_POLL_INTERVAL_MS = 60 * 1000L;
-    private static final long IMAGE_ADVANCE_RETRY_DELAY_MS = 300L;
-    private static final int IMAGE_ADVANCE_MAX_RETRY_COUNT = 10;
+    private static final long IMAGE_ADVANCE_RETRY_DELAY_MS = 200L;
+    private static final int IMAGE_ADVANCE_MAX_RETRY_COUNT = 8;
     private static final int DRAWER_FOCUS_TOP_EXTRA_DP = 96;
     private static final int DRAWER_HANDLE_SWIPE_THRESHOLD_DP = 36;
     private static final long IMAGE_TRANSITION_DURATION_MS = 650L;
     private static final int ADVANCED_IMAGE_POOL_SIZE = 19;
-    private static final long ADVANCED_READY_RETRY_DELAY_MS = 300L;
-    private static final int ADVANCED_READY_MAX_RETRIES = 20;
+    private static final long ADVANCED_READY_RETRY_DELAY_MS = 150L;
+    private static final int ADVANCED_READY_MAX_RETRIES = 15;
     private static final String[] RANDOM_IMAGE_TRANSITIONS = new String[] {"FADE", "SLIDE", "CUBE", "REVEAL", "FLIP"};
     private static final Set<String> ADVANCED_DISPLAY_STYLES = new HashSet<String>();
 
@@ -121,6 +127,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private static final String CACHE_TITLE = "\u5a92\u4f53\u7f13\u5b58";
     private static final String CACHE_ENABLE_LABEL = "\u542f\u7528\u672c\u5730\u7f13\u5b58";
     private static final String CACHE_CLEAR_LABEL = "\u6e05\u7406\u7f13\u5b58";
+    private static final String BRIGHTNESS_TITLE = "\u4eae\u5ea6\u8c03\u8282";
+    private static final String BRIGHTNESS_ENABLE_LABEL = "\u542f\u7528\u5b9a\u65f6\u4eae\u5ea6";
+    private static final String BRIGHTNESS_SUMMARY_ENABLED = "\u65f6\u6bb5\u5916\u81ea\u52a8\u964d\u4f4e\u4eae\u5ea6";
+    private static final String BRIGHTNESS_SUMMARY_DISABLED = "\u672a\u542f\u7528\u5b9a\u65f6\u4eae\u5ea6";
+    private static final long BRIGHTNESS_CHECK_INTERVAL_MS = 60000L;
     private static final String SYSTEM_CAPABILITY_TITLE = "\u7cfb\u7edf\u80fd\u529b";
     private static final String SYSTEM_CAPABILITY_CLOSE = "\u5173\u95ed";
     private static final String[] SYSTEM_CAPABILITY_MIME_TYPES = new String[] {
@@ -153,6 +164,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private final Handler tokenHandler = new Handler(Looper.getMainLooper());
     private final Handler updateHandler = new Handler(Looper.getMainLooper());
     private final Handler cacheHandler = new Handler(Looper.getMainLooper());
+    private final Handler brightnessHandler = new Handler(Looper.getMainLooper());
     private final Gson gson = new Gson();
     private final Rect drawerFocusRect = new Rect();
     private final Runnable imageAdvanceRunnable = new Runnable() {
@@ -186,8 +198,17 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             reapplyCachedPlaylist();
         }
     };
+    private final Runnable brightnessCheckRunnable = new Runnable() {
+        @Override
+        public void run() {
+            applyBrightness();
+            brightnessHandler.postDelayed(this, BRIGHTNESS_CHECK_INTERVAL_MS);
+        }
+    };
     private final Set<String> disabledDistributionIds = new HashSet<String>();
     private final Set<String> preloadedImageIdentities = new HashSet<String>();
+    private int tokenRetryCount = 0;
+    private ConnectivityManager.NetworkCallback networkCallback;
     private final List<View> drawerFocusableViews = new ArrayList<View>();
     private CloudAlbumRepository repository;
     private DeviceSessionRepository sessionRepository;
@@ -221,6 +242,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private TextView calendarMonthText;
     private TextView calendarDayText;
     private TextView calendarWeekdayText;
+    private TextView calendarLunarText;
     private LinearLayout timeOverlay;
     private TextView overlayTimeText;
     private TextView overlayDateText;
@@ -248,6 +270,12 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private Button systemCapabilityButton;
     private Button systemCapabilityCloseButton;
     private Button cacheClearButton;
+    private TextView brightnessTitleText;
+    private TextView brightnessSummaryText;
+    private CheckBox brightnessToggleCheckBox;
+    private Spinner brightnessStartSpinner;
+    private Spinner brightnessEndSpinner;
+    private Spinner brightnessDimSpinner;
     private ScrollView systemCapabilityScrollView;
 
     private String lastRenderedMediaIdentity = "";
@@ -317,6 +345,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         applyPlaybackRotation();
         updateDeviceSummary();
         updateStatus(getString(R.string.sync_status_idle));
+        registerNetworkCallback();
     }
 
     @Override
@@ -327,6 +356,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         if (sessionRepository.isActivated()) {
             waitingForBinding = false;
             pullSyncCoordinator.start();
+            startBrightnessCheck();
         } else {
             waitingForBinding = true;
             showWaitingForBinding();
@@ -342,6 +372,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         tokenHandler.removeCallbacks(tokenPollRunnable);
         updateHandler.removeCallbacks(updatePollRunnable);
         cacheHandler.removeCallbacks(cacheRefreshRunnable);
+        brightnessHandler.removeCallbacks(brightnessCheckRunnable);
         if (contentPlayer != null) {
             contentPlayer.pause();
         }
@@ -354,9 +385,14 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     protected void onDestroy() {
         super.onDestroy();
         clearScheduledTasks();
-        tokenHandler.removeCallbacks(tokenPollRunnable);
-        updateHandler.removeCallbacks(updatePollRunnable);
-        cacheHandler.removeCallbacks(cacheRefreshRunnable);
+        imageHandler.removeCallbacksAndMessages(null);
+        errorHandler.removeCallbacksAndMessages(null);
+        tokenHandler.removeCallbacksAndMessages(null);
+        updateHandler.removeCallbacksAndMessages(null);
+        cacheHandler.removeCallbacksAndMessages(null);
+        brightnessHandler.removeCallbacksAndMessages(null);
+        unregisterNetworkCallback();
+        pullSyncCoordinator.shutdown();
         releasePlayers();
         if (mediaCacheManager != null) {
             mediaCacheManager.shutdown();
@@ -440,6 +476,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         calendarMonthText = findViewById(R.id.calendarMonthText);
         calendarDayText = findViewById(R.id.calendarDayText);
         calendarWeekdayText = findViewById(R.id.calendarWeekdayText);
+        calendarLunarText = findViewById(R.id.calendarLunarText);
         timeOverlay = findViewById(R.id.timeOverlay);
         overlayTimeText = findViewById(R.id.overlayTimeText);
         overlayDateText = findViewById(R.id.overlayDateText);
@@ -474,6 +511,12 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         systemCapabilityButton = findViewById(R.id.systemCapabilityButton);
         systemCapabilityCloseButton = findViewById(R.id.systemCapabilityCloseButton);
         cacheClearButton = findViewById(R.id.cacheClearButton);
+        brightnessTitleText = findViewById(R.id.brightnessTitleText);
+        brightnessSummaryText = findViewById(R.id.brightnessSummaryText);
+        brightnessToggleCheckBox = findViewById(R.id.brightnessToggleCheckBox);
+        brightnessStartSpinner = findViewById(R.id.brightnessStartSpinner);
+        brightnessEndSpinner = findViewById(R.id.brightnessEndSpinner);
+        brightnessDimSpinner = findViewById(R.id.brightnessDimSpinner);
     }
 
     private void loadPlaybackSelection() {
@@ -502,6 +545,14 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         cacheClearButton.setText(CACHE_CLEAR_LABEL);
         rebuildCacheLimitOptions();
         updateCacheSummary();
+        brightnessTitleText.setText(BRIGHTNESS_TITLE);
+        brightnessToggleCheckBox.setText(BRIGHTNESS_ENABLE_LABEL);
+        brightnessToggleCheckBox.setChecked(sessionRepository.isBrightnessScheduleEnabled());
+        applyDrawerOptionStyle(brightnessToggleCheckBox);
+        rebuildBrightnessHourOptions(brightnessStartSpinner, sessionRepository.getBrightnessStartHour());
+        rebuildBrightnessHourOptions(brightnessEndSpinner, sessionRepository.getBrightnessEndHour());
+        rebuildBrightnessDimOptions();
+        updateBrightnessSummary();
         playbackSelectionTitleText.setText(PLAYBACK_SELECTION_TITLE);
         showPlaybackSelectionMessage(PLAYBACK_SELECTION_WAITING);
         appUpdateTitleText.setText(APP_UPDATE_TITLE);
@@ -585,6 +636,45 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                     cacheHandler.post(cacheRefreshRunnable);
                 }
             }
+        });
+        brightnessToggleCheckBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                sessionRepository.saveBrightnessScheduleEnabled(isChecked);
+                updateBrightnessSummary();
+                applyBrightness();
+            }
+        });
+        brightnessStartSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (bindingSpinners) return;
+                sessionRepository.saveBrightnessStartHour(position);
+                applyBrightness();
+            }
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {}
+        });
+        brightnessEndSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (bindingSpinners) return;
+                sessionRepository.saveBrightnessEndHour(position);
+                applyBrightness();
+            }
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {}
+        });
+        brightnessDimSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (bindingSpinners) return;
+                int[] levels = new int[] {5, 10, 15, 20, 30, 50};
+                sessionRepository.saveBrightnessDimLevel(levels[position]);
+                applyBrightness();
+            }
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {}
         });
         systemCapabilityButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -683,6 +773,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 errorHandler.postDelayed(new Runnable() {
                     @Override
                     public void run() {
+                        if (isFinishing()) return;
                         playbackEngine.nextMedia();
                         renderPlayback();
                     }
@@ -713,6 +804,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 errorHandler.postDelayed(new Runnable() {
                     @Override
                     public void run() {
+                        if (isFinishing()) return;
                         playbackEngine.nextBgm();
                         renderBgm();
                     }
@@ -758,6 +850,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
+                            if (isFinishing() || isDestroyed()) return;
+                            tokenRetryCount = 0;
                             waitingForBinding = false;
                             updateDeviceSummary();
                             updateStatus(getString(R.string.sync_status_ready));
@@ -769,16 +863,31 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                         }
                     });
                 } catch (final Throwable error) {
-                    Log.e(TAG, "acquire token failed", error);
+                    Log.e(TAG, "acquire token failed (attempt " + (tokenRetryCount + 1) + "/" + TOKEN_MAX_RETRIES + ")", error);
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
+                            if (isFinishing() || isDestroyed()) return;
                             waitingForBinding = true;
                             showWaitingForBinding();
-                            updateStatus(error.getMessage() == null || error.getMessage().trim().isEmpty()
+                            tokenRetryCount += 1;
+                            if (tokenRetryCount >= TOKEN_MAX_RETRIES) {
+                                updateStatus("连接服务器失败，点击重试");
+                                emptyStateText.setOnClickListener(new View.OnClickListener() {
+                                    @Override
+                                    public void onClick(View v) {
+                                        tokenRetryCount = 0;
+                                        attemptAcquireToken(false);
+                                    }
+                                });
+                                return;
+                            }
+                            String errorMsg = error.getMessage() == null || error.getMessage().trim().isEmpty()
                                     ? WAITING_FOR_BINDING_STATUS
-                                    : error.getMessage());
-                            tokenHandler.postDelayed(tokenPollRunnable, TOKEN_POLL_INTERVAL_MS);
+                                    : error.getMessage();
+                            updateStatus(errorMsg + " (重试 " + tokenRetryCount + "/" + TOKEN_MAX_RETRIES + ")");
+                            long delay = Math.min(TOKEN_POLL_BASE_MS * (1L << Math.min(tokenRetryCount - 1, 4)), TOKEN_POLL_MAX_MS);
+                            tokenHandler.postDelayed(tokenPollRunnable, delay);
                         }
                     });
                 }
@@ -790,14 +899,71 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         deviceSummaryText.setText(sessionRepository.getDeviceName() + " / " + sessionRepository.getDeviceModel());
     }
 
+    private void registerNetworkCallback() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return;
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        if (cm == null) return;
+        networkCallback = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(Network network) {
+                Log.i(TAG, "Network available, triggering immediate pull");
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (isFinishing() || isDestroyed()) return;
+                        if (sessionRepository.isActivated() && !waitingForBinding) {
+                            pullSyncCoordinator.refreshNow();
+                        } else if (waitingForBinding) {
+                            tokenRetryCount = 0;
+                            attemptAcquireToken(false);
+                        }
+                    }
+                });
+            }
+        };
+        NetworkRequest request = new NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build();
+        cm.registerNetworkCallback(request, networkCallback);
+    }
+
+    private void unregisterNetworkCallback() {
+        if (networkCallback == null) return;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return;
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        if (cm != null) {
+            try {
+                cm.unregisterNetworkCallback(networkCallback);
+            } catch (Exception ignored) {
+            }
+        }
+        networkCallback = null;
+    }
+
     @Override
-    public void onPullSuccess(DevicePullResponse response) {
-        remotePullResponse = clonePullResponse(response);
-        response = mediaCacheManager == null ? response : mediaCacheManager.applyLocalCache(response);
-        applyPlaybackResponse(response, true);
-        updateStatus(getString(R.string.sync_status_ready) + " / "
-                + (playbackEngine.getPulledAt().isEmpty() ? getString(R.string.unknown_value) : playbackEngine.getPulledAt()));
-        updateCacheSummary();
+    public void onPullSuccess(final DevicePullResponse response) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final DevicePullResponse cloned = clonePullResponse(response);
+                    final DevicePullResponse cached = mediaCacheManager == null ? response : mediaCacheManager.applyLocalCache(response);
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (isFinishing() || isDestroyed()) return;
+                            remotePullResponse = cloned;
+                            applyPlaybackResponse(cached, true);
+                            updateStatus(getString(R.string.sync_status_ready) + " / "
+                                    + (playbackEngine.getPulledAt().isEmpty() ? getString(R.string.unknown_value) : playbackEngine.getPulledAt()));
+                            updateCacheSummary();
+                        }
+                    });
+                } catch (Exception e) {
+                    Log.e(TAG, "onPullSuccess processing failed", e);
+                }
+            }
+        }).start();
     }
 
     private void reapplyCachedPlaylist() {
@@ -868,6 +1034,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void renderPlayback() {
+        if (isFinishing() || isDestroyed()) return;
         DevicePullResponse.DistributionItem distribution = playbackEngine.getCurrentDistribution();
         DevicePullResponse.MediaItem media = playbackEngine.getCurrentMedia();
 
@@ -959,9 +1126,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                         .setUri(Uri.parse(media.getUrl()))
                         .setMimeType(media.getContentType())
                         .build();
-                contentPlayer.setMediaItem(mediaItem, true);
-                contentPlayer.prepare();
-                contentPlayer.play();
+                if (contentPlayer != null) {
+                    contentPlayer.setMediaItem(mediaItem, true);
+                    contentPlayer.prepare();
+                    contentPlayer.play();
+                }
             }
         } else if ("IMAGE".equalsIgnoreCase(media.getMediaType())) {
             imageHandler.removeCallbacks(imageAdvanceRunnable);
@@ -969,7 +1138,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 preloadNextImage();
             }
             imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
-        } else if (!contentPlayer.isPlaying()) {
+        } else if (contentPlayer != null && !contentPlayer.isPlaying()) {
             contentPlayer.play();
         }
 
@@ -1010,6 +1179,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         loadPlaybackImage(targetStage, media, new AuthenticatedImageLoader.Callback() {
             @Override
             public void onSuccess() {
+                if (isFinishing()) return;
                 if (!mediaIdentity.equals(lastRenderedMediaIdentity)) {
                     return;
                 }
@@ -1027,6 +1197,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
             @Override
             public void onFailure() {
+                if (isFinishing()) return;
                 if (!mediaIdentity.equals(lastRenderedMediaIdentity)) {
                     return;
                 }
@@ -1034,6 +1205,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 errorHandler.postDelayed(new Runnable() {
                     @Override
                     public void run() {
+                        if (isFinishing()) return;
                         playbackEngine.nextMedia();
                         renderPlayback();
                     }
@@ -1132,7 +1304,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         int height = getContainerHeight(calendarStage);
         boolean portrait = height > width;
         if (portrait) {
-            int imageHeight = Math.round(height * 0.67f);
+            int imageHeight = Math.round(height * 0.55f);
             int infoHeight = Math.max(1, height - imageHeight);
             FrameLayout.LayoutParams imageParams = new FrameLayout.LayoutParams(width, imageHeight);
             imageParams.leftMargin = 0;
@@ -1143,8 +1315,9 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             infoParams.topMargin = imageHeight;
             calendarInfoPanel.setLayoutParams(infoParams);
             int horizontalPadding = Math.max(dp(18), Math.round(width * 0.06f));
-            int verticalPadding = Math.max(dp(8), Math.round(infoHeight * 0.08f));
+            int verticalPadding = Math.max(dp(8), Math.round(infoHeight * 0.05f));
             calendarInfoPanel.setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding);
+            setCalendarTextSizes(18f, 56f, 24f, 16f);
             return;
         }
         int imageWidth = Math.round(width * 0.67f);
@@ -1160,6 +1333,14 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         int horizontalPadding = Math.max(dp(12), Math.round(infoWidth * 0.08f));
         int verticalPadding = Math.max(dp(8), Math.round(height * 0.03f));
         calendarInfoPanel.setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding);
+        setCalendarTextSizes(24f, 96f, 36f, 20f);
+    }
+
+    private void setCalendarTextSizes(float weekdaySp, float daySp, float monthSp, float lunarSp) {
+        if (calendarWeekdayText != null) calendarWeekdayText.setTextSize(weekdaySp);
+        if (calendarDayText != null) calendarDayText.setTextSize(daySp);
+        if (calendarMonthText != null) calendarMonthText.setTextSize(monthSp);
+        if (calendarLunarText != null) calendarLunarText.setTextSize(lunarSp);
     }
 
     private void updateTimeOverlayVisibility() {
@@ -1181,13 +1362,15 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         Calendar calendar = Calendar.getInstance();
         Locale locale = Locale.getDefault();
         String time = new SimpleDateFormat("HH:mm", locale).format(calendar.getTime());
-        String month = String.valueOf(calendar.get(Calendar.MONTH) + 1) + " / " + calendar.get(Calendar.YEAR);
+        String month = calendar.get(Calendar.YEAR) + "\u5e74" + (calendar.get(Calendar.MONTH) + 1) + "\u6708";
         String day = String.valueOf(calendar.get(Calendar.DAY_OF_MONTH));
         String weekday = formatCalendarWeekday(calendar);
+        String lunar = LunarCalendar.formatLunar(calendar);
         String date = new SimpleDateFormat("yyyy/MM/dd", locale).format(calendar.getTime()) + " " + weekday;
         if (calendarMonthText != null) calendarMonthText.setText(month);
         if (calendarDayText != null) calendarDayText.setText(day);
         if (calendarWeekdayText != null) calendarWeekdayText.setText(weekday);
+        if (calendarLunarText != null) calendarLunarText.setText(lunar);
         if (overlayTimeText != null) overlayTimeText.setText(time);
         if (overlayDateText != null) overlayDateText.setText(date);
     }
@@ -1610,6 +1793,15 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         }
     }
 
+    private void prefetchUpcomingImages(List<DevicePullResponse.MediaItem> imageItems, int startIndex, int count) {
+        for (int i = 0; i < count; i += 1) {
+            DevicePullResponse.MediaItem item = imageItems.get((startIndex + i) % imageItems.size());
+            if (item != null) {
+                AuthenticatedImageLoader.preload(imageStage, item.getUrl(), sessionRepository);
+            }
+        }
+    }
+
     private String resolveDisplayStyle(String displayStyle, String transitionStyle) {
         String normalizedDisplay = normalizeStyle(displayStyle);
         if ("CALENDAR".equals(normalizedDisplay)) {
@@ -1882,6 +2074,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         final ImageView imageView = bentoImageViews.get(slotIndex);
         final DevicePullResponse.MediaItem nextMedia = imageItems.get(bentoNextSourceIndex % imageItems.size());
         bentoNextSourceIndex = (bentoNextSourceIndex + 1) % imageItems.size();
+        prefetchUpcomingImages(imageItems, bentoNextSourceIndex, Math.min(4, imageItems.size()));
         animateReplaceAdvancedImage(imageView, nextMedia);
     }
 
@@ -1890,13 +2083,16 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         if (imageItems.isEmpty() || frameWallImageViews.isEmpty()) {
             return;
         }
+        prefetchUpcomingImages(imageItems, frameWallNextSourceIndex, Math.min(3, imageItems.size()));
         int replaceCount = Math.max(1, frameWallImageViews.size() / 10 + 1);
         for (int i = 0; i < replaceCount; i += 1) {
             final int delay = i * 800;
             imageHandler.postDelayed(new Runnable() {
                 @Override
                 public void run() {
+                    if (isFinishing() || frameWallImageViews.isEmpty()) return;
                     int slotIndex = pickNextFrameWallSlot(frameWallImageViews.size());
+                    if (slotIndex >= frameWallImageViews.size()) return;
                     final ImageView imageView = frameWallImageViews.get(slotIndex);
                     final DevicePullResponse.MediaItem nextMedia = imageItems.get(frameWallNextSourceIndex % imageItems.size());
                     frameWallNextSourceIndex = (frameWallNextSourceIndex + 1) % imageItems.size();
@@ -1912,9 +2108,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             imageView.animate().rotationX(90f).alpha(0.35f).setDuration(IMAGE_TRANSITION_DURATION_MS / 2).withEndAction(new Runnable() {
                 @Override
                 public void run() {
+                    if (isFinishing()) return;
                     loadPlaybackImage(imageView, nextMedia, new AuthenticatedImageLoader.Callback() {
                         @Override
                         public void onSuccess() {
+                            if (isFinishing()) return;
                             imageView.setRotationX(-90f);
                             imageView.setAlpha(0.35f);
                             imageView.animate().rotationX(0f).alpha(1f).setDuration(IMAGE_TRANSITION_DURATION_MS / 2).start();
@@ -1922,6 +2120,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
                         @Override
                         public void onFailure() {
+                            if (isFinishing()) return;
                             imageView.animate().rotationX(0f).alpha(1f).setDuration(IMAGE_TRANSITION_DURATION_MS / 2).start();
                         }
                     });
@@ -1932,9 +2131,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         imageView.animate().rotationY(90f).alpha(0.35f).setDuration(IMAGE_TRANSITION_DURATION_MS / 2).withEndAction(new Runnable() {
             @Override
             public void run() {
+                if (isFinishing()) return;
                 loadPlaybackImage(imageView, nextMedia, new AuthenticatedImageLoader.Callback() {
                     @Override
                     public void onSuccess() {
+                        if (isFinishing()) return;
                         imageView.setRotationY(-90f);
                         imageView.setAlpha(0.35f);
                         imageView.animate().rotationY(0f).alpha(1f).setDuration(IMAGE_TRANSITION_DURATION_MS / 2).start();
@@ -1942,6 +2143,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
                     @Override
                     public void onFailure() {
+                        if (isFinishing()) return;
                         imageView.animate().rotationY(0f).alpha(1f).setDuration(IMAGE_TRANSITION_DURATION_MS / 2).start();
                     }
                 });
@@ -1974,6 +2176,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void renderBgm() {
+        if (bgmPlayer == null) return;
         String bgmUrl = playbackEngine.getCurrentBgmUrl();
         DevicePullResponse.MediaItem currentMedia = playbackEngine.getCurrentMedia();
         if (bgmUrl == null || bgmUrl.trim().isEmpty()) {
@@ -2197,6 +2400,91 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         sessionRepository.savePlaybackMuted(muted);
         updateMuteSummary();
         applyPlaybackMutedState();
+    }
+
+    private void startBrightnessCheck() {
+        brightnessHandler.removeCallbacks(brightnessCheckRunnable);
+        applyBrightness();
+        brightnessHandler.postDelayed(brightnessCheckRunnable, BRIGHTNESS_CHECK_INTERVAL_MS);
+    }
+
+    private void applyBrightness() {
+        boolean enabled = sessionRepository.isBrightnessScheduleEnabled();
+        if (!enabled) {
+            setScreenBrightness(1.0f);
+            return;
+        }
+        int startHour = sessionRepository.getBrightnessStartHour();
+        int endHour = sessionRepository.getBrightnessEndHour();
+        int currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+        boolean inBrightPeriod;
+        if (startHour <= endHour) {
+            inBrightPeriod = currentHour >= startHour && currentHour < endHour;
+        } else {
+            inBrightPeriod = currentHour >= startHour || currentHour < endHour;
+        }
+        if (inBrightPeriod) {
+            setScreenBrightness(1.0f);
+        } else {
+            int dimLevel = sessionRepository.getBrightnessDimLevel();
+            setScreenBrightness(dimLevel / 100f);
+        }
+    }
+
+    private void setScreenBrightness(float brightness) {
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        if (Math.abs(lp.screenBrightness - brightness) < 0.01f) {
+            return;
+        }
+        lp.screenBrightness = brightness;
+        getWindow().setAttributes(lp);
+    }
+
+    private void rebuildBrightnessHourOptions(Spinner spinner, int selectedHour) {
+        bindingSpinners = true;
+        String[] hours = new String[24];
+        for (int i = 0; i < 24; i++) {
+            hours[i] = String.format(Locale.getDefault(), "%02d:00", i);
+        }
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(this,
+                android.R.layout.simple_spinner_item, hours);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        spinner.setSelection(selectedHour);
+        bindingSpinners = false;
+    }
+
+    private void rebuildBrightnessDimOptions() {
+        bindingSpinners = true;
+        String[] labels = new String[] {"5%", "10%", "15%", "20%", "30%", "50%"};
+        int[] levels = new int[] {5, 10, 15, 20, 30, 50};
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(this,
+                android.R.layout.simple_spinner_item, labels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        brightnessDimSpinner.setAdapter(adapter);
+        int current = sessionRepository.getBrightnessDimLevel();
+        int selectedIndex = 2;
+        for (int i = 0; i < levels.length; i++) {
+            if (levels[i] == current) {
+                selectedIndex = i;
+                break;
+            }
+        }
+        brightnessDimSpinner.setSelection(selectedIndex);
+        bindingSpinners = false;
+    }
+
+    private void updateBrightnessSummary() {
+        if (sessionRepository.isBrightnessScheduleEnabled()) {
+            int start = sessionRepository.getBrightnessStartHour();
+            int end = sessionRepository.getBrightnessEndHour();
+            int dim = sessionRepository.getBrightnessDimLevel();
+            brightnessSummaryText.setText(String.format(Locale.getDefault(),
+                    "%s %02d:00-%02d:00, \u964d\u81f3%d%%",
+                    BRIGHTNESS_SUMMARY_ENABLED, start, end, dim));
+        } else {
+            brightnessSummaryText.setText(BRIGHTNESS_SUMMARY_DISABLED);
+        }
     }
 
     private void updateMuteSummary() {
@@ -2689,6 +2977,10 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         addDrawerFocusableView(cacheToggleCheckBox);
         addDrawerFocusableView(cacheLimitSpinner);
         addDrawerFocusableView(cacheClearButton);
+        addDrawerFocusableView(brightnessToggleCheckBox);
+        addDrawerFocusableView(brightnessStartSpinner);
+        addDrawerFocusableView(brightnessEndSpinner);
+        addDrawerFocusableView(brightnessDimSpinner);
         collectFocusableChildren(playbackSelectionContainer);
         addDrawerFocusableView(systemCapabilityButton);
 

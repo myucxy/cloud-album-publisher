@@ -8,8 +8,8 @@
     "releaseNotes": "优化"
   },
   "android": {
-    "version": "0.3.33",
-    "versionCode": 35,
+    "version": "0.3.39",
+    "versionCode": 41,
     "variant": "debug",
     "forceUpdate": true,
     "releaseNotes": "增加客户端更新检查。"

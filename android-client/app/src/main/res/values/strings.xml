@@ -50,4 +50,11 @@
     <string name="setup_status_success">保存成功，设备已注册到后台</string>
     <string name="setup_status_failed">保存失败</string>
     <string name="setup_status_detail_prefix">详细信息：</string>
+    <string name="brightness_title">亮度调节</string>
+    <string name="brightness_enable_label">启用定时亮度</string>
+    <string name="brightness_start_label">亮屏开始</string>
+    <string name="brightness_end_label">亮屏结束</string>
+    <string name="brightness_dim_label">非时段亮度</string>
+    <string name="brightness_summary_enabled">时段外自动降低亮度</string>
+    <string name="brightness_summary_disabled">未启用定时亮度</string>
 </resources>

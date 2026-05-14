@@ -40,11 +40,13 @@ public class AuthenticatedImageLoader {
     public static void load(ImageView imageView, String url, DeviceSessionRepository repository, final Callback callback) {
         if (url == null || url.trim().isEmpty()) {
             imageView.setImageDrawable(null);
+            imageView.setTag(null);
             if (callback != null) {
                 callback.onFailure();
             }
             return;
         }
+        imageView.setTag(url);
         Drawable currentDrawable = imageView.getDrawable();
         buildRequest(imageView, url, repository)
                 .placeholder(currentDrawable)

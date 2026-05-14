@@ -23,6 +23,10 @@ public class DeviceSessionRepository {
     private static final String KEY_PLAYBACK_MUTED = "playback_muted";
     private static final String KEY_MEDIA_CACHE_ENABLED = "media_cache_enabled";
     private static final String KEY_MEDIA_CACHE_LIMIT_MB = "media_cache_limit_mb";
+    private static final String KEY_BRIGHTNESS_ENABLED = "brightness_enabled";
+    private static final String KEY_BRIGHTNESS_START_HOUR = "brightness_start_hour";
+    private static final String KEY_BRIGHTNESS_END_HOUR = "brightness_end_hour";
+    private static final String KEY_BRIGHTNESS_DIM_LEVEL = "brightness_dim_level";
 
     public static final int DEFAULT_MEDIA_CACHE_LIMIT_MB = 2048;
 
@@ -161,6 +165,41 @@ public class DeviceSessionRepository {
 
     public void saveMediaCacheLimitMb(int limitMb) {
         preferences.edit().putInt(KEY_MEDIA_CACHE_LIMIT_MB, normalizeMediaCacheLimitMb(limitMb)).apply();
+    }
+
+    public boolean isBrightnessScheduleEnabled() {
+        return preferences.getBoolean(KEY_BRIGHTNESS_ENABLED, false);
+    }
+
+    public void saveBrightnessScheduleEnabled(boolean enabled) {
+        preferences.edit().putBoolean(KEY_BRIGHTNESS_ENABLED, enabled).apply();
+    }
+
+    public int getBrightnessStartHour() {
+        int hour = preferences.getInt(KEY_BRIGHTNESS_START_HOUR, 7);
+        return hour >= 0 && hour <= 23 ? hour : 7;
+    }
+
+    public void saveBrightnessStartHour(int hour) {
+        preferences.edit().putInt(KEY_BRIGHTNESS_START_HOUR, Math.max(0, Math.min(23, hour))).apply();
+    }
+
+    public int getBrightnessEndHour() {
+        int hour = preferences.getInt(KEY_BRIGHTNESS_END_HOUR, 22);
+        return hour >= 0 && hour <= 23 ? hour : 22;
+    }
+
+    public void saveBrightnessEndHour(int hour) {
+        preferences.edit().putInt(KEY_BRIGHTNESS_END_HOUR, Math.max(0, Math.min(23, hour))).apply();
+    }
+
+    public int getBrightnessDimLevel() {
+        int level = preferences.getInt(KEY_BRIGHTNESS_DIM_LEVEL, 15);
+        return level >= 0 && level <= 100 ? level : 15;
+    }
+
+    public void saveBrightnessDimLevel(int level) {
+        preferences.edit().putInt(KEY_BRIGHTNESS_DIM_LEVEL, Math.max(0, Math.min(100, level))).apply();
     }
 
     public String getDefaultDeviceName() {

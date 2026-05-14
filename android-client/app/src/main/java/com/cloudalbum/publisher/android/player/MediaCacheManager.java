@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class MediaCacheManager {
     private static final String TAG = "MediaCacheManager";
@@ -34,13 +35,18 @@ public class MediaCacheManager {
 
     private final Context appContext;
     private final DeviceSessionRepository sessionRepository;
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private static final int DOWNLOAD_THREAD_COUNT = 3;
+    private static final int MAX_DOWNLOAD_RETRIES = 3;
+    private static final long DOWNLOAD_RETRY_BASE_MS = 2000L;
+
+    private final ExecutorService executor = Executors.newFixedThreadPool(DOWNLOAD_THREAD_COUNT);
     private final File cacheDir;
     private final Set<String> downloadingKeys = new HashSet<String>();
     private final Map<String, String> remoteUrlByLocalUrl = new ConcurrentHashMap<String, String>();
+    private final Map<String, Integer> downloadRetryCount = new ConcurrentHashMap<String, Integer>();
     private Listener listener;
-    private volatile int pendingDownloads = 0;
-    private volatile int failedDownloads = 0;
+    private final AtomicInteger pendingDownloads = new AtomicInteger(0);
+    private final AtomicInteger failedDownloads = new AtomicInteger(0);
 
     public MediaCacheManager(Context context, DeviceSessionRepository sessionRepository) {
         this.appContext = context.getApplicationContext();
@@ -105,11 +111,11 @@ public class MediaCacheManager {
     }
 
     public int getPendingDownloads() {
-        return pendingDownloads;
+        return pendingDownloads.get();
     }
 
     public int getFailedDownloads() {
-        return failedDownloads;
+        return failedDownloads.get();
     }
 
     public boolean isLocalCacheUrl(String url) {
@@ -150,7 +156,8 @@ public class MediaCacheManager {
     public void clearCache() {
         deleteChildren(cacheDir);
         remoteUrlByLocalUrl.clear();
-        failedDownloads = 0;
+        downloadRetryCount.clear();
+        failedDownloads.set(0);
         notifyChanged();
     }
 
@@ -170,6 +177,7 @@ public class MediaCacheManager {
     }
 
     private void enqueueDownload(final String remoteUrl, final File localFile) {
+        if (executor.isShutdown()) return;
         if (localFile.exists() && localFile.length() > 0) {
             return;
         }
@@ -179,27 +187,55 @@ public class MediaCacheManager {
             }
             downloadingKeys.add(localFile.getName());
         }
-        pendingDownloads += 1;
+        pendingDownloads.incrementAndGet();
         notifyChanged();
-        executor.execute(new Runnable() {
-            @Override
-            public void run() {
-                boolean success = false;
-                try {
-                    download(remoteUrl, localFile);
-                    success = true;
-                } catch (Exception e) {
-                    failedDownloads += 1;
-                    Log.w(TAG, "Download cache failed: " + localFile.getName() + " from " + remoteUrl, e);
-                } finally {
-                    synchronized (downloadingKeys) {
-                        downloadingKeys.remove(localFile.getName());
+        try {
+            executor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    boolean shouldRetry = false;
+                    try {
+                        download(remoteUrl, localFile);
+                        downloadRetryCount.remove(localFile.getName());
+                    } catch (Exception e) {
+                        int retries = downloadRetryCount.containsKey(localFile.getName())
+                                ? downloadRetryCount.get(localFile.getName()) : 0;
+                        if (retries < MAX_DOWNLOAD_RETRIES) {
+                            downloadRetryCount.put(localFile.getName(), retries + 1);
+                            long delay = DOWNLOAD_RETRY_BASE_MS * (1L << retries);
+                            Log.w(TAG, "Download failed, retry " + (retries + 1) + "/" + MAX_DOWNLOAD_RETRIES
+                                    + " in " + delay + "ms: " + localFile.getName(), e);
+                            shouldRetry = true;
+                            try {
+                                Thread.sleep(delay);
+                            } catch (InterruptedException ie) {
+                                Thread.currentThread().interrupt();
+                            }
+                        } else {
+                            downloadRetryCount.remove(localFile.getName());
+                            failedDownloads.incrementAndGet();
+                            Log.w(TAG, "Download cache failed after " + MAX_DOWNLOAD_RETRIES + " retries: "
+                                    + localFile.getName() + " from " + remoteUrl, e);
+                        }
+                    } finally {
+                        synchronized (downloadingKeys) {
+                            downloadingKeys.remove(localFile.getName());
+                        }
+                        pendingDownloads.decrementAndGet();
+                        notifyChanged();
                     }
-                    pendingDownloads = Math.max(0, pendingDownloads - 1);
-                    notifyChanged();
+                    if (shouldRetry) {
+                        enqueueDownload(remoteUrl, localFile);
+                    }
                 }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            synchronized (downloadingKeys) {
+                downloadingKeys.remove(localFile.getName());
             }
-        });
+            pendingDownloads.decrementAndGet();
+            Log.w(TAG, "Executor shutdown, skipping download: " + localFile.getName());
+        }
     }
 
     private void download(String remoteUrl, File localFile) throws IOException {

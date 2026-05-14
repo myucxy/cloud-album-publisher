@@ -121,6 +121,14 @@
                     android:layout_height="wrap_content"
                     android:textColor="@color/ca_text_secondary"
                     android:textSize="36sp" />
+
+                <TextView
+                    android:id="@+id/calendarLunarText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:textColor="@color/ca_text_secondary"
+                    android:textSize="20sp" />
             </LinearLayout>
         </FrameLayout>
 
@@ -391,6 +399,110 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
                     android:text="清理缓存" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/brightnessPanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:background="@drawable/bg_panel"
+                android:orientation="vertical"
+                android:padding="@dimen/panel_padding">
+
+                <TextView
+                    android:id="@+id/brightnessTitleText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/ca_text_primary"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/brightnessSummaryText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:textColor="@color/ca_text_secondary"
+                    android:textSize="14sp" />
+
+                <CheckBox
+                    android:id="@+id/brightnessToggleCheckBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/brightness_start_label"
+                        android:textColor="@color/ca_text_secondary"
+                        android:textSize="14sp" />
+
+                    <Spinner
+                        android:id="@+id/brightnessStartSpinner"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:focusable="true"
+                        android:focusableInTouchMode="false" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/brightness_end_label"
+                        android:textColor="@color/ca_text_secondary"
+                        android:textSize="14sp" />
+
+                    <Spinner
+                        android:id="@+id/brightnessEndSpinner"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:focusable="true"
+                        android:focusableInTouchMode="false" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/brightness_dim_label"
+                        android:textColor="@color/ca_text_secondary"
+                        android:textSize="14sp" />
+
+                    <Spinner
+                        android:id="@+id/brightnessDimSpinner"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:focusable="true"
+                        android:focusableInTouchMode="false" />
+                </LinearLayout>
             </LinearLayout>
 
             <LinearLayout
