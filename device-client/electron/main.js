@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, powerSaveBlocker, screen, shell } from 'electron'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import { promises as fsPromises } from 'node:fs'
@@ -13,6 +13,7 @@ const { machineId } = machineIdModule
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const rendererUrl = process.env.DEVICE_CLIENT_RENDERER_URL
+let powerSaveBlockerId = null
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
@@ -43,6 +44,39 @@ async function openExternalUrl(url) {
     throw new Error('Unsupported external URL')
   }
   await shell.openExternal(target.toString())
+}
+
+function getSystemInfo() {
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const displays = screen.getAllDisplays()
+  const totalMemory = os.totalmem()
+  const freeMemory = os.freemem()
+
+  return {
+    appVersion: app.getVersion(),
+    platform: os.platform(),
+    release: os.release(),
+    arch: os.arch(),
+    hostname: os.hostname(),
+    cpuModel: os.cpus()?.[0]?.model || '',
+    cpuCount: os.cpus()?.length || 0,
+    totalMemory,
+    freeMemory,
+    displayCount: displays.length,
+    primaryDisplay: {
+      width: primaryDisplay.size.width,
+      height: primaryDisplay.size.height,
+      scaleFactor: primaryDisplay.scaleFactor,
+      rotation: primaryDisplay.rotation
+    }
+  }
+}
+
+function startDisplayPowerSaveBlocker() {
+  if (powerSaveBlockerId !== null && powerSaveBlocker.isStarted(powerSaveBlockerId)) {
+    return
+  }
+  powerSaveBlockerId = powerSaveBlocker.start('prevent-display-sleep')
 }
 
 async function downloadAndInstallUpdate(update) {
@@ -167,8 +201,10 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  startDisplayPowerSaveBlocker()
   ipcMain.handle('device:get-identity', getDeviceIdentity)
   ipcMain.handle('app:get-version', () => app.getVersion())
+  ipcMain.handle('app:get-system-info', () => getSystemInfo())
   ipcMain.handle('app:open-external', (_event, url) => openExternalUrl(url))
   ipcMain.handle('app:download-update', (_event, update) => downloadAndInstallUpdate(update))
   ipcMain.handle('app:set-fullscreen', event => {

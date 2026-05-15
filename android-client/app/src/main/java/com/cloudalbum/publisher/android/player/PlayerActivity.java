@@ -300,9 +300,12 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private final List<ImageView> frameWallImageViews = new ArrayList<ImageView>();
     private int bentoNextSourceIndex = 0;
     private int bentoPreviousSlotIndex = -1;
+    private int bentoPreviousSlotIndex2 = -1;
     private int frameWallNextSourceIndex = 0;
     private int frameWallPreviousSlotIndex = -1;
     private int carouselActiveSourceIndex = 0;
+    private final List<DevicePullResponse.MediaItem> cachedAdvancedImageItems = new ArrayList<DevicePullResponse.MediaItem>();
+    private String cachedAdvancedImageItemsKey = "";
     private float drawerHandleDownX;
     private boolean drawerHandleOpenedBySwipe;
     private boolean primaryImageStageActive = true;
@@ -986,6 +989,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
     private void applyPlaybackResponse(DevicePullResponse response, boolean syncSelection) {
         lastPullResponse = response;
+        cachedAdvancedImageItemsKey = "";
         playbackEngine.update(response);
         if (syncSelection) {
             syncPlaybackSelectionState(response);
@@ -1011,6 +1015,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private void showWaitingForBinding() {
         clearScheduledTasks();
         lastPullResponse = null;
+        cachedAdvancedImageItemsKey = "";
         remotePullResponse = null;
         lastRenderedMediaIdentity = "";
         lastRenderedMediaType = "";
@@ -1432,6 +1437,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         bentoImageViews.clear();
         bentoNextSourceIndex = 0;
         bentoPreviousSlotIndex = -1;
+        bentoPreviousSlotIndex2 = -1;
         if (advancedImageStage != null) {
             advancedImageStage.setVisibility(View.GONE);
             advancedImageStage.removeAllViews();
@@ -1799,10 +1805,15 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private List<DevicePullResponse.MediaItem> getAdvancedImageItems() {
-        List<DevicePullResponse.MediaItem> result = new ArrayList<DevicePullResponse.MediaItem>();
         List<DevicePullResponse.MediaItem> mediaList = playbackEngine.getCurrentMediaList();
         DevicePullResponse.MediaItem current = playbackEngine.getCurrentMedia();
         String currentIdentity = PlaybackEngine.resolveMediaIdentity(current);
+        String displayStyle = resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle());
+        String cacheKey = currentIdentity + "|" + displayStyle + "|" + mediaList.size();
+        if (cacheKey.equals(cachedAdvancedImageItemsKey) && !cachedAdvancedImageItems.isEmpty()) {
+            return cachedAdvancedImageItems;
+        }
+        List<DevicePullResponse.MediaItem> result = new ArrayList<DevicePullResponse.MediaItem>();
         int startIndex = 0;
         for (int i = 0; i < mediaList.size(); i += 1) {
             if (currentIdentity.equals(PlaybackEngine.resolveMediaIdentity(mediaList.get(i)))) {
@@ -1810,7 +1821,6 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 break;
             }
         }
-        String displayStyle = resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle());
         int imageLimit = "BENTO".equals(displayStyle) ? mediaList.size() : getAdaptiveAdvancedImagePoolSize();
         for (int offset = 0; offset < mediaList.size() && result.size() < imageLimit; offset += 1) {
             DevicePullResponse.MediaItem candidate = mediaList.get((startIndex + offset) % mediaList.size());
@@ -1818,7 +1828,10 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 result.add(candidate);
             }
         }
-        return result;
+        cachedAdvancedImageItems.clear();
+        cachedAdvancedImageItems.addAll(result);
+        cachedAdvancedImageItemsKey = cacheKey;
+        return cachedAdvancedImageItems;
     }
 
     private int getAdaptiveAdvancedImagePoolSize() {
@@ -1842,7 +1855,9 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void preloadAdvancedImages(List<DevicePullResponse.MediaItem> imageItems) {
-        for (DevicePullResponse.MediaItem imageItem : imageItems) {
+        int limit = Math.min(imageItems.size(), ADVANCED_IMAGE_POOL_SIZE);
+        for (int i = 0; i < limit; i += 1) {
+            DevicePullResponse.MediaItem imageItem = imageItems.get(i);
             if (imageItem != null) {
                 AuthenticatedImageLoader.preload(imageStage, imageItem.getUrl(), sessionRepository);
             }
@@ -2126,11 +2141,15 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         if (imageItems.isEmpty() || bentoImageViews.isEmpty()) {
             return;
         }
+        if (bentoImageViews.get(0).getParent() == null) {
+            bentoImageViews.clear();
+            return;
+        }
         int slotIndex = pickNextBentoSlot(bentoImageViews.size());
         final ImageView imageView = bentoImageViews.get(slotIndex);
         final DevicePullResponse.MediaItem nextMedia = imageItems.get(bentoNextSourceIndex % imageItems.size());
         bentoNextSourceIndex = (bentoNextSourceIndex + 1) % imageItems.size();
-        prefetchUpcomingImages(imageItems, bentoNextSourceIndex, Math.min(4, imageItems.size()));
+        prefetchUpcomingImages(imageItems, bentoNextSourceIndex, Math.min(8, imageItems.size()));
         animateReplaceAdvancedImage(imageView, nextMedia);
     }
 
@@ -2159,6 +2178,39 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void animateReplaceAdvancedImage(final ImageView imageView, final DevicePullResponse.MediaItem nextMedia) {
+        imageView.animate().cancel();
+        imageView.setRotationX(0f);
+        imageView.setRotationY(0f);
+        imageView.setAlpha(1f);
+        String url = nextMedia != null ? nextMedia.getUrl() : null;
+        if (url == null || url.trim().isEmpty()) {
+            return;
+        }
+        String mediaCacheRemoteUrl = null;
+        if (mediaCacheManager != null && mediaCacheManager.isLocalCacheUrl(url) && !mediaCacheManager.isLocalCacheAvailable(url)) {
+            mediaCacheRemoteUrl = mediaCacheManager.getRemoteUrlForLocalUrl(url);
+            if (mediaCacheRemoteUrl != null && mediaCacheRemoteUrl.length() > 0) {
+                mediaCacheManager.invalidateLocalUrl(url);
+                nextMedia.setUrl(mediaCacheRemoteUrl);
+            }
+        }
+        final String preloadUrl = (mediaCacheRemoteUrl != null && mediaCacheRemoteUrl.length() > 0) ? mediaCacheRemoteUrl : url;
+        AuthenticatedImageLoader.preload(imageStage, preloadUrl, sessionRepository, new AuthenticatedImageLoader.Callback() {
+            @Override
+            public void onSuccess() {
+                if (isFinishing()) return;
+                runFlipAnimation(imageView, nextMedia);
+            }
+
+            @Override
+            public void onFailure() {
+                if (isFinishing()) return;
+                runFlipAnimation(imageView, nextMedia);
+            }
+        });
+    }
+
+    private void runFlipAnimation(final ImageView imageView, final DevicePullResponse.MediaItem nextMedia) {
         final boolean flipX = Math.random() > 0.5d;
         if (flipX) {
             imageView.animate().rotationX(90f).alpha(0.35f).setDuration(IMAGE_TRANSITION_DURATION_MS / 2).withEndAction(new Runnable() {
@@ -2220,13 +2272,17 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private int pickNextBentoSlot(int slotCount) {
-        if (slotCount <= 1) {
+        if (slotCount <= 2) {
             return 0;
         }
         int next = (int) Math.floor(Math.random() * slotCount);
-        if (next == bentoPreviousSlotIndex) {
+        if (next == bentoPreviousSlotIndex || next == bentoPreviousSlotIndex2) {
             next = (next + 1) % slotCount;
+            if (next == bentoPreviousSlotIndex || next == bentoPreviousSlotIndex2) {
+                next = (next + 1) % slotCount;
+            }
         }
+        bentoPreviousSlotIndex2 = bentoPreviousSlotIndex;
         bentoPreviousSlotIndex = next;
         return next;
     }

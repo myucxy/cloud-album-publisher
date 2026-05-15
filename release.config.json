@@ -8,8 +8,8 @@
     "releaseNotes": "优化"
   },
   "android": {
-    "version": "0.3.42",
-    "versionCode": 44,
+    "version": "0.3.43",
+    "versionCode": 45,
     "variant": "debug",
     "forceUpdate": true,
     "releaseNotes": "增加客户端更新检查。"

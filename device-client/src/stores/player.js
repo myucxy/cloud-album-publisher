@@ -4,8 +4,14 @@ import { deviceApi } from '@/api/device'
 
 const DISABLED_DISTRIBUTION_IDS_STORAGE_KEY = 'device_disabled_distribution_ids'
 const PLAYBACK_MUTED_STORAGE_KEY = 'device_playback_muted'
+const PLAYBACK_ROTATION_STORAGE_KEY = 'device_playback_rotation'
+const BRIGHTNESS_SCHEDULE_ENABLED_STORAGE_KEY = 'device_brightness_schedule_enabled'
+const BRIGHTNESS_START_HOUR_STORAGE_KEY = 'device_brightness_start_hour'
+const BRIGHTNESS_END_HOUR_STORAGE_KEY = 'device_brightness_end_hour'
+const BRIGHTNESS_DIM_PERCENT_STORAGE_KEY = 'device_brightness_dim_percent'
 const SUPPORTED_TRANSITION_STYLES = ['NONE', 'FADE', 'SLIDE', 'CUBE', 'REVEAL', 'FLIP', 'RANDOM']
 const SUPPORTED_DISPLAY_STYLES = ['SINGLE', 'BENTO', 'FRAME_WALL', 'FRAMEWALL', 'CAROUSEL', 'CALENDAR']
+const SUPPORTED_ROTATIONS = ['auto', '0', '90', '180', '270']
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value)
@@ -45,6 +51,39 @@ function loadPlaybackMuted() {
 
 function savePlaybackMuted(value) {
   localStorage.setItem(PLAYBACK_MUTED_STORAGE_KEY, value ? 'true' : 'false')
+}
+
+function loadPlaybackRotation() {
+  const value = localStorage.getItem(PLAYBACK_ROTATION_STORAGE_KEY) || 'auto'
+  return SUPPORTED_ROTATIONS.includes(value) ? value : 'auto'
+}
+
+function savePlaybackRotation(value) {
+  localStorage.setItem(PLAYBACK_ROTATION_STORAGE_KEY, value)
+}
+
+function loadBooleanSetting(key, fallback = false) {
+  const value = localStorage.getItem(key)
+  if (value === null) {
+    return fallback
+  }
+  return value === 'true'
+}
+
+function saveBooleanSetting(key, value) {
+  localStorage.setItem(key, value ? 'true' : 'false')
+}
+
+function loadNumberSetting(key, fallback, min, max) {
+  const value = toNumber(localStorage.getItem(key), fallback)
+  if (value < min || value > max) {
+    return fallback
+  }
+  return value
+}
+
+function saveNumberSetting(key, value) {
+  localStorage.setItem(key, String(value))
 }
 
 function getPlayableMediaList(distribution) {
@@ -127,6 +166,11 @@ export const usePlayerStore = defineStore('player', () => {
   const distributions = ref([])
   const disabledDistributionIds = ref(loadDisabledDistributionIds())
   const playbackMuted = ref(loadPlaybackMuted())
+  const playbackRotation = ref(loadPlaybackRotation())
+  const brightnessScheduleEnabled = ref(loadBooleanSetting(BRIGHTNESS_SCHEDULE_ENABLED_STORAGE_KEY, false))
+  const brightnessStartHour = ref(loadNumberSetting(BRIGHTNESS_START_HOUR_STORAGE_KEY, 8, 0, 23))
+  const brightnessEndHour = ref(loadNumberSetting(BRIGHTNESS_END_HOUR_STORAGE_KEY, 22, 0, 23))
+  const brightnessDimPercent = ref(loadNumberSetting(BRIGHTNESS_DIM_PERCENT_STORAGE_KEY, 55, 10, 90))
   const pulledAt = ref('')
   const syncStatus = ref('idle')
   const errorMessage = ref('')
@@ -167,6 +211,29 @@ export const usePlayerStore = defineStore('player', () => {
   function setPlaybackMuted(value) {
     playbackMuted.value = Boolean(value)
     savePlaybackMuted(playbackMuted.value)
+  }
+
+  function setPlaybackRotation(value) {
+    const normalized = String(value || 'auto')
+    playbackRotation.value = SUPPORTED_ROTATIONS.includes(normalized) ? normalized : 'auto'
+    savePlaybackRotation(playbackRotation.value)
+  }
+
+  function setBrightnessScheduleEnabled(value) {
+    brightnessScheduleEnabled.value = Boolean(value)
+    saveBooleanSetting(BRIGHTNESS_SCHEDULE_ENABLED_STORAGE_KEY, brightnessScheduleEnabled.value)
+  }
+
+  function setBrightnessHours(startHour, endHour) {
+    brightnessStartHour.value = Math.min(Math.max(toNumber(startHour, 8), 0), 23)
+    brightnessEndHour.value = Math.min(Math.max(toNumber(endHour, 22), 0), 23)
+    saveNumberSetting(BRIGHTNESS_START_HOUR_STORAGE_KEY, brightnessStartHour.value)
+    saveNumberSetting(BRIGHTNESS_END_HOUR_STORAGE_KEY, brightnessEndHour.value)
+  }
+
+  function setBrightnessDimPercent(value) {
+    brightnessDimPercent.value = Math.min(Math.max(toNumber(value, 55), 10), 90)
+    saveNumberSetting(BRIGHTNESS_DIM_PERCENT_STORAGE_KEY, brightnessDimPercent.value)
   }
 
   function resetIndices() {
@@ -391,6 +458,11 @@ export const usePlayerStore = defineStore('player', () => {
     distributions,
     disabledDistributionIds,
     playbackMuted,
+    playbackRotation,
+    brightnessScheduleEnabled,
+    brightnessStartHour,
+    brightnessEndHour,
+    brightnessDimPercent,
     pulledAt,
     syncStatus,
     errorMessage,
@@ -416,6 +488,10 @@ export const usePlayerStore = defineStore('player', () => {
     hasPlayableContent,
     pullContent,
     setPlaybackMuted,
+    setPlaybackRotation,
+    setBrightnessScheduleEnabled,
+    setBrightnessHours,
+    setBrightnessDimPercent,
     peekNextMedia,
     selectDistribution,
     setDistributionEnabled,

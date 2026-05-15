@@ -1,5 +1,5 @@
 <template>
-  <div class="media-player">
+  <div ref="playerRootRef" class="media-player">
     <div v-if="loading" class="placeholder">
       <a-spin size="large" />
       <div class="placeholder-text">正在同步设备内容...</div>
@@ -118,7 +118,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useSecureObjectUrl, warmSecureObjectUrl } from '@/components/useSecureObjectUrl'
 import { resolveMediaIdentity } from '@/stores/player'
 
@@ -168,6 +168,7 @@ const emit = defineEmits(['ended', 'loaded', 'error'])
 
 const videoRef = ref(null)
 const audioRef = ref(null)
+const playerRootRef = ref(null)
 const previousMediaType = ref('')
 const enableImageTransition = ref(false)
 const concreteImageTransition = ref('NONE')
@@ -185,11 +186,13 @@ const frameWallPreviousSlotIndex = ref(-1)
 const carouselDisplayItems = ref([])
 const carouselActiveSourceIndex = ref(0)
 const viewportVersion = ref(0)
+const viewportSize = ref({ width: 0, height: 0 })
 const now = ref(new Date())
 let clockTimer = null
 let bentoTimer = null
 let frameWallTimer = null
 let carouselTimer = null
+let resizeObserver = null
 const mediaUrl = computed(() => props.media?.url || '')
 const mediaIdentity = computed(() => resolveMediaIdentity(props.media))
 const normalizedTransitionStyle = computed(() => normalizeTransitionStyle(props.transitionStyle || props.album?.transitionStyle))
@@ -228,10 +231,16 @@ const advancedLayoutReady = computed(() => {
   return advancedImageItems.value.length > 0 && advancedRenderableItems.value.length === advancedImageItems.value.length
 })
 const bentoGridSize = computed(() => getBentoGridSize())
+const isPortraitViewport = computed(() => {
+  void viewportVersion.value
+  const width = viewportSize.value.width || window.innerWidth
+  const height = viewportSize.value.height || window.innerHeight
+  return width < height
+})
 const advancedLayoutStyle = computed(() => {
   if (normalizedDisplayStyle.value === 'BENTO') {
     void viewportVersion.value
-    const portrait = window.innerWidth < window.innerHeight
+    const portrait = isPortraitViewport.value
     const size = bentoGridSize.value
     const cols = portrait ? size.rows : size.columns
     const rows = portrait ? size.columns : size.rows
@@ -360,7 +369,7 @@ function getBentoSlotCount() {
 
 function getAdvancedItemStyle(index) {
   void viewportVersion.value
-  const portrait = window.innerWidth < window.innerHeight
+  const portrait = isPortraitViewport.value
   if (normalizedDisplayStyle.value === 'CAROUSEL') {
     const count = displayedAdvancedItems.value.length
     const center = Math.floor(count / 2)
@@ -562,7 +571,7 @@ function getFrameWallSlotCount() {
 
 function getFrameWallGridDimensions() {
   const total = getFrameWallSlotCount()
-  const portrait = window.innerWidth < window.innerHeight
+  const portrait = isPortraitViewport.value
   let cols, rows
   if (total <= 2) { cols = 2; rows = 1 }
   else if (total <= 4) { cols = 2; rows = 2 }
@@ -888,14 +897,43 @@ clockTimer = setInterval(() => {
 }, 1000)
 
 function handleViewportResize() {
+  updateViewportSize()
+}
+
+function updateViewportSize() {
+  const element = playerRootRef.value
+  if (element) {
+    const rect = element.getBoundingClientRect()
+    viewportSize.value = {
+      width: Math.round(rect.width),
+      height: Math.round(rect.height)
+    }
+  } else {
+    viewportSize.value = {
+      width: window.innerWidth,
+      height: window.innerHeight
+    }
+  }
   viewportVersion.value += 1
 }
 
 window.addEventListener('resize', handleViewportResize)
 
+onMounted(() => {
+  updateViewportSize()
+  if (window.ResizeObserver && playerRootRef.value) {
+    resizeObserver = new ResizeObserver(updateViewportSize)
+    resizeObserver.observe(playerRootRef.value)
+  }
+})
+
 onBeforeUnmount(() => {
   if (clockTimer) clearInterval(clockTimer)
   clearAdvancedTimers()
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
   window.removeEventListener('resize', handleViewportResize)
 })
 
