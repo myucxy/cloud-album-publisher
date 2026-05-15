@@ -42,6 +42,7 @@ public class SecurityConfig {
             "/api/v1/devices/self/register",
             "/api/v1/devices/self/token",
             "/api/v1/client-updates/**",
+            "/api/v1/discover",
             "/downloads/**",
             "/swagger-ui/**",
             "/swagger-ui.html",

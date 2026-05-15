@@ -1,12 +1,11 @@
 @echo off
-setlocal
+chcp 65001 >nul
+setlocal EnableExtensions
 cd /d "%~dp0"
-echo 云影发布打包工具
-echo 默认选项是一键升版本并全量打包。
-echo.
 node "scripts\package-release.mjs" --interactive
 set "EXIT_CODE=%ERRORLEVEL%"
 echo.
-if not "%EXIT_CODE%"=="0" echo 打包失败，退出码：%EXIT_CODE%
-pause
+if not "%EXIT_CODE%"=="0" echo Package failed, exit code: %EXIT_CODE%
+echo Press any key to continue...
+pause >nul
 exit /b %EXIT_CODE%

@@ -37,4 +37,11 @@
         <item name="android:paddingBottom">10dp</item>
     </style>
 
+    <style name="Theme.CloudAlbum.Dialog" parent="Theme.AppCompat.Dialog.Alert">
+        <item name="android:windowBackground">@color/ca_surface</item>
+        <item name="android:textColorPrimary">@color/ca_text_primary</item>
+        <item name="android:textColorSecondary">@color/ca_text_secondary</item>
+        <item name="colorAccent">@color/ca_focus</item>
+    </style>
+
 </resources>

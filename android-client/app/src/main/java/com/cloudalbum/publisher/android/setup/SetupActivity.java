@@ -1,11 +1,15 @@
 package com.cloudalbum.publisher.android.setup;
 
+import android.app.AlertDialog;
+import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
+import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -19,8 +23,25 @@ import com.cloudalbum.publisher.android.data.repository.DeviceSessionRepository;
 import com.cloudalbum.publisher.android.player.PlayerActivity;
 import com.cloudalbum.publisher.android.ui.PageRotationController;
 
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.net.HttpURLConnection;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class SetupActivity extends AppCompatActivity {
     private DeviceSessionRepository sessionRepository;
@@ -37,6 +58,7 @@ public class SetupActivity extends AppCompatActivity {
     private TextView setupDetailText;
     private Button saveButton;
     private Button playerButton;
+    private Button discoverButton;
     private ScrollView setupRoot;
     private PageRotationController rotationController;
     private boolean forceSetup;
@@ -93,6 +115,7 @@ public class SetupActivity extends AppCompatActivity {
         setupDetailText = findViewById(R.id.setupDetailText);
         saveButton = findViewById(R.id.saveButton);
         playerButton = findViewById(R.id.playerButton);
+        discoverButton = findViewById(R.id.discoverButton);
     }
 
     private void applyPageRotation() {
@@ -119,6 +142,7 @@ public class SetupActivity extends AppCompatActivity {
                 startActivity(new Intent(this, PlayerActivity.class));
             }
         });
+        discoverButton.setOnClickListener(v -> startDiscovery());
 
         if (forceSetup) {
             saveButton.requestFocus();
@@ -183,6 +207,153 @@ public class SetupActivity extends AppCompatActivity {
             }
         }).start();
         return true;
+    }
+
+    private AlertDialog discoverLoadingDialog;
+
+    private void startDiscovery() {
+        String subnet = resolveLocalSubnet();
+        if (subnet == null) {
+            updateSetupStatus(getString(R.string.discover_none), null, null);
+            return;
+        }
+        discoverButton.setEnabled(false);
+        updateSetupStatus(getString(R.string.discover_scanning), null, "扫描网段：" + subnet + ".0/24");
+
+        discoverLoadingDialog = new AlertDialog.Builder(this, R.style.Theme_CloudAlbum_Dialog)
+                .setTitle(getString(R.string.discover_scanning))
+                .setView(buildLoadingView())
+                .setCancelable(false)
+                .setNegativeButton(android.R.string.cancel, (d, w) -> {
+                    // Thread will finish on its own; just dismiss
+                })
+                .show();
+
+        new Thread(() -> {
+            List<String> found = scanSubnet(subnet);
+            runOnUiThread(() -> {
+                if (discoverLoadingDialog != null && discoverLoadingDialog.isShowing()) {
+                    discoverLoadingDialog.dismiss();
+                }
+                discoverButton.setEnabled(true);
+                if (found.isEmpty()) {
+                    updateSetupStatus(getString(R.string.discover_none), null, null);
+                } else {
+                    updateSetupStatus(String.format(getString(R.string.discover_found), found.size()), null, null);
+                    showServerPicker(found);
+                }
+            });
+        }).start();
+    }
+
+    private View buildLoadingView() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.HORIZONTAL);
+        layout.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        layout.setPadding(pad, pad, pad, pad);
+
+        android.widget.ProgressBar spinner = new android.widget.ProgressBar(this);
+        spinner.setIndeterminate(true);
+        LinearLayout.LayoutParams spinnerLp = new LinearLayout.LayoutParams(
+                (int) (24 * getResources().getDisplayMetrics().density),
+                (int) (24 * getResources().getDisplayMetrics().density));
+        spinnerLp.setMarginEnd((int) (12 * getResources().getDisplayMetrics().density));
+        layout.addView(spinner, spinnerLp);
+
+        TextView text = new TextView(this);
+        text.setText(getString(R.string.discover_scanning));
+        text.setTextColor(getResources().getColor(R.color.ca_text_secondary));
+        text.setTextSize(14);
+        layout.addView(text);
+
+        return layout;
+    }
+
+    private String resolveLocalSubnet() {
+        try {
+            WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            int ip = wm.getConnectionInfo().getIpAddress();
+            if (ip != 0) {
+                return (ip & 0xFF) + "." + ((ip >> 8) & 0xFF) + "." + ((ip >> 16) & 0xFF);
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface ni = interfaces.nextElement();
+                if (ni.isLoopback() || !ni.isUp()) continue;
+                for (InetAddress addr : Collections.list(ni.getInetAddresses())) {
+                    if (addr instanceof Inet4Address) {
+                        byte[] bytes = addr.getAddress();
+                        return (bytes[0] & 0xFF) + "." + (bytes[1] & 0xFF) + "." + (bytes[2] & 0xFF);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private List<String> scanSubnet(String subnet) {
+        List<String> results = Collections.synchronizedList(new ArrayList<>());
+        List<Integer> ports = new ArrayList<>();
+        ports.add(8080);
+        try {
+            URL savedUrl = new URL(sessionRepository.getServerBaseUrl());
+            int savedPort = savedUrl.getPort();
+            if (savedPort > 0 && !ports.contains(savedPort)) {
+                ports.add(savedPort);
+            }
+        } catch (Exception ignored) {
+        }
+        ExecutorService pool = Executors.newFixedThreadPool(32);
+        for (int i = 1; i <= 254; i++) {
+            final String ip = subnet + "." + i;
+            for (final int port : ports) {
+                pool.execute(() -> {
+                    try {
+                        URL url = new URL("http://" + ip + ":" + port + "/api/v1/discover");
+                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                        conn.setConnectTimeout(800);
+                        conn.setReadTimeout(800);
+                        conn.setRequestMethod("GET");
+                        if (conn.getResponseCode() == 200) {
+                            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                            StringBuilder sb = new StringBuilder();
+                            String line;
+                            while ((line = reader.readLine()) != null) sb.append(line);
+                            reader.close();
+                            JSONObject json = new JSONObject(sb.toString());
+                            JSONObject data = json.optJSONObject("data");
+                            if (data != null && "CloudAlbum".equals(data.optString("name"))) {
+                                results.add(ip + ":" + data.optInt("port", port));
+                            }
+                        }
+                        conn.disconnect();
+                    } catch (Exception ignored) {
+                    }
+                });
+            }
+        }
+        pool.shutdown();
+        try {
+            pool.awaitTermination(8, TimeUnit.SECONDS);
+        } catch (InterruptedException ignored) {
+        }
+        return results;
+    }
+
+    private void showServerPicker(List<String> servers) {
+        String[] items = servers.toArray(new String[0]);
+        new AlertDialog.Builder(this, R.style.Theme_CloudAlbum_Dialog)
+                .setTitle(getString(R.string.discover_select_title))
+                .setItems(items, (dialog, which) -> {
+                    serverBaseUrlInput.setText(items[which]);
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     private void setSaving(boolean value) {

@@ -24,7 +24,7 @@
             </a-space>
           </template>
           <a-table :data-source="contents" :columns="columns" row-key="id" :loading="loading"
-                   :pagination="{ total, current: page, pageSize: 12, onChange: p => { page = p; loadContents() } }">
+                   :pagination="{ total, current: page, pageSize, onChange: p => { page = p; loadContents() } }">
 
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'preview'">
@@ -631,6 +631,7 @@ import { mediaSourceApi } from '@/api/media-source'
 import SecureImage from '@/components/SecureImage.vue'
 import SecureAudio from '@/components/SecureAudio.vue'
 import { useSecureObjectUrl } from '@/components/useSecureObjectUrl'
+import { DEFAULT_PAGE_SIZE } from '@/constants/pagination'
 
 const SOURCE_TYPE_ORDER = ['UPLOAD', 'SMB', 'FTP', 'SFTP', 'WEBDAV']
 const TRANSITION_STYLE_OPTIONS = [
@@ -660,6 +661,7 @@ const contents = ref([])
 const contentMediaMap = ref({})
 const total = ref(0)
 let page = ref(1)
+const pageSize = DEFAULT_PAGE_SIZE
 const loading = ref(false)
 const saving = ref(false)
 
@@ -686,7 +688,7 @@ const selectedBgmMediaRecords = ref([])
 const bgmClearRequested = ref(false)
 const bgmPickerLoading = ref(false)
 const bgmPickerPage = ref(1)
-const bgmPickerPageSize = 12
+const bgmPickerPageSize = DEFAULT_PAGE_SIZE
 const bgmPickerTotal = ref(0)
 const bgmPickerSourceType = ref(undefined)
 const bgmPickerSourceId = ref(undefined)
@@ -701,7 +703,7 @@ const existingAlbumContentKeys = ref(new Set())
 const mediaPickerLoading = ref(false)
 const mediaPickerFilterType = ref(undefined)
 const mediaPickerPage = ref(1)
-const mediaPickerPageSize = 12
+const mediaPickerPageSize = DEFAULT_PAGE_SIZE
 const mediaPickerTotal = ref(0)
 const mediaPickerSourceType = ref(undefined)
 const mediaPickerSourceId = ref(undefined)
@@ -717,7 +719,7 @@ const selectedCoverMediaRecord = ref(null)
 const coverPickerLoading = ref(false)
 const coverPickerFilterType = ref(undefined)
 const coverPickerPage = ref(1)
-const coverPickerPageSize = 12
+const coverPickerPageSize = DEFAULT_PAGE_SIZE
 const coverPickerTotal = ref(0)
 const coverPickerSourceType = ref(undefined)
 const coverPickerSourceId = ref(undefined)
@@ -798,7 +800,7 @@ async function loadAlbum() {
 async function loadContents() {
   loading.value = true
   try {
-    const res = await albumApi.listContents(albumId, { page: page.value, size: 12 })
+    const res = await albumApi.listContents(albumId, { page: page.value, size: pageSize })
     const list = res.data.list || []
     contents.value = list
     total.value = res.data.total

@@ -51,11 +51,12 @@
 import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { adminApi } from '@/api/distribution'
+import { DEFAULT_PAGE_SIZE } from '@/constants/pagination'
 
 const users = ref([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = 15
+const pageSize = DEFAULT_PAGE_SIZE
 const loading = ref(false)
 const modalOpen = ref(false)
 const saving = ref(false)

@@ -12,7 +12,11 @@
         <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item label="服务器地址">
-              <a-input v-model:value="deviceAuth.serverBaseUrl" placeholder="192.168.1.10:8080" />
+              <a-input v-model:value="deviceAuth.serverBaseUrl" placeholder="192.168.1.10:8080">
+                <template #suffix>
+                  <a-button type="link" size="small" :loading="discovering" @click="startDiscovery">自动发现</a-button>
+                </template>
+              </a-input>
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -22,6 +26,30 @@
           </a-col>
         </a-row>
       </a-form>
+
+      <a-modal
+        v-model:open="discoverModalVisible"
+        title="选择服务器"
+        :footer="null"
+        width="400px"
+        class="discover-modal"
+      >
+        <div v-if="discovering" class="discover-loading">
+          <a-spin tip="正在扫描局域网...">
+            <div class="discover-loading-content" />
+          </a-spin>
+        </div>
+        <template v-else>
+          <a-empty v-if="!discoveredServers.length" description="未发现服务器" />
+          <a-radio-group v-else v-model:value="selectedServer" style="width: 100%" @change="applyDiscoveredServer">
+            <div v-for="server in discoveredServers" :key="server.address" class="discover-server-item">
+              <a-radio :value="server.address">
+                {{ server.address }}
+              </a-radio>
+            </div>
+          </a-radio-group>
+        </template>
+      </a-modal>
 
       <a-descriptions bordered :column="1" size="small">
         <a-descriptions-item label="设备 UID">{{ deviceAuth.deviceUid || '-' }}</a-descriptions-item>
@@ -50,6 +78,10 @@ import { useDeviceAuthStore } from '@/stores/deviceAuth'
 const router = useRouter()
 const deviceAuth = useDeviceAuthStore()
 const saving = ref(false)
+const discovering = ref(false)
+const discoverModalVisible = ref(false)
+const discoveredServers = ref([])
+const selectedServer = ref('')
 
 onMounted(async () => {
   try {
@@ -58,6 +90,33 @@ onMounted(async () => {
     message.error(error?.message || '设备初始化失败')
   }
 })
+
+async function startDiscovery() {
+  if (discovering.value) return
+  discovering.value = true
+  discoveredServers.value = []
+  selectedServer.value = ''
+  discoverModalVisible.value = true
+  try {
+    const servers = await deviceAuth.discoverServers()
+    discoveredServers.value = servers
+    if (!servers.length) {
+      message.info('未发现服务器，请手动输入地址')
+    }
+  } catch (error) {
+    message.error('扫描失败：' + (error?.message || '未知错误'))
+  } finally {
+    discovering.value = false
+  }
+}
+
+function applyDiscoveredServer() {
+  if (selectedServer.value) {
+    deviceAuth.serverBaseUrl = selectedServer.value
+    discoverModalVisible.value = false
+    message.success('已选择服务器 ' + selectedServer.value)
+  }
+}
 
 async function saveAndRegister() {
   if (saving.value) {
@@ -102,5 +161,63 @@ async function goPlayer() {
   margin-top: 24px;
   display: flex;
   justify-content: flex-end;
+}
+
+.discover-server-item {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.discover-server-item:last-child {
+  border-bottom: none;
+}
+
+.discover-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 120px;
+}
+
+.discover-loading-content {
+  width: 100px;
+}
+
+:global(.discover-modal .ant-modal-content) {
+  background: linear-gradient(135deg, #0f172a, #1e293b);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+:global(.discover-modal .ant-modal-header) {
+  background: transparent;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+:global(.discover-modal .ant-modal-title) {
+  color: #fff;
+}
+
+:global(.discover-modal .ant-modal-close) {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+:global(.discover-modal .ant-modal-close:hover) {
+  color: #fff;
+}
+
+:global(.discover-modal .ant-modal-body) {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+:global(.discover-modal .ant-empty-description) {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+:global(.discover-modal .ant-radio-wrapper) {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+:global(.discover-modal .ant-spin-text) {
+  color: rgba(255, 255, 255, 0.68);
 }
 </style>

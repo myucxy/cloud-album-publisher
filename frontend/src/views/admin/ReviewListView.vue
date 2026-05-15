@@ -75,11 +75,12 @@
 import { ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { adminApi } from '@/api/distribution'
+import { DEFAULT_PAGE_SIZE } from '@/constants/pagination'
 
 const reviews = ref([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = 15
+const pageSize = DEFAULT_PAGE_SIZE
 const loading = ref(false)
 
 const reviewModalOpen = ref(false)

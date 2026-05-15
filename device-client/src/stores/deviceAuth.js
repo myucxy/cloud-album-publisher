@@ -131,6 +131,68 @@ export const useDeviceAuthStore = defineStore('deviceAuth', () => {
     }
   }
 
+  async function discoverServers() {
+    let localIp = ''
+    try {
+      const pc = new RTCPeerConnection({ iceServers: [] })
+      pc.createDataChannel('')
+      pc.createOffer().then(offer => pc.setLocalDescription(offer))
+      await new Promise(resolve => {
+        pc.onicecandidate = event => {
+          if (event.candidate) {
+            const match = event.candidate.candidate.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/)
+            if (match && match[1] !== '0.0.0.0') {
+              localIp = match[1]
+              pc.close()
+              resolve()
+            }
+          }
+        }
+        setTimeout(() => { pc.close(); resolve() }, 2000)
+      })
+    } catch {
+      return []
+    }
+
+    if (!localIp) return []
+
+    const subnet = localIp.split('.').slice(0, 3).join('.')
+    const ports = [8080]
+    try {
+      const parts = serverBaseUrl.value.split(':')
+      const savedPort = parseInt(parts[parts.length - 1], 10)
+      if (savedPort && savedPort !== 8080) ports.push(savedPort)
+    } catch {}
+    const promises = []
+    for (let i = 1; i <= 254; i++) {
+      const ip = `${subnet}.${i}`
+      for (const port of ports) {
+        promises.push(
+          fetch(`http://${ip}:${port}/api/v1/discover`, { signal: AbortSignal.timeout(800) })
+            .then(res => res.json())
+            .then(body => {
+              if (body?.data?.name === 'CloudAlbum') {
+                return { address: `${ip}:${body.data.port || port}`, name: body.data.name }
+              }
+              return null
+            })
+            .catch(() => null)
+        )
+      }
+    }
+
+    const results = await Promise.allSettled(promises)
+    const seen = new Set()
+    return results
+      .filter(r => r.status === 'fulfilled' && r.value)
+      .map(r => r.value)
+      .filter(server => {
+        if (seen.has(server.address)) return false
+        seen.add(server.address)
+        return true
+      })
+  }
+
   return {
     initialized,
     serverBaseUrl,
@@ -147,6 +209,7 @@ export const useDeviceAuthStore = defineStore('deviceAuth', () => {
     clearDeviceSession,
     registerCurrentDevice,
     issueDeviceToken,
-    registerAndTryActivate
+    registerAndTryActivate,
+    discoverServers
   }
 })

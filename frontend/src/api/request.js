@@ -45,13 +45,16 @@ request.interceptors.response.use(
       if (body.code === UNAUTHORIZED_CODE) {
         redirectToLogin()
       }
+      const errMsg = body.message || '请求失败'
+      message.error(errMsg)
       return Promise.reject(toApiError(res))
     }
     return body
   },
   async err => {
     const status = err.response?.status
-    if (status === 401) {
+    const url = err.config?.url || ''
+    if (status === 401 && !url.startsWith('/auth/login') && !url.startsWith('/auth/register') && !url.startsWith('/auth/refresh')) {
       const refreshToken = localStorage.getItem('refresh_token')
       if (refreshToken && !err.config._retry) {
         err.config._retry = true

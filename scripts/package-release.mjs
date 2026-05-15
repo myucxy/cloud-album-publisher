@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
-import { basename, dirname, extname, join, relative, sep } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, relative, sep } from 'node:path'
 import { spawn } from 'node:child_process'
 import readline from 'node:readline/promises'
 import { stdin as input, stdout as output } from 'node:process'
@@ -16,14 +16,21 @@ const backendStaticDir = join(rootDir, 'src', 'main', 'resources', 'static')
 const pcPackagePath = join(rootDir, 'device-client', 'package.json')
 const pcPackageLockPath = join(rootDir, 'device-client', 'package-lock.json')
 const pcReleaseDir = join(rootDir, 'device-client', 'release')
+const androidProjectDir = join(rootDir, 'android-client')
 const androidBuildGradlePath = join(rootDir, 'android-client', 'app', 'build.gradle')
+const androidKeystorePropertiesPath = join(rootDir, 'android-client', 'keystore.properties')
 const androidReleaseDir = join(rootDir, 'android-client', 'app', 'build', 'outputs', 'apk', 'release')
 const androidDebugDir = join(rootDir, 'android-client', 'app', 'build', 'outputs', 'apk', 'debug')
-const validTargets = new Set(['frontend', 'pc', 'android', 'all', 'version'])
+const dockerBuildDir = join(rootDir, 'docker-build')
+const dockerStagedReleasesDir = join(dockerBuildDir, 'releases')
+const backendTargetDir = join(rootDir, 'target')
+const releaseManifestPath = join(releasesDir, 'manifest.json')
+const validTargets = new Set(['frontend', 'pc', 'android', 'all', 'version', 'docker'])
 const scriptedAnswers = hasFlag('--interactive') && !input.isTTY ? readFileSync(0, 'utf8').split(/\r?\n/) : null
 
 let target = getArgValue('--target') || 'all'
 let config = await readJson(configPath)
+let persistedConfigSnapshot = JSON.stringify(config)
 let versionBumped = false
 
 await main()
@@ -35,16 +42,19 @@ async function main() {
   if (!validTargets.has(target)) {
     throw new Error(`Unsupported target: ${target}`)
   }
+  const shouldBuildDocker = hasFlag('--docker') || target === 'docker'
 
   if (hasFlag('--bump')) {
     applyVersionBump()
-    await writeJson(configPath, config)
   }
 
   const versionOptionsChanged = await applyVersionOptions()
   await syncConfiguredVersions(versionOptionsChanged)
 
   const builtArtifacts = {}
+  if (hasFlag('--install-deps')) {
+    await installNpmDependencies(target)
+  }
   if (target === 'frontend' || target === 'all') {
     await buildFrontend()
   }
@@ -56,30 +66,36 @@ async function main() {
   }
 
   await writeManifest(builtArtifacts)
-  printCompletionMessage(builtArtifacts)
+  const dockerResult = shouldBuildDocker ? await buildDockerImage() : null
+  await persistConfigIfChanged()
+  printCompletionMessage(builtArtifacts, dockerResult)
 }
 
 async function collectInteractiveOptions() {
   const rl = readline.createInterface({ input, output })
   try {
     printCurrentConfig()
+    console.log('提示：升版本会在确认并执行成功后写入配置；取消或打包失败不会占用版本号。')
+    console.log('')
     const action = await askChoice(rl, '请选择操作', [
-      ['all-bump', '一键升版本并全量打包'],
-      ['all', '一键全量打包（不改版本）'],
-      ['pc-bump', 'PC 升版本并打包'],
-      ['pc', '只打包 PC（不改版本）'],
-      ['android-bump', 'Android 升版本并打包'],
-      ['android', '只打包 Android（不改版本）'],
-      ['frontend', '只打包管理前端'],
-      ['version-bump', '只自动升版本，不打包'],
-      ['version', '手动修改/同步版本，不打包']
+      ['all-bump', '全量发布：PC+Android 自动升版本，构建管理前端/PC/Android，更新 manifest'],
+      ['all-docker-bump', '全量发布 + Docker：PC+Android 自动升版本，构建全部客户端后构建 Docker 镜像'],
+      ['all', '全量重打包：不改版本，构建管理前端/PC/Android，更新 manifest'],
+      ['all-docker', '全量重打包 + Docker：不改版本，构建全部客户端后构建 Docker 镜像'],
+      ['pc-bump', 'PC 发布：PC 自动升版本，只构建 PC 客户端，更新 manifest'],
+      ['pc', 'PC 重打包：不改版本，只构建 PC 客户端，更新 manifest'],
+      ['android-bump', 'Android 发布：Android 自动升版本，只构建 Android APK，更新 manifest'],
+      ['android', 'Android 重打包：不改版本，只构建 Android APK，更新 manifest'],
+      ['frontend', '管理前端：只构建 frontend，并复制到后端 static'],
+      ['docker', 'Docker 镜像：不打客户端，使用现有 releases/manifest.json 构建后端 jar 和镜像'],
+      ['version-bump', '只升版本：PC+Android 自动升版本并同步到 package/Gradle，不打包'],
+      ['version', '只同步版本：手动修改或同步 PC/Android 版本，不打包']
     ], 'all-bump')
 
     applyInteractiveAction(action)
 
     if (hasFlag('--bump')) {
       applyVersionBump()
-      await writeJson(configPath, config)
     }
 
     if (target === 'version' && !hasFlag('--bump')) {
@@ -87,7 +103,6 @@ async function collectInteractiveOptions() {
       if (autoBump) {
         setArgFlag('--bump')
         applyVersionBump()
-        await writeJson(configPath, config)
       } else {
         await collectPcVersion(rl)
         await collectAndroidVersion(rl)
@@ -129,7 +144,6 @@ async function collectInteractiveOptions() {
       platformConfig.forceUpdate = await askYesNo(rl, `${platformLabel(platform)} 是否强制更新？`, Boolean(platformConfig.forceUpdate))
     }
 
-    await writeJson(configPath, config)
     printSelectedOptions()
     const confirmed = await askYesNo(rl, '确认执行以上操作？', true)
     if (!confirmed) {
@@ -144,19 +158,25 @@ async function collectInteractiveOptions() {
 function applyInteractiveAction(action) {
   const actionMap = {
     'all-bump': ['all', true],
+    'all-docker-bump': ['all', true, true],
     all: ['all', false],
+    'all-docker': ['all', false, true],
     'pc-bump': ['pc', true],
     pc: ['pc', false],
     'android-bump': ['android', true],
     android: ['android', false],
     frontend: ['frontend', false],
+    docker: ['docker', false],
     'version-bump': ['version', true],
     version: ['version', false]
   }
-  const [nextTarget, shouldBump] = actionMap[action]
+  const [nextTarget, shouldBump, shouldBuildDocker] = actionMap[action]
   target = nextTarget
   if (shouldBump) {
     setArgFlag('--bump')
+  }
+  if (shouldBuildDocker) {
+    setArgFlag('--docker')
   }
 }
 
@@ -214,9 +234,18 @@ async function applyVersionOptions() {
   }
 
   if (changed) {
-    await writeJson(configPath, config)
+    return true
   }
   return changed
+}
+
+async function persistConfigIfChanged() {
+  const nextSnapshot = JSON.stringify(config)
+  if (nextSnapshot === persistedConfigSnapshot) {
+    return
+  }
+  await writeJson(configPath, config)
+  persistedConfigSnapshot = nextSnapshot
 }
 
 async function syncConfiguredVersions(force = false) {
@@ -269,6 +298,19 @@ async function buildFrontend() {
   await copyFrontendDist()
 }
 
+async function installNpmDependencies(buildTarget) {
+  if (buildTarget === 'version' || buildTarget === 'docker') {
+    return
+  }
+  await requireCommand('npm')
+  if (buildTarget === 'frontend' || buildTarget === 'all') {
+    await run('npm', ['--prefix', 'frontend', 'install', '--prefer-offline'])
+  }
+  if (buildTarget === 'pc' || buildTarget === 'all') {
+    await run('npm', ['--prefix', 'device-client', 'install', '--prefer-offline'])
+  }
+}
+
 async function copyFrontendDist() {
   await rm(backendStaticDir, { recursive: true, force: true })
   await mkdir(backendStaticDir, { recursive: true })
@@ -307,7 +349,10 @@ async function buildPc() {
 
 async function buildAndroid() {
   const variant = getAndroidVariant()
-  await run(resolveGradleCommand(), [`:app:assemble${capitalize(variant)}`], join(rootDir, 'android-client'))
+  if (variant === 'release') {
+    await ensureAndroidReleaseKeystore()
+  }
+  await run(resolveGradleCommand(), [`:app:assemble${capitalize(variant)}`], androidProjectDir)
   const artifactDir = variant === 'debug' ? androidDebugDir : androidReleaseDir
   const artifact = await findNewestFile(artifactDir, file => {
     const name = basename(file).toLowerCase()
@@ -319,6 +364,56 @@ async function buildAndroid() {
   const version = config.android.version
   const suffix = variant === 'debug' ? '-debug' : ''
   return copyReleaseArtifact('android', artifact, `cloud-album-device-android-${version}${suffix}.apk`)
+}
+
+async function ensureAndroidReleaseKeystore() {
+  if (!existsSync(androidKeystorePropertiesPath)) {
+    throw new Error('Android release build requires android-client/keystore.properties')
+  }
+
+  const properties = parseProperties(await readFile(androidKeystorePropertiesPath, 'utf8'))
+  const storeFile = requireProperty(properties, 'storeFile', androidKeystorePropertiesPath)
+  const storePassword = requireConfiguredSecret(properties, 'storePassword', androidKeystorePropertiesPath)
+  const keyAlias = requireProperty(properties, 'keyAlias', androidKeystorePropertiesPath)
+  const keyPassword = requireConfiguredSecret(properties, 'keyPassword', androidKeystorePropertiesPath)
+  const keystorePath = resolveAndroidProjectPath(storeFile)
+
+  if (existsSync(keystorePath)) {
+    console.log(`Android release 签名文件已存在：${toDisplayPath(relative(rootDir, keystorePath))}`)
+    return
+  }
+
+  await requireCommand('keytool')
+  await mkdir(dirname(keystorePath), { recursive: true })
+
+  const validity = positiveIntegerOrDefault(properties.validityDays, 36500)
+  const keySize = positiveIntegerOrDefault(properties.keySize, 2048)
+  const keyAlg = properties.keyAlg || 'RSA'
+  const dname = properties.dname || 'CN=Cloud Album Publisher, OU=Cloud Album, O=Cloud Album, L=Shanghai, ST=Shanghai, C=CN'
+
+  console.log(`Android release 签名文件不存在，正在生成：${toDisplayPath(relative(rootDir, keystorePath))}`)
+  await runDirect('keytool', [
+    '-genkeypair',
+    '-v',
+    '-storetype',
+    properties.storeType || 'PKCS12',
+    '-keystore',
+    keystorePath,
+    '-alias',
+    keyAlias,
+    '-keyalg',
+    keyAlg,
+    '-keysize',
+    String(keySize),
+    '-validity',
+    String(validity),
+    '-storepass',
+    storePassword,
+    '-keypass',
+    keyPassword,
+    '-dname',
+    dname
+  ])
 }
 
 async function copyReleaseArtifact(platform, source, fileName) {
@@ -359,6 +454,178 @@ async function writeManifest(artifacts) {
 
   await writeFile(join(releasesDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8')
   await pruneReleaseArtifacts(manifest)
+}
+
+async function buildDockerImage() {
+  const options = resolveDockerOptions()
+  await requireCommand('docker')
+  await requireCommand('mvn')
+
+  const { tag, shouldPersistVersion } = await resolveDockerTag(options)
+  const versionImageRef = `${options.imageName}:${tag}`
+  const latestImageRef = `${options.imageName}:latest`
+
+  console.log('')
+  console.log(`Docker 镜像版本：${tag}`)
+  console.log('[Docker 1/3] 构建 Spring Boot jar...')
+  await buildBackendJar(options)
+
+  console.log('[Docker 2/3] 准备 Docker build 上下文...')
+  await prepareDockerBuildContext(options)
+
+  console.log(`[Docker 3/3] 构建镜像 ${versionImageRef} 和 ${latestImageRef}...`)
+  await run('docker', [
+    'build',
+    '-f',
+    'Dockerfile',
+    '--build-arg',
+    `BASE_IMAGE=${options.baseImage}`,
+    '-t',
+    versionImageRef,
+    '-t',
+    latestImageRef,
+    '.'
+  ])
+
+  if (shouldPersistVersion) {
+    await writeDockerVersion(options.versionFilePath, tag)
+  }
+
+  return { versionImageRef, latestImageRef }
+}
+
+function resolveDockerOptions() {
+  const versionIncrement = getArgValue('--docker-version-increment') || process.env.DOCKER_VERSION_INCREMENT || 'patch'
+  if (!['major', 'minor', 'patch', 'none'].includes(versionIncrement)) {
+    throw new Error('--docker-version-increment must be major, minor, patch, or none')
+  }
+
+  return {
+    imageName: getArgValue('--docker-image') || process.env.DOCKER_IMAGE || 'myucxy/cloud-album-publisher',
+    explicitTag: getArgValue('--docker-tag') || process.env.DOCKER_TAG || null,
+    versionFilePath: resolveRootPath(getArgValue('--docker-version-file') || process.env.DOCKER_VERSION_FILE || '.docker-version'),
+    versionIncrement,
+    baseImage: getArgValue('--docker-base-image') || process.env.DOCKER_BASE_IMAGE || 'eclipse-temurin:17-jre-jammy',
+    mavenRepo: resolveRootPath(getArgValue('--maven-repo') || process.env.MAVEN_REPO || join('.m2', 'repository')),
+    includeAllReleases: hasFlag('--docker-include-all-releases') || isTruthyEnv(process.env.DOCKER_INCLUDE_ALL_RELEASES),
+    runTests: hasFlag('--docker-run-tests') || hasFlag('--run-tests') || isTruthyEnv(process.env.DOCKER_RUN_TESTS) || isTruthyEnv(process.env.RUN_TESTS)
+  }
+}
+
+async function resolveDockerTag(options) {
+  if (options.explicitTag) {
+    console.log(`使用指定 Docker tag: ${options.explicitTag}`)
+    return { tag: options.explicitTag, shouldPersistVersion: false }
+  }
+
+  const currentVersion = await readDockerVersion(options.versionFilePath)
+  const nextVersion = stepDockerVersion(currentVersion, options.versionIncrement)
+  console.log(`Docker version: ${currentVersion} -> ${nextVersion}`)
+  return { tag: nextVersion, shouldPersistVersion: true }
+}
+
+async function readDockerVersion(path) {
+  if (!existsSync(path)) {
+    return '0.0.0'
+  }
+  const value = (await readFile(path, 'utf8')).trim()
+  return value || '0.0.0'
+}
+
+function stepDockerVersion(currentVersion, increment) {
+  const match = String(currentVersion).match(/^(v?)(\d+)\.(\d+)\.(\d+)$/)
+  if (!match) {
+    throw new Error(`Docker version '${currentVersion}' is invalid. Use semantic version format like 1.0.0 or v1.0.0.`)
+  }
+
+  const prefix = match[1]
+  let major = Number(match[2])
+  let minor = Number(match[3])
+  let patch = Number(match[4])
+
+  if (increment === 'major') {
+    major += 1
+    minor = 0
+    patch = 0
+  } else if (increment === 'minor') {
+    minor += 1
+    patch = 0
+  } else if (increment === 'patch') {
+    patch += 1
+  }
+
+  return `${prefix}${major}.${minor}.${patch}`
+}
+
+async function writeDockerVersion(path, version) {
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, `${version}\n`, 'ascii')
+}
+
+async function buildBackendJar(options) {
+  const args = [`-Dmaven.repo.local=${options.mavenRepo}`, 'clean', 'package']
+  if (!options.runTests) {
+    args.push('-DskipTests')
+  }
+  await run('mvn', args)
+}
+
+async function prepareDockerBuildContext(options) {
+  await rm(dockerBuildDir, { recursive: true, force: true })
+  await mkdir(dockerStagedReleasesDir, { recursive: true })
+
+  const jar = await findNewestFile(backendTargetDir, file => {
+    const name = basename(file).toLowerCase()
+    return name.endsWith('.jar') && !name.endsWith('.original')
+  })
+  if (!jar) {
+    throw new Error('No runnable jar was found in target/.')
+  }
+  await copyFile(jar, join(dockerBuildDir, 'app.jar'))
+
+  if (!existsSync(releaseManifestPath)) {
+    console.warn('Warning: releases/manifest.json was not found; the image will not contain client download metadata.')
+    return
+  }
+
+  if (options.includeAllReleases) {
+    await copyDirectory(releasesDir, dockerStagedReleasesDir)
+    return
+  }
+
+  await copyFile(releaseManifestPath, join(dockerStagedReleasesDir, 'manifest.json'))
+  const manifest = await readJson(releaseManifestPath)
+  for (const relativePath of collectDockerReleaseArtifactPaths(manifest)) {
+    await copyReleaseFileToDockerContext(relativePath)
+  }
+}
+
+function collectDockerReleaseArtifactPaths(manifest) {
+  const paths = new Set()
+  const platforms = manifest.platforms || {}
+  for (const [platform, platformRelease] of Object.entries(platforms)) {
+    const channels = platformRelease?.channels || {}
+    for (const channel of Object.values(channels)) {
+      const relativePath = releasePathFromDownloadUrl(channel?.downloadUrl) || fallbackReleasePathFromDownloadUrl(channel?.downloadUrl)
+      if (relativePath) {
+        paths.add(relativePath)
+      } else if (channel?.fileName) {
+        paths.add(toUrlPath(join(platform, channel.fileName)))
+      }
+    }
+  }
+  return paths
+}
+
+async function copyReleaseFileToDockerContext(relativePath) {
+  const normalizedRelativePath = String(relativePath).split(/[\\/]+/).join(sep)
+  const source = join(releasesDir, normalizedRelativePath)
+  if (!existsSync(source)) {
+    throw new Error(`Release artifact referenced by manifest was not found: releases/${toUrlPath(normalizedRelativePath)}`)
+  }
+  const destination = join(dockerStagedReleasesDir, normalizedRelativePath)
+  await mkdir(dirname(destination), { recursive: true })
+  await copyFile(source, destination)
 }
 
 function buildPlatformManifest(platform, artifact) {
@@ -460,6 +727,89 @@ async function readJson(path) {
 
 async function writeJson(path, data) {
   await writeFile(path, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
+}
+
+function parseProperties(content) {
+  const properties = {}
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#') || line.startsWith('!')) {
+      continue
+    }
+    const separatorIndex = findPropertySeparatorIndex(line)
+    const key = separatorIndex === -1 ? line : line.slice(0, separatorIndex).trim()
+    const value = separatorIndex === -1 ? '' : line.slice(separatorIndex + 1).trim()
+    if (key) {
+      properties[key] = value
+    }
+  }
+  return properties
+}
+
+function findPropertySeparatorIndex(line) {
+  const equalsIndex = line.indexOf('=')
+  const colonIndex = line.indexOf(':')
+  if (equalsIndex === -1) {
+    return colonIndex
+  }
+  if (colonIndex === -1) {
+    return equalsIndex
+  }
+  return Math.min(equalsIndex, colonIndex)
+}
+
+function requireProperty(properties, name, sourcePath) {
+  const value = properties[name]
+  if (!value) {
+    throw new Error(`${toDisplayPath(relative(rootDir, sourcePath))} is missing required property: ${name}`)
+  }
+  return value
+}
+
+function requireConfiguredSecret(properties, name, sourcePath) {
+  const value = requireProperty(properties, name, sourcePath)
+  if (value.startsWith('CHANGE_ME')) {
+    throw new Error(`${toDisplayPath(relative(rootDir, sourcePath))} must replace ${name} before building Android release`)
+  }
+  return value
+}
+
+async function requireCommand(command) {
+  const checker = process.platform === 'win32' ? 'where' : 'which'
+  const args = [command]
+  try {
+    await runQuiet(checker, args)
+  } catch {
+    throw new Error(`Required command was not found: ${command}`)
+  }
+}
+
+function runQuiet(command, args, cwd = rootDir) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(resolveCommand(command), resolveArgs(command, args), { cwd, stdio: 'ignore' })
+    child.on('error', reject)
+    child.on('exit', code => {
+      if (code === 0) {
+        resolve()
+      } else {
+        reject(new Error(`${command} ${args.join(' ')} exited with code ${code}`))
+      }
+    })
+  })
+}
+
+function runDirect(command, args, cwd = rootDir) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd, stdio: 'inherit' })
+    child.on('error', reject)
+    child.on('exit', code => {
+      if (code === 0) {
+        resolve()
+      } else {
+        reject(new Error(`${command} ${args.join(' ')} exited with code ${code}`))
+      }
+    })
+  })
 }
 
 function run(command, args, cwd = rootDir) {
@@ -597,6 +947,32 @@ function trimTrailingSlash(value) {
   return String(value || '').replace(/\/+$/, '')
 }
 
+function resolveRootPath(path) {
+  return isAbsolute(path) ? path : join(rootDir, path)
+}
+
+function resolveAndroidProjectPath(path) {
+  return isAbsolute(path) ? path : join(androidProjectDir, path)
+}
+
+function positiveIntegerOrDefault(value, defaultValue) {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : defaultValue
+}
+
+function toDisplayPath(path) {
+  return toUrlPath(path)
+}
+
+function isTruthyEnv(value) {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase())
+}
+
+function fallbackReleasePathFromDownloadUrl(downloadUrl) {
+  const match = String(downloadUrl || '').match(/\/downloads\/(.+)$/)
+  return match ? match[1] : null
+}
+
 function firstText(...values) {
   return values.find(value => typeof value === 'string' && value.trim())
 }
@@ -617,17 +993,22 @@ function printSelectedOptions() {
   console.log('')
   console.log('将执行：')
   console.log(`- 目标：${target}`)
+  if (hasFlag('--docker') || target === 'docker') {
+    console.log('- Docker 镜像：是')
+  }
   console.log(`- PC: ${config.pc?.version || '-'} / versionCode ${config.pc?.versionCode || '-'} / forceUpdate=${Boolean(config.pc?.forceUpdate)}`)
   console.log(`- Android: ${config.android?.version || '-'} / versionCode ${config.android?.versionCode || '-'} / forceUpdate=${Boolean(config.android?.forceUpdate)}`)
   console.log('')
 }
 
-function printCompletionMessage(artifacts) {
+function printCompletionMessage(artifacts, dockerResult) {
   if (target === 'version') {
     console.log('版本同步完成。')
-    return
+  } else if (target === 'docker') {
+    console.log('Docker 打包完成。')
+  } else {
+    console.log('打包完成。')
   }
-  console.log('打包完成。')
   if (artifacts.pc) {
     console.log(`PC: releases/${artifacts.pc.relativePath}`)
   }
@@ -636,6 +1017,11 @@ function printCompletionMessage(artifacts) {
   }
   if (Object.keys(artifacts).length > 0) {
     console.log('Manifest: releases/manifest.json')
+  }
+  if (dockerResult) {
+    console.log(`Docker: ${dockerResult.versionImageRef}`)
+    console.log(`Docker latest: ${dockerResult.latestImageRef}`)
+    console.log(`示例运行: docker run --rm -p 8080:8080 -e DB_HOST=host.docker.internal -e DB_PORT=3306 -e DB_NAME=cloud_album -e DB_USER=root -e DB_PASSWORD=root -e REDIS_HOST=host.docker.internal -e MINIO_ENDPOINT=http://host.docker.internal:9000 ${dockerResult.latestImageRef}`)
   }
 }
 
@@ -650,7 +1036,7 @@ async function askRaw(rl, question) {
 
 async function askChoice(rl, question, choices, defaultValue) {
   choices.forEach(([value, label], index) => {
-    console.log(`${index + 1}. ${label} (${value})`)
+    console.log(`${index + 1}. ${label} [${value}]`)
   })
   const defaultIndex = Math.max(choices.findIndex(([value]) => value === defaultValue), 0)
   while (true) {

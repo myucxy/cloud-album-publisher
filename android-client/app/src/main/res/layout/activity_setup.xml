@@ -62,6 +62,14 @@
                 android:inputType="textUri"
                 android:singleLine="true" />
 
+            <Button
+                android:id="@+id/discoverButton"
+                style="@style/Widget.CloudAlbum.Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/discover_button" />
+
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"

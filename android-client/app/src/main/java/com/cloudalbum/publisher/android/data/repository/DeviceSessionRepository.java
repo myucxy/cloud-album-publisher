@@ -148,7 +148,7 @@ public class DeviceSessionRepository {
     }
 
     public boolean isMediaCacheEnabled() {
-        return preferences.getBoolean(KEY_MEDIA_CACHE_ENABLED, true);
+        return preferences.getBoolean(KEY_MEDIA_CACHE_ENABLED, false);
     }
 
     public void saveMediaCacheEnabled(boolean enabled) {

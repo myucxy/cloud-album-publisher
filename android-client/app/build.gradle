@@ -2,6 +2,17 @@ plugins {
     id 'com.android.application'
 }
 
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+def hasReleaseKeystoreConfig = keystorePropertiesFile.exists()
+        && keystoreProperties["storeFile"]
+        && keystoreProperties["storePassword"]
+        && keystoreProperties["keyAlias"]
+        && keystoreProperties["keyPassword"]
+
 android {
     namespace 'com.cloudalbum.publisher.android'
     compileSdk 34
@@ -10,12 +21,23 @@ android {
         applicationId "com.cloudalbum.publisher.android"
         minSdk 19
         targetSdk 34
-        versionCode 45
-        versionName "0.3.43"
+        versionCode 101
+        versionName "1.0.1"
         multiDexEnabled true
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+    }
+
+    if (hasReleaseKeystoreConfig) {
+        signingConfigs {
+            release {
+                storeFile rootProject.file(keystoreProperties["storeFile"])
+                storePassword keystoreProperties["storePassword"]
+                keyAlias keystoreProperties["keyAlias"]
+                keyPassword keystoreProperties["keyPassword"]
+            }
+        }
     }
 
     buildTypes {
@@ -24,6 +46,9 @@ android {
             versionNameSuffix "-debug"
         }
         release {
+            if (hasReleaseKeystoreConfig) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }

@@ -266,12 +266,13 @@ import { distributionApi } from '@/api/distribution'
 import { albumApi } from '@/api/album'
 import { deviceApi } from '@/api/device'
 import SecureImage from '@/components/SecureImage.vue'
+import { DEFAULT_PAGE_SIZE } from '@/constants/pagination'
 
 const distributions = ref([])
 const albumMetaMap = ref({})
 const total = ref(0)
 const page = ref(1)
-const pageSize = 10
+const pageSize = DEFAULT_PAGE_SIZE
 const loading = ref(false)
 const filterStatus = ref(undefined)
 const modalOpen = ref(false)
@@ -282,7 +283,7 @@ const selectedAlbum = ref(null)
 const albumPickerOpen = ref(false)
 const albumPickerLoading = ref(false)
 const albumPickerPage = ref(1)
-const albumPickerPageSize = 12
+const albumPickerPageSize = DEFAULT_PAGE_SIZE
 const albumPickerTotal = ref(0)
 const albumPickerVisibility = ref(undefined)
 const albumOptions = ref([])

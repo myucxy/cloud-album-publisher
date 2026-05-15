@@ -109,6 +109,7 @@ import { message } from 'ant-design-vue'
 import { PlusOutlined, PictureOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import { albumApi } from '@/api/album'
 import SecureImage from '@/components/SecureImage.vue'
+import { DEFAULT_PAGE_SIZE } from '@/constants/pagination'
 
 const TRANSITION_STYLE_OPTIONS = [
   { value: 'NONE', label: '无转场' },
@@ -188,7 +189,7 @@ const router = useRouter()
 const albums = ref([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = 12
+const pageSize = DEFAULT_PAGE_SIZE
 const modalOpen = ref(false)
 const saving = ref(false)
 const editingId = ref(null)
@@ -346,4 +347,3 @@ function getFrameWallPreviewSlotStyle(slot, value) {
   background: linear-gradient(135deg, #91caff, #b7eb8f);
 }
 </style>
-

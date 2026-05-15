@@ -663,6 +663,7 @@ import { mediaApi } from '@/api/media'
 import { mediaSourceApi } from '@/api/media-source'
 import SecureImage from '@/components/SecureImage.vue'
 import { useSecureObjectUrl } from '@/components/useSecureObjectUrl'
+import { DEFAULT_PAGE_SIZE } from '@/constants/pagination'
 
 const EXTERNAL_SOURCE_TYPE_OPTIONS = [
   { value: 'SMB', label: 'SMB', implemented: true, defaultPort: 445 },
@@ -676,7 +677,7 @@ const SOURCE_TYPE_ORDER = ['UPLOAD', 'SMB', 'FTP', 'SFTP', 'WEBDAV']
 const mediaList = ref([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = 12
+const pageSize = DEFAULT_PAGE_SIZE
 const loading = ref(false)
 const groupLoading = ref(false)
 const filterStatus = ref(undefined)
@@ -714,7 +715,7 @@ const browseItems = ref([])
 const externalBrowseSource = ref(null)
 const externalBrowsePath = ref('')
 const externalBrowsePage = ref(1)
-const externalBrowsePageSize = 12
+const externalBrowsePageSize = DEFAULT_PAGE_SIZE
 
 const uploadDrawerOpen = ref(false)
 const uploadStep = ref(0)

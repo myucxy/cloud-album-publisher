@@ -13,6 +13,10 @@ application-prod.yml
 .env
 /android-client/.gradle/
 /android-client/local.properties
+/android-client/keystore.properties
+/android-client/app/*.jks
+/android-client/app/*.jks.old
+/android-client/app/*.keystore
 /android-client/build/
 /android-client/app/build/
 *.apk
