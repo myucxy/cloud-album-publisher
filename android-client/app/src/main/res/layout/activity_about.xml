@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/ca_background"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/screen_padding">
+
+        <!-- 返回按钮 -->
+        <Button
+            android:id="@+id/backButton"
+            style="@style/Widget.CloudAlbum.Button.Secondary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/back"
+            android:focusable="true"
+            android:focusableInTouchMode="false" />
+
+        <!-- 标题 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/about_title"
+            android:textColor="@color/ca_text_primary"
+            android:textSize="@dimen/title_size"
+            android:textStyle="bold" />
+
+        <!-- 版本信息面板 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:background="@drawable/bg_panel"
+            android:orientation="vertical"
+            android:padding="@dimen/panel_padding">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/about_version_label"
+                android:textColor="@color/ca_text_primary"
+                android:textSize="@dimen/body_size"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/versionNameText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textColor="@color/ca_text_secondary"
+                android:textSize="@dimen/subtitle_size" />
+
+            <TextView
+                android:id="@+id/versionCodeText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/ca_text_secondary"
+                android:textSize="@dimen/caption_size" />
+        </LinearLayout>
+
+        <!-- 开源地址面板 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_panel"
+            android:orientation="vertical"
+            android:padding="@dimen/panel_padding">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/about_open_source_label"
+                android:textColor="@color/ca_text_primary"
+                android:textSize="@dimen/body_size"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/about_open_source_description"
+                android:textColor="@color/ca_text_secondary"
+                android:textSize="@dimen/subtitle_size" />
+
+            <Button
+                android:id="@+id/openGithubButton"
+                style="@style/Widget.CloudAlbum.Button"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/about_github_button"
+                android:focusable="true"
+                android:focusableInTouchMode="false" />
+        </LinearLayout>
+
+        <!-- 项目介绍面板 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_panel"
+            android:orientation="vertical"
+            android:padding="@dimen/panel_padding">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/about_project_label"
+                android:textColor="@color/ca_text_primary"
+                android:textSize="@dimen/body_size"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/about_project_description"
+                android:textColor="@color/ca_text_secondary"
+                android:textSize="@dimen/subtitle_size" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

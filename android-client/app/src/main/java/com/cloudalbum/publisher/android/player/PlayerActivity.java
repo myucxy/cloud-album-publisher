@@ -267,6 +267,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private Button refreshButton;
     private Button setupButton;
     private Button appUpdateButton;
+    private Button aboutButton;
     private Button systemCapabilityButton;
     private Button systemCapabilityCloseButton;
     private Button cacheClearButton;
@@ -511,6 +512,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         refreshButton = findViewById(R.id.refreshButton);
         setupButton = findViewById(R.id.setupButton);
         appUpdateButton = findViewById(R.id.appUpdateButton);
+        aboutButton = findViewById(R.id.aboutButton);
         systemCapabilityButton = findViewById(R.id.systemCapabilityButton);
         systemCapabilityCloseButton = findViewById(R.id.systemCapabilityCloseButton);
         cacheClearButton = findViewById(R.id.cacheClearButton);
@@ -678,6 +680,13 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             }
             @Override
             public void onNothingSelected(AdapterView<?> parent) {}
+        });
+        aboutButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent intent = new Intent(PlayerActivity.this, com.cloudalbum.publisher.android.about.AboutActivity.class);
+                startActivity(intent);
+            }
         });
         systemCapabilityButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -3094,6 +3103,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         addDrawerFocusableView(brightnessEndSpinner);
         addDrawerFocusableView(brightnessDimSpinner);
         collectFocusableChildren(playbackSelectionContainer);
+        addDrawerFocusableView(aboutButton);
         addDrawerFocusableView(systemCapabilityButton);
 
         for (int i = 0; i < drawerFocusableViews.size(); i += 1) {

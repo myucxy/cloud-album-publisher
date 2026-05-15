@@ -539,6 +539,16 @@
             </LinearLayout>
 
             <Button
+                android:id="@+id/aboutButton"
+                style="@style/Widget.CloudAlbum.Button.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:focusable="true"
+                android:focusableInTouchMode="false"
+                android:text="@string/menu_about" />
+
+            <Button
                 android:id="@+id/systemCapabilityButton"
                 style="@style/Widget.CloudAlbum.Button.Secondary"
                 android:layout_width="match_parent"

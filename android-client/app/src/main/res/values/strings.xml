@@ -38,6 +38,12 @@
     <string name="toast_settings_saved">设备设置已保存并已注册</string>
     <string name="toast_activation_success">设备已激活</string>
     <string name="toast_missing_server">请输入服务器地址</string>
+    <string name="discover_button">自动发现</string>
+    <string name="discover_scanning">正在扫描局域网…</string>
+    <string name="discover_found">发现 %d 个服务器</string>
+    <string name="discover_none">未发现服务器，请手动输入地址</string>
+    <string name="discover_error">扫描失败：%s</string>
+    <string name="discover_select_title">选择服务器</string>
     <string name="toast_missing_username">请输入用户名</string>
     <string name="toast_missing_password">请输入密码</string>
     <string name="toast_missing_device_token">设备未激活，请先完成绑定</string>
@@ -57,4 +63,15 @@
     <string name="brightness_dim_label">非时段亮度</string>
     <string name="brightness_summary_enabled">时段外自动降低亮度</string>
     <string name="brightness_summary_disabled">未启用定时亮度</string>
+    <string name="back">返回</string>
+    <string name="about_title">关于</string>
+    <string name="about_version_label">版本信息</string>
+    <string name="about_version_format">版本：%s</string>
+    <string name="about_version_code_format">版本号：%d</string>
+    <string name="about_open_source_label">开源地址</string>
+    <string name="about_open_source_description">本项目基于 GPL-3.0 协议开源</string>
+    <string name="about_github_button">访问 GitHub</string>
+    <string name="about_project_label">项目介绍</string>
+    <string name="about_project_description">云影发布系统 - 相册管理与设备播放解决方案</string>
+    <string name="menu_about">关于</string>
 </resources>

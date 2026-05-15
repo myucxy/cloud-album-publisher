@@ -226,22 +226,15 @@ public class DeviceServiceImpl implements DeviceService {
     @Transactional
     public void unbindDevice(Long userId, Long deviceId) {
         Device device = getOwnedDevice(userId, deviceId);
-        LocalDateTime now = LocalDateTime.now();
-        device.setUserId(null);
-        device.setStatus(DeviceStatus.UNBOUND.name());
-        device.setUnboundAt(now);
-        device.setUpdatedAt(now);
-        deviceMapper.update(null, new LambdaUpdateWrapper<Device>()
-                .eq(Device::getId, deviceId)
-                .set(Device::getUserId, null)
-                .set(Device::getStatus, DeviceStatus.UNBOUND.name())
-                .set(Device::getUnboundAt, now)
-                .set(Device::getUpdatedAt, now));
 
+        // 先删除关联数据
         deviceGroupRelMapper.delete(new LambdaQueryWrapper<DeviceGroupRel>()
                 .eq(DeviceGroupRel::getDeviceId, deviceId));
         distributionDeviceMapper.delete(new LambdaQueryWrapper<DistributionDevice>()
                 .eq(DistributionDevice::getDeviceId, deviceId));
+
+        // 物理删除设备记录
+        deviceMapper.deleteById(deviceId);
     }
 
     @Override

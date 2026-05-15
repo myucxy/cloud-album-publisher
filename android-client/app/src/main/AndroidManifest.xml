@@ -58,6 +58,10 @@
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
             android:exported="false"
             android:screenOrientation="fullSensor" />
+        <activity
+            android:name=".about.AboutActivity"
+            android:exported="false"
+            android:screenOrientation="fullSensor" />
     </application>
 
 </manifest>

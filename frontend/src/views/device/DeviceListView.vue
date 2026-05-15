@@ -140,8 +140,8 @@
                   <a-button type="link" size="small" @click="openRenameModal(record)">重命名</a-button>
                   <a-button v-if="record.status !== 'ONLINE'" type="link" size="small" @click="changeStatus(record, 'ONLINE')">设为在线</a-button>
                   <a-button v-if="record.status !== 'OFFLINE'" type="link" size="small" @click="changeStatus(record, 'OFFLINE')">设为离线</a-button>
-                  <a-popconfirm title="确认解绑该设备？" @confirm="unbindDevice(record.id)">
-                    <a-button type="link" danger size="small">解绑</a-button>
+                  <a-popconfirm title="确认删除该设备？删除后设备需要重新注册才能使用。" @confirm="unbindDevice(record.id)">
+                    <a-button type="link" danger size="small">删除</a-button>
                   </a-popconfirm>
                 </template>
               </a-space>
@@ -400,7 +400,7 @@ async function changeStatus(record, status) {
 
 async function unbindDevice(id) {
   await deviceApi.unbind(id)
-  message.success('设备已解绑')
+  message.success('设备已删除')
   await loadAll()
 }
 
