@@ -19,6 +19,7 @@ public interface MediaSourceFileClient {
     @Builder
     class MediaSourceConnection {
         private final String sourceType;
+        private final String url;
         private final String host;
         private final Integer port;
         private final String shareName;
@@ -26,7 +27,6 @@ public interface MediaSourceFileClient {
         private final String username;
         private final String password;
         private final Boolean secure;
-        private final String hostKeyFingerprint;
     }
 
     @Getter

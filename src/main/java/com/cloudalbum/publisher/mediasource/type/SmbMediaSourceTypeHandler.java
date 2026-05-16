@@ -31,8 +31,8 @@ public class SmbMediaSourceTypeHandler implements MediaSourceTypeHandler {
         Map<String, Object> normalized = new LinkedHashMap<>();
         normalized.put("host", requireMapText(config, "host", "主机地址不能为空"));
         normalized.put("port", resolvePort(asInteger(config == null ? null : config.get("port"))));
-        normalized.put("shareName", requireMapText(config, "shareName", "共享名称不能为空"));
         normalized.put("rootPath", normalizeRootPath(asText(config == null ? null : config.get("rootPath"))));
+        normalized.put("scanSubdirectories", asBoolean(config == null ? null : config.get("scanSubdirectories")));
         return normalized;
     }
 
@@ -54,10 +54,12 @@ public class SmbMediaSourceTypeHandler implements MediaSourceTypeHandler {
     public MediaSourceFileClient.MediaSourceConnection buildConnection(MediaSource mediaSource,
                                                                        Map<String, Object> config,
                                                                        Map<String, Object> credentials) {
+        String rootPath = normalizeRootPath(asText(config.get("rootPath")));
+        String shareName = extractShareNameFromPath(rootPath);
         return MediaSourceFileClient.MediaSourceConnection.builder()
                 .host(requireMapText(config, "host", "主机地址不能为空"))
                 .port(resolvePort(asInteger(config.get("port"))))
-                .shareName(requireMapText(config, "shareName", "共享名称不能为空"))
+                .shareName(shareName)
                 .username(requireMapText(credentials, "username", "用户名不能为空"))
                 .password(requireMapText(credentials, "password", "密码不能为空"))
                 .build();
@@ -68,8 +70,8 @@ public class SmbMediaSourceTypeHandler implements MediaSourceTypeHandler {
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("host", config.get("host"));
         summary.put("port", config.get("port"));
-        summary.put("shareName", config.get("shareName"));
         summary.put("rootPath", config.get("rootPath"));
+        summary.put("scanSubdirectories", asBoolean(config.get("scanSubdirectories")));
         return summary;
     }
 
@@ -79,7 +81,6 @@ public class SmbMediaSourceTypeHandler implements MediaSourceTypeHandler {
                                       Map<String, Object> credentials) {
         mediaSource.setHost(asText(config.get("host")));
         mediaSource.setPort(resolvePort(asInteger(config.get("port"))));
-        mediaSource.setShareName(asText(config.get("shareName")));
         mediaSource.setRootPath(normalizeRootPath(asText(config.get("rootPath"))));
         mediaSource.setUsername(asText(credentials.get("username")));
         String password = asText(credentials.get("password"));
@@ -126,6 +127,16 @@ public class SmbMediaSourceTypeHandler implements MediaSourceTypeHandler {
         }
     }
 
+    private boolean asBoolean(Object value) {
+        if (value == null) {
+            return false;
+        }
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        return Boolean.parseBoolean(String.valueOf(value));
+    }
+
     private String normalizeRootPath(String rootPath) {
         if (!StringUtils.hasText(rootPath)) {
             return "/";
@@ -141,5 +152,19 @@ public class SmbMediaSourceTypeHandler implements MediaSourceTypeHandler {
             normalized = normalized.substring(0, normalized.length() - 1);
         }
         return normalized;
+    }
+
+    private String extractShareNameFromPath(String path) {
+        if (!StringUtils.hasText(path) || "/".equals(path)) {
+            return "";
+        }
+        String cleanPath = path;
+        if (cleanPath.startsWith("/")) {
+            cleanPath = cleanPath.substring(1);
+        }
+        if (cleanPath.contains("/")) {
+            return cleanPath.substring(0, cleanPath.indexOf("/"));
+        }
+        return cleanPath;
     }
 }

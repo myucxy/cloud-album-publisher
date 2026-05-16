@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -29,12 +30,13 @@ public class WebDavMediaSourceTypeHandler implements MediaSourceTypeHandler {
 
     @Override
     public Map<String, Object> normalizeConfig(Map<String, Object> config) {
-        boolean secure = asBoolean(config == null ? null : config.get("secure"));
+        Map<String, Object> parsed = parseConnectionInfo(config);
         Map<String, Object> normalized = new LinkedHashMap<>();
-        normalized.put("host", requireMapText(config, "host", "主机地址不能为空"));
-        normalized.put("port", resolvePort(asInteger(config == null ? null : config.get("port")), secure));
+        normalized.put("url", parsed.get("url"));
+        normalized.put("host", parsed.get("host"));
+        normalized.put("port", parsed.get("port"));
         normalized.put("rootPath", normalizeRootPath(asText(config == null ? null : config.get("rootPath"))));
-        normalized.put("secure", secure);
+        normalized.put("scanSubdirectories", asBoolean(config == null ? null : config.get("scanSubdirectories")));
         return normalized;
     }
 
@@ -56,25 +58,28 @@ public class WebDavMediaSourceTypeHandler implements MediaSourceTypeHandler {
     public MediaSourceFileClient.MediaSourceConnection buildConnection(MediaSource mediaSource,
                                                                        Map<String, Object> config,
                                                                        Map<String, Object> credentials) {
-        boolean secure = asBoolean(config.get("secure"));
+        Map<String, Object> parsed = parseConnectionInfo(config);
         return MediaSourceFileClient.MediaSourceConnection.builder()
                 .sourceType(SOURCE_TYPE)
-                .host(requireMapText(config, "host", "主机地址不能为空"))
-                .port(resolvePort(asInteger(config.get("port")), secure))
+                .url((String) parsed.get("url"))
+                .host((String) parsed.get("host"))
+                .port((Integer) parsed.get("port"))
                 .rootPath(normalizeRootPath(asText(config.get("rootPath"))))
                 .username(requireMapText(credentials, "username", "用户名不能为空"))
                 .password(requireMapText(credentials, "password", "密码不能为空"))
-                .secure(secure)
+                .secure((Boolean) parsed.get("secure"))
                 .build();
     }
 
     @Override
     public Map<String, Object> summarizeConfig(Map<String, Object> config) {
+        Map<String, Object> parsed = parseConnectionInfo(config);
         Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("host", config.get("host"));
-        summary.put("port", config.get("port"));
+        summary.put("url", parsed.get("url"));
+        summary.put("host", parsed.get("host"));
+        summary.put("port", parsed.get("port"));
         summary.put("rootPath", config.get("rootPath"));
-        summary.put("secure", asBoolean(config.get("secure")));
+        summary.put("scanSubdirectories", asBoolean(config.get("scanSubdirectories")));
         return summary;
     }
 
@@ -82,9 +87,9 @@ public class WebDavMediaSourceTypeHandler implements MediaSourceTypeHandler {
     public void applyPersistentFields(MediaSource mediaSource,
                                       Map<String, Object> config,
                                       Map<String, Object> credentials) {
-        boolean secure = asBoolean(config.get("secure"));
-        mediaSource.setHost(asText(config.get("host")));
-        mediaSource.setPort(resolvePort(asInteger(config.get("port")), secure));
+        Map<String, Object> parsed = parseConnectionInfo(config);
+        mediaSource.setHost((String) parsed.get("host"));
+        mediaSource.setPort((Integer) parsed.get("port"));
         mediaSource.setShareName(null);
         mediaSource.setRootPath(normalizeRootPath(asText(config.get("rootPath"))));
         mediaSource.setUsername(asText(credentials.get("username")));
@@ -94,11 +99,66 @@ public class WebDavMediaSourceTypeHandler implements MediaSourceTypeHandler {
                 : mediaSource.getPasswordCiphertext());
     }
 
-    private Integer resolvePort(Integer port, boolean secure) {
-        if (port != null && port > 0) {
-            return port;
+    private Map<String, Object> parseConnectionInfo(Map<String, Object> config) {
+        Map<String, Object> result = new LinkedHashMap<>();
+
+        if (config != null && config.containsKey("url")) {
+            String url = asText(config.get("url"));
+            if (!StringUtils.hasText(url)) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "WebDAV URL 不能为空");
+            }
+            String fullUrl = url;
+            if (!fullUrl.startsWith("http://") && !fullUrl.startsWith("https://")) {
+                fullUrl = "http://" + fullUrl;
+            }
+            try {
+                URI uri = URI.create(fullUrl);
+                String host = uri.getHost();
+                if (!StringUtils.hasText(host)) {
+                    throw new BusinessException(ResultCode.BAD_REQUEST, "WebDAV URL 格式无效");
+                }
+                boolean secure = "https".equalsIgnoreCase(uri.getScheme());
+                int port = uri.getPort();
+                if (port <= 0) {
+                    port = secure ? DEFAULT_HTTPS_PORT : DEFAULT_HTTP_PORT;
+                }
+                String normalizedUrl = String.format("%s://%s:%d%s", secure ? "https" : "http", host, port, normalizeUrlPath(uri.getRawPath()));
+                result.put("url", normalizedUrl);
+                result.put("host", host);
+                result.put("port", port);
+                result.put("secure", secure);
+            } catch (IllegalArgumentException e) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "WebDAV URL 格式无效");
+            }
+        } else {
+            String host = requireMapText(config, "host", "主机地址不能为空");
+            boolean secure = false;
+            if (config != null) {
+                Object secureVal = config.get("secure");
+                if (secureVal instanceof Boolean) {
+                    secure = (Boolean) secureVal;
+                } else if (secureVal != null) {
+                    secure = Boolean.parseBoolean(String.valueOf(secureVal));
+                }
+            }
+            Integer port = asInteger(config == null ? null : config.get("port"));
+            if (port == null || port <= 0) {
+                port = secure ? DEFAULT_HTTPS_PORT : DEFAULT_HTTP_PORT;
+            }
+            String url = String.format("%s://%s:%d", secure ? "https" : "http", host, port);
+            result.put("url", url);
+            result.put("host", host);
+            result.put("port", port);
+            result.put("secure", secure);
         }
-        return secure ? DEFAULT_HTTPS_PORT : DEFAULT_HTTP_PORT;
+        return result;
+    }
+
+    private String normalizeUrlPath(String rawPath) {
+        if (!StringUtils.hasText(rawPath) || "/".equals(rawPath)) {
+            return "";
+        }
+        return rawPath.startsWith("/") ? rawPath : "/" + rawPath;
     }
 
     private String requireMapText(Map<String, Object> map, String key, String message) {

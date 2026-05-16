@@ -21,6 +21,8 @@ import com.cloudalbum.publisher.media.mapper.UploadPartMapper;
 import com.cloudalbum.publisher.media.mapper.UploadSessionMapper;
 import com.cloudalbum.publisher.media.service.MediaService;
 import com.cloudalbum.publisher.media.util.MediaTypeUtil;
+import com.cloudalbum.publisher.mediasource.dto.ExternalMediaScanSummary;
+import com.cloudalbum.publisher.mediasource.service.MediaSourceService;
 import com.cloudalbum.publisher.review.entity.ReviewRecord;
 import com.cloudalbum.publisher.review.mapper.ReviewRecordMapper;
 import io.minio.ComposeObjectArgs;
@@ -68,6 +70,7 @@ public class MediaServiceImpl implements MediaService {
     private final MinioClient minioClient;
     private final MediaContentResolverRegistry mediaContentResolverRegistry;
     private final MediaHttpWriter mediaHttpWriter;
+    private final MediaSourceService mediaSourceService;
     private final RedisTemplate<String, Object> redisTemplate;
 
     @Value("${minio.bucket}")
@@ -139,6 +142,8 @@ public class MediaServiceImpl implements MediaService {
             });
             facetCount.setCount(facetCount.getCount() + 1);
         }
+
+        mergeExternalMediaGroups(userId, keyword, sourceGroupMap, mediaTypeMap);
 
         response.setSourceGroups(new ArrayList<>(sourceGroupMap.values()));
         response.setMediaTypeGroups(new ArrayList<>(mediaTypeMap.values()));
@@ -544,6 +549,45 @@ public class MediaServiceImpl implements MediaService {
         }
 
         return queryWrapper;
+    }
+
+    private void mergeExternalMediaGroups(Long userId,
+                                          String keyword,
+                                          Map<String, MediaLibraryGroupsResponse.SourceGroup> sourceGroupMap,
+                                          Map<String, MediaLibraryGroupsResponse.FacetCount> mediaTypeMap) {
+        for (ExternalMediaScanSummary summary : mediaSourceService.scanExternalMediaSummaries(userId, keyword)) {
+            String sourceKey = summary.getSourceType() + "#" + summary.getSourceId();
+            MediaLibraryGroupsResponse.SourceGroup sourceGroup = sourceGroupMap.computeIfAbsent(sourceKey, key -> {
+                MediaLibraryGroupsResponse.SourceGroup created = new MediaLibraryGroupsResponse.SourceGroup();
+                created.setSourceType(summary.getSourceType());
+                created.setSourceId(summary.getSourceId());
+                created.setSourceName(summary.getSourceName());
+                return created;
+            });
+            sourceGroup.setMediaCount(sourceGroup.getMediaCount() + summary.getMediaCount());
+            for (ExternalMediaScanSummary.FolderSummary folderSummary : summary.getFolders()) {
+                MediaLibraryGroupsResponse.FolderGroup folderGroup = sourceGroup.getFolders().stream()
+                        .filter(item -> Objects.equals(item.getFolderPath(), folderSummary.getFolderPath()))
+                        .findFirst()
+                        .orElseGet(() -> {
+                            MediaLibraryGroupsResponse.FolderGroup created = new MediaLibraryGroupsResponse.FolderGroup();
+                            created.setFolderPath(folderSummary.getFolderPath());
+                            created.setTitle(folderSummary.getTitle());
+                            sourceGroup.getFolders().add(created);
+                            return created;
+                        });
+                folderGroup.setMediaCount(folderGroup.getMediaCount() + folderSummary.getMediaCount());
+            }
+            summary.getMediaTypeCounts().forEach((mediaType, count) -> {
+                MediaLibraryGroupsResponse.FacetCount facetCount = mediaTypeMap.computeIfAbsent(mediaType, key -> {
+                    MediaLibraryGroupsResponse.FacetCount created = new MediaLibraryGroupsResponse.FacetCount();
+                    created.setValue(mediaType);
+                    created.setLabel(mediaTypeLabel(mediaType));
+                    return created;
+                });
+                facetCount.setCount(facetCount.getCount() + count);
+            });
+        }
     }
 
     private void addFolderGroup(MediaLibraryGroupsResponse.SourceGroup sourceGroup, String folderPath) {

@@ -1,8 +1,12 @@
 package com.cloudalbum.publisher.mediasource.controller;
 
+import com.cloudalbum.publisher.common.model.PageRequest;
+import com.cloudalbum.publisher.common.model.PageResult;
 import com.cloudalbum.publisher.common.model.Result;
 import com.cloudalbum.publisher.common.util.SecurityUtil;
 import com.cloudalbum.publisher.media.dto.MediaResponse;
+import com.cloudalbum.publisher.mediasource.dto.ConnectionTestResponse;
+import com.cloudalbum.publisher.mediasource.dto.ExternalMediaItemResponse;
 import com.cloudalbum.publisher.mediasource.dto.MediaSourceBrowseRequest;
 import com.cloudalbum.publisher.mediasource.dto.MediaSourceBrowseResponse;
 import com.cloudalbum.publisher.mediasource.dto.MediaSourceCreateRequest;
@@ -62,6 +66,34 @@ public class MediaSourceController {
     public Result<MediaSourceBrowseResponse> browse(@PathVariable Long id,
                                                     @RequestParam(required = false) String path) {
         return Result.success(mediaSourceService.browse(id, SecurityUtil.getCurrentUserId(), path));
+    }
+
+    @Operation(summary = "递归获取媒体源媒体列表")
+    @GetMapping("/{id}/media")
+    public Result<PageResult<ExternalMediaItemResponse>> listExternalMedia(@PathVariable Long id,
+                                                                           @Valid PageRequest pageRequest,
+                                                                           @RequestParam(required = false) String path,
+                                                                           @RequestParam(required = false) String folderPath,
+                                                                           @RequestParam(required = false) String mediaType,
+                                                                           @RequestParam(required = false) String status,
+                                                                           @RequestParam(required = false) Boolean coverOnly,
+                                                                           @RequestParam(required = false) String keyword) {
+        return Result.success(mediaSourceService.listExternalMedia(
+                id,
+                SecurityUtil.getCurrentUserId(),
+                pageRequest,
+                path,
+                folderPath,
+                mediaType,
+                status,
+                coverOnly,
+                keyword));
+    }
+
+    @Operation(summary = "测试媒体源连接")
+    @PostMapping("/{id}/test-connection")
+    public Result<ConnectionTestResponse> testConnection(@PathVariable Long id) {
+        return Result.success(mediaSourceService.testConnection(id, SecurityUtil.getCurrentUserId()));
     }
 
     @Operation(summary = "根据临时配置浏览媒体源目录")

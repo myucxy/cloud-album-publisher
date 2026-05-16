@@ -19,12 +19,26 @@
         <a-card title="相册媒体" style="margin-bottom:16px">
           <template #extra>
             <a-space>
+              <a-button
+                danger
+                size="small"
+                :disabled="!selectedContentRowKeys.length"
+                @click="batchRemoveContents"
+              >
+                批量移除{{ selectedContentRowKeys.length ? `（${selectedContentRowKeys.length}）` : '' }}
+              </a-button>
               <a-button size="small" @click="loadContents">刷新</a-button>
               <a-button type="primary" size="small" @click="openAddMediaModal">添加媒体</a-button>
             </a-space>
           </template>
-          <a-table :data-source="contents" :columns="columns" row-key="id" :loading="loading"
-                   :pagination="{ total, current: page, pageSize, onChange: p => { page = p; loadContents() } }">
+          <a-table
+            :data-source="contents"
+            :columns="columns"
+            row-key="id"
+            :loading="loading"
+            :row-selection="contentRowSelection"
+            :pagination="{ total, current: page, pageSize, onChange: p => { page = p; loadContents() } }"
+          >
 
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'preview'">
@@ -658,6 +672,7 @@ const albumId = route.params.id
 
 const album = ref(null)
 const contents = ref([])
+const selectedContentRowKeys = ref([])
 const contentMediaMap = ref({})
 const total = ref(0)
 let page = ref(1)
@@ -740,6 +755,12 @@ const bgmSourceGroups = computed(() => mergePickerSourceGroups(bgmPickerGroups.v
 const mediaTotalMediaCount = computed(() => mediaSourceGroups.value.reduce((sum, item) => sum + (item.mediaCount || 0), 0))
 const coverTotalMediaCount = computed(() => coverSourceGroups.value.reduce((sum, item) => sum + (item.mediaCount || 0), 0))
 const bgmTotalMediaCount = computed(() => bgmSourceGroups.value.reduce((sum, item) => sum + (item.mediaCount || 0), 0))
+const contentRowSelection = computed(() => ({
+  selectedRowKeys: selectedContentRowKeys.value,
+  onChange: keys => {
+    selectedContentRowKeys.value = keys
+  }
+}))
 const mediaPickerTitle = computed(() => buildPickerTitle(mediaSourceGroups.value, mediaPickerSourceType.value, mediaPickerSourceId.value, mediaPickerFolderPath.value))
 const coverPickerTitle = computed(() => buildPickerTitle(coverSourceGroups.value, coverPickerSourceType.value, coverPickerSourceId.value, coverPickerFolderPath.value))
 const bgmPickerTitle = computed(() => buildPickerTitle(bgmSourceGroups.value, bgmPickerSourceType.value, bgmPickerSourceId.value, bgmPickerFolderPath.value))
@@ -803,6 +824,7 @@ async function loadContents() {
     const res = await albumApi.listContents(albumId, { page: page.value, size: pageSize })
     const list = res.data.list || []
     contents.value = list
+    selectedContentRowKeys.value = selectedContentRowKeys.value.filter(id => list.some(item => item.id === id))
     total.value = res.data.total
     await loadContentMedia(list)
   } finally {
@@ -915,6 +937,16 @@ async function openCoverModal() {
   await Promise.all([loadCoverGroups(), loadCoverSelectableMedia()])
 }
 
+async function batchRemoveContents() {
+  if (!selectedContentRowKeys.value.length) {
+    return
+  }
+  await albumApi.removeContents(albumId, { contentIds: selectedContentRowKeys.value })
+  message.success(`已移除 ${selectedContentRowKeys.value.length} 个媒体`)
+  selectedContentRowKeys.value = []
+  await Promise.all([loadContents(), loadAllAlbumContentKeys()])
+}
+
 async function removeBgmItem(id) {
   await albumApi.removeBgm(albumId, id)
   message.success('已删除')
@@ -992,13 +1024,14 @@ async function loadBgmSelectableMedia() {
   bgmPickerLoading.value = true
   try {
     if (isExternalPickerSelection(bgmPickerSourceType.value, bgmPickerSourceId.value)) {
-      const rawItems = await loadExternalMediaBrowseItems(bgmPickerSourceId.value, bgmPickerFolderPath.value)
-      const filtered = filterExternalPickerItems(rawItems, {
+      const result = await loadExternalMediaBrowseItems(bgmPickerSourceId.value, bgmPickerFolderPath.value, {
+        page: bgmPickerPage.value,
+        size: bgmPickerPageSize,
         mediaType: 'AUDIO',
         keyword: bgmPickerKeyword.value || undefined
       })
-      bgmPickerTotal.value = filtered.length
-      bgmSelectableMedia.value = paginatePickerItems(filtered, bgmPickerPage.value, bgmPickerPageSize)
+      bgmSelectableMedia.value = result.list
+      bgmPickerTotal.value = result.total
       return
     }
 
@@ -1139,15 +1172,29 @@ async function loadMediaSources() {
   mediaSources.value = Array.isArray(res.data) ? res.data : []
 }
 
-async function loadExternalMediaBrowseItems(sourceId, folderPath) {
+async function loadExternalMediaBrowseItems(sourceId, folderPath, { page, size, mediaType, keyword, coverOnly = false } = {}) {
   if (!sourceId) {
-    return []
+    return { list: [], total: 0 }
   }
-  const res = await mediaSourceApi.browse(sourceId, {
-    path: folderPath ? normalizePath(folderPath) : undefined
+  const source = findMediaSourceById(sourceId)
+  const res = await mediaSourceApi.listMedia(sourceId, {
+    page,
+    size,
+    path: source?.boundPath || '/',
+    folderPath: folderPath || undefined,
+    coverOnly: coverOnly || undefined,
+    status: 'READY',
+    keyword: keyword || undefined
   })
-  const items = Array.isArray(res.data?.items) ? res.data.items : []
-  return items.filter(item => !item?.directory)
+  const items = (res.data?.list || []).map(toExternalPickerMediaItem)
+  return {
+    list: items,
+    total: res.data?.total || 0
+  }
+}
+
+function findMediaSourceById(sourceId) {
+  return mediaSources.value.find(source => source.id === sourceId || source.sourceId === sourceId)
 }
 
 function toExternalPickerMediaItem(item) {
@@ -1237,11 +1284,7 @@ function mergePickerSourceGroups(baseGroups, sourceList) {
     ensureSource({
       sourceType: source.sourceType,
       sourceId: source.id,
-      sourceName: source.name,
-      mediaCount: 0,
-      folders: source.boundPath
-        ? [{ folderPath: normalizePath(source.boundPath), title: source.boundPathName || normalizePath(source.boundPath), mediaCount: 0 }]
-        : []
+      sourceName: source.name
     })
   })
 
@@ -1268,43 +1311,25 @@ function resolvePickerItemKey(item) {
   return item.id ?? item.externalMediaKey ?? `${item.sourceId || 'draft'}:${item.fileName || item.url || ''}`
 }
 
-function filterExternalPickerItems(items, { mediaType, keyword, coverOnly = false } = {}) {
-  return items
-    .map(toExternalPickerMediaItem)
-    .filter(item => !mediaType || item.mediaType === mediaType)
-    .filter(item => !coverOnly || item.mediaType === 'IMAGE')
-    .filter(item => {
-      if (!keyword) {
-        return true
-      }
-      const text = `${item.fileName || ''} ${item.sourceName || ''} ${item.folderPath || ''}`.toLowerCase()
-      return text.includes(String(keyword).toLowerCase())
-    })
-}
-
 function sanitizeCoverFilterType() {
   if (isExternalCoverSelection.value && coverPickerFilterType.value === 'VIDEO') {
     coverPickerFilterType.value = undefined
   }
 }
 
-function paginatePickerItems(items, pageNo, pageSize) {
-  const start = Math.max(0, (pageNo - 1) * pageSize)
-  return items.slice(start, start + pageSize)
-}
-
 async function loadCoverSelectableMedia() {
   coverPickerLoading.value = true
   try {
     if (isExternalPickerSelection(coverPickerSourceType.value, coverPickerSourceId.value)) {
-      const rawItems = await loadExternalMediaBrowseItems(coverPickerSourceId.value, coverPickerFolderPath.value)
-      const filtered = filterExternalPickerItems(rawItems, {
+      const result = await loadExternalMediaBrowseItems(coverPickerSourceId.value, coverPickerFolderPath.value, {
+        page: coverPickerPage.value,
+        size: coverPickerPageSize,
         mediaType: coverPickerFilterType.value || undefined,
         keyword: coverPickerKeyword.value || undefined,
         coverOnly: true
       })
-      coverPickerTotal.value = filtered.length
-      coverSelectableMedia.value = paginatePickerItems(filtered, coverPickerPage.value, coverPickerPageSize)
+      coverSelectableMedia.value = result.list
+      coverPickerTotal.value = result.total
       return
     }
 
@@ -1466,13 +1491,14 @@ async function loadSelectableMedia() {
   mediaPickerLoading.value = true
   try {
     if (isExternalPickerSelection(mediaPickerSourceType.value, mediaPickerSourceId.value)) {
-      const rawItems = await loadExternalMediaBrowseItems(mediaPickerSourceId.value, mediaPickerFolderPath.value)
-      const filtered = filterExternalPickerItems(rawItems, {
+      const result = await loadExternalMediaBrowseItems(mediaPickerSourceId.value, mediaPickerFolderPath.value, {
+        page: mediaPickerPage.value,
+        size: mediaPickerPageSize,
         mediaType: mediaPickerFilterType.value || undefined,
         keyword: mediaPickerKeyword.value || undefined
       })
-      mediaPickerTotal.value = filtered.length
-      selectableMedia.value = paginatePickerItems(filtered, mediaPickerPage.value, mediaPickerPageSize)
+      selectableMedia.value = result.list
+      mediaPickerTotal.value = result.total
       return
     }
 

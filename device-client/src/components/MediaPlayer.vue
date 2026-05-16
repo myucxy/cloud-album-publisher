@@ -164,7 +164,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['ended', 'loaded', 'error'])
+const emit = defineEmits(['ended', 'loaded', 'error', 'cycle-ended'])
 
 const videoRef = ref(null)
 const audioRef = ref(null)
@@ -185,6 +185,8 @@ const frameWallNextSourceIndex = ref(0)
 const frameWallPreviousSlotIndex = ref(-1)
 const carouselDisplayItems = ref([])
 const carouselActiveSourceIndex = ref(0)
+const advancedCycleMediaCount = ref(0)
+const advancedDisplayedCountInCycle = ref(0)
 const viewportVersion = ref(0)
 const viewportSize = ref({ width: 0, height: 0 })
 const now = ref(new Date())
@@ -375,10 +377,11 @@ function getAdvancedItemStyle(index) {
     const center = Math.floor(count / 2)
     const offset = index - center
     const isPrimary = offset === 0
+    const spacing = 19
     if (portrait) {
       const width = isPrimary ? 78 : 58
       const height = isPrimary ? 42 : 24
-      const top = 50 + offset * 22 - height / 2
+      const top = clampPercent(50 + offset * spacing - height / 2, height)
       return {
         left: `${(100 - width) / 2}%`,
         top: `${top}%`,
@@ -391,7 +394,7 @@ function getAdvancedItemStyle(index) {
     }
     const width = isPrimary ? 42 : 24
     const height = isPrimary ? 78 : 58
-    const left = 50 + offset * 22 - width / 2
+    const left = clampPercent(50 + offset * spacing - width / 2, width)
     return {
       left: `${left}%`,
       top: `${(100 - height) / 2}%`,
@@ -409,6 +412,10 @@ function getAdvancedItemStyle(index) {
     return { gridColumn: slot[1], gridRow: slot[0] }
   }
   return { gridColumn: slot[0], gridRow: slot[1] }
+}
+
+function clampPercent(value, size) {
+  return Math.min(Math.max(value, 0), Math.max(0, 100 - size))
 }
 
 function formatCalendarParts(date) {
@@ -528,17 +535,44 @@ function clearAdvancedTimers() {
   clearCarouselTimer()
 }
 
+function startAdvancedCycle(mediaCount) {
+  advancedCycleMediaCount.value = Math.max(0, mediaCount || 0)
+  advancedDisplayedCountInCycle.value = 0
+}
+
+function markAdvancedDisplayed(count) {
+  if (advancedCycleMediaCount.value <= 0 || count <= 0) return
+  advancedDisplayedCountInCycle.value = Math.min(
+    advancedCycleMediaCount.value,
+    advancedDisplayedCountInCycle.value + count
+  )
+}
+
+function hasDisplayedAdvancedCycle() {
+  return advancedCycleMediaCount.value > 0 && advancedDisplayedCountInCycle.value >= advancedCycleMediaCount.value
+}
+
+function finishAdvancedCycle() {
+  clearAdvancedTimers()
+  advancedCycleMediaCount.value = 0
+  advancedDisplayedCountInCycle.value = 0
+  emit('cycle-ended')
+}
+
 async function initializeBentoDisplay() {
   clearAdvancedTimers()
   if (!isBentoLayout.value || props.media?.mediaType !== 'IMAGE') {
     bentoDisplayItems.value = []
+    startAdvancedCycle(0)
     return
   }
   const images = buildBentoImagePool()
   if (!images.length) {
     bentoDisplayItems.value = []
+    startAdvancedCycle(0)
     return
   }
+  startAdvancedCycle(images.length)
   const slotCount = getBentoSlotCount()
   const startIndex = getCurrentImagePoolStartIndex(images)
   const initialItems = []
@@ -553,6 +587,7 @@ async function initializeBentoDisplay() {
     bentoDisplayItems.value[index] = { ...bentoDisplayItems.value[index], resolvedUrl }
   }))
   bentoDisplayItems.value = [...bentoDisplayItems.value]
+  markAdvancedDisplayed(Math.min(slotCount, images.length))
   if (!advancedReadyEmitted.value) {
     advancedReadyEmitted.value = true
     handleMediaLoaded()
@@ -585,13 +620,16 @@ async function initializeFrameWallDisplay() {
   clearAdvancedTimers()
   if (!isFrameWallLayout.value || props.media?.mediaType !== 'IMAGE') {
     frameWallDisplayItems.value = []
+    startAdvancedCycle(0)
     return
   }
   const images = buildAdvancedImagePool()
   if (!images.length) {
     frameWallDisplayItems.value = []
+    startAdvancedCycle(0)
     return
   }
+  startAdvancedCycle(images.length)
   const slotCount = getFrameWallSlotCount()
   const startIndex = getCurrentImagePoolStartIndex(images)
   const initialItems = []
@@ -606,6 +644,7 @@ async function initializeFrameWallDisplay() {
     frameWallDisplayItems.value[index] = { ...frameWallDisplayItems.value[index], resolvedUrl }
   }))
   frameWallDisplayItems.value = [...frameWallDisplayItems.value]
+  markAdvancedDisplayed(Math.min(slotCount, images.length))
   if (!advancedReadyEmitted.value) {
     advancedReadyEmitted.value = true
     handleMediaLoaded()
@@ -631,8 +670,13 @@ function pickNextFrameWallSlot(slotCount) {
 async function swapFrameWallSlots() {
   const images = buildAdvancedImagePool()
   if (!isFrameWallLayout.value || !images.length || !frameWallDisplayItems.value.length) return
+  if (hasDisplayedAdvancedCycle()) {
+    finishAdvancedCycle()
+    return
+  }
   const replaceCount = Math.max(1, Math.floor(frameWallDisplayItems.value.length / 10) + 1)
   for (let count = 0; count < replaceCount; count += 1) {
+    if (hasDisplayedAdvancedCycle()) break
     const slotIndex = pickNextFrameWallSlot(frameWallDisplayItems.value.length)
     const media = images[frameWallNextSourceIndex.value % images.length]
     frameWallNextSourceIndex.value = (frameWallNextSourceIndex.value + 1) % images.length
@@ -646,6 +690,7 @@ async function swapFrameWallSlots() {
       version: (current?.version || 0) + 1
     }
     frameWallDisplayItems.value = [...frameWallDisplayItems.value]
+    markAdvancedDisplayed(1)
     if (count < replaceCount - 1) await new Promise(resolve => window.setTimeout(resolve, 800))
   }
   scheduleFrameWallSwap()
@@ -655,15 +700,19 @@ async function initializeCarouselDisplay() {
   clearAdvancedTimers()
   if (!isCarouselLayout.value || props.media?.mediaType !== 'IMAGE') {
     carouselDisplayItems.value = []
+    startAdvancedCycle(0)
     return
   }
   const images = buildAdvancedImagePool()
   if (!images.length) {
     carouselDisplayItems.value = []
+    startAdvancedCycle(0)
     return
   }
+  startAdvancedCycle(images.length)
   carouselActiveSourceIndex.value = getCurrentImagePoolStartIndex(images)
   await updateCarouselWindow()
+  markAdvancedDisplayed(Math.min(getCarouselWindowSize(images), images.length))
   if (!advancedReadyEmitted.value) {
     advancedReadyEmitted.value = true
     handleMediaLoaded()
@@ -706,7 +755,12 @@ function scheduleCarouselStep() {
 async function stepCarousel() {
   const images = buildAdvancedImagePool()
   if (!isCarouselLayout.value || !images.length) return
+  if (hasDisplayedAdvancedCycle()) {
+    finishAdvancedCycle()
+    return
+  }
   carouselActiveSourceIndex.value = (carouselActiveSourceIndex.value + 1) % images.length
+  markAdvancedDisplayed(1)
   await updateCarouselWindow()
   scheduleCarouselStep()
 }
@@ -731,6 +785,10 @@ function pickNextBentoSlot(slotCount) {
 async function swapOneBentoSlot() {
   const images = buildBentoImagePool()
   if (!isBentoLayout.value || !images.length || !bentoDisplayItems.value.length) return
+  if (hasDisplayedAdvancedCycle()) {
+    finishAdvancedCycle()
+    return
+  }
   const slotIndex = pickNextBentoSlot(bentoDisplayItems.value.length)
   const media = images[bentoNextSourceIndex.value % images.length]
   bentoNextSourceIndex.value = (bentoNextSourceIndex.value + 1) % images.length
@@ -744,6 +802,7 @@ async function swapOneBentoSlot() {
     version: (current?.version || 0) + 1
   }
   bentoDisplayItems.value = [...bentoDisplayItems.value]
+  markAdvancedDisplayed(1)
   scheduleBentoSwap()
 }
 
@@ -879,6 +938,7 @@ watch(
       initializeCarouselDisplay()
     } else {
       clearAdvancedTimers()
+      startAdvancedCycle(0)
       warmAdvancedImages()
     }
   },

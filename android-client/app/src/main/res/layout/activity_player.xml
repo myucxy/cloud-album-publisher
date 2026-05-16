@@ -59,7 +59,7 @@
             app:controller_layout_id="@null"
             app:resize_mode="fit"
             app:show_buffering="never"
-            app:surface_type="texture_view"
+            app:surface_type="surface_view"
             app:use_controller="false" />
 
         <TextView
@@ -399,6 +399,38 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
                     android:text="清理缓存" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/displayModePanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:background="@drawable/bg_panel"
+                android:orientation="vertical"
+                android:padding="@dimen/panel_padding">
+
+                <TextView
+                    android:id="@+id/displayModeTitleText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/ca_text_primary"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/displayModeSummaryText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:textColor="@color/ca_text_secondary"
+                    android:textSize="14sp" />
+
+                <CheckBox
+                    android:id="@+id/displayModeToggleCheckBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" />
             </LinearLayout>
 
             <LinearLayout

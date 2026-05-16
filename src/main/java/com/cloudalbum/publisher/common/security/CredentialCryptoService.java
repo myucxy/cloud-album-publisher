@@ -1,6 +1,7 @@
 package com.cloudalbum.publisher.common.security;
 
 import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -13,14 +14,16 @@ import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Base64;
 
+@Slf4j
 @Service
 public class CredentialCryptoService {
 
     private static final String TRANSFORMATION = "AES/GCM/NoPadding";
     private static final int GCM_TAG_LENGTH_BIT = 128;
     private static final int IV_LENGTH_BYTE = 12;
+    private static final String DEFAULT_SECRET = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
 
-    @Value("${media-source.crypto.secret:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}")
+    @Value("${media-source.crypto.secret:" + DEFAULT_SECRET + "}")
     private String secret;
 
     private final SecureRandom secureRandom = new SecureRandom();
@@ -29,6 +32,11 @@ public class CredentialCryptoService {
 
     @PostConstruct
     public void init() {
+        if (DEFAULT_SECRET.equals(secret)) {
+            log.warn("Using default encryption secret for media source credentials! "
+                    + "Configure 'media-source.crypto.secret' with a unique key for production use.");
+        }
+
         byte[] key = Base64.getDecoder().decode(secret);
         if (key.length != 16 && key.length != 24 && key.length != 32) {
             throw new IllegalStateException("media-source.crypto.secret 必须是 16/24/32 字节 AES key 的 Base64 值");

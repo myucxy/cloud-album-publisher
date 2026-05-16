@@ -205,6 +205,26 @@ public class AlbumServiceImpl implements AlbumService {
 
     @Override
     @Transactional
+    public void removeContents(Long albumId, Long userId, List<Long> contentIds) {
+        if (contentIds == null || contentIds.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "待移除媒体不能为空");
+        }
+        Album album = getAlbumOrThrow(albumId);
+        checkOwner(album, userId);
+
+        List<AlbumMedia> albumMediaList = albumMediaMapper.selectList(new LambdaQueryWrapper<AlbumMedia>()
+                .eq(AlbumMedia::getAlbumId, albumId)
+                .in(AlbumMedia::getId, contentIds));
+        if (albumMediaList.size() != new HashSet<>(contentIds).size()) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "相册内容不存在");
+        }
+        albumMediaMapper.delete(new LambdaQueryWrapper<AlbumMedia>()
+                .eq(AlbumMedia::getAlbumId, albumId)
+                .in(AlbumMedia::getId, contentIds));
+    }
+
+    @Override
+    @Transactional
     public AlbumResponse updateCover(Long albumId, Long userId, AlbumCoverRequest request) {
         Album album = getAlbumOrThrow(albumId);
         checkOwner(album, userId);

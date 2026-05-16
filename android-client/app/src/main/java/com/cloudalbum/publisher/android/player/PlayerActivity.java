@@ -8,6 +8,7 @@ import android.animation.RectEvaluator;
 import android.animation.ValueAnimator;
 import android.app.ActivityManager;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -21,10 +22,14 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.Display;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.widget.Button;
@@ -127,6 +132,9 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private static final String CACHE_TITLE = "\u5a92\u4f53\u7f13\u5b58";
     private static final String CACHE_ENABLE_LABEL = "\u542f\u7528\u672c\u5730\u7f13\u5b58";
     private static final String CACHE_CLEAR_LABEL = "\u6e05\u7406\u7f13\u5b58";
+    private static final String DISPLAY_MODE_TITLE = "\u663e\u793a\u6e05\u6670\u5ea6";
+    private static final String DISPLAY_MODE_ENABLE_LABEL = "\u4f18\u5148\u4f7f\u7528\u8bbe\u5907\u6700\u9ad8\u5206\u8fa8\u7387";
+    private static final String DISPLAY_MODE_SUMMARY_DISABLED = "\u5df2\u5173\u95ed\uff0c\u4f7f\u7528\u7cfb\u7edf\u9ed8\u8ba4\u663e\u793a\u6a21\u5f0f";
     private static final String BRIGHTNESS_TITLE = "\u4eae\u5ea6\u8c03\u8282";
     private static final String BRIGHTNESS_ENABLE_LABEL = "\u542f\u7528\u5b9a\u65f6\u4eae\u5ea6";
     private static final String BRIGHTNESS_SUMMARY_ENABLED = "\u65f6\u6bb5\u5916\u81ea\u52a8\u964d\u4f4e\u4eae\u5ea6";
@@ -252,6 +260,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private TextView muteSummaryText;
     private TextView cacheTitleText;
     private TextView cacheSummaryText;
+    private TextView displayModeTitleText;
+    private TextView displayModeSummaryText;
     private TextView playbackSelectionTitleText;
     private TextView playbackSelectionSummaryText;
     private TextView appUpdateTitleText;
@@ -264,6 +274,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private FrameLayout systemCapabilityOverlay;
     private CheckBox muteToggleCheckBox;
     private CheckBox cacheToggleCheckBox;
+    private CheckBox displayModeToggleCheckBox;
     private Button refreshButton;
     private Button setupButton;
     private Button appUpdateButton;
@@ -305,6 +316,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private int frameWallNextSourceIndex = 0;
     private int frameWallPreviousSlotIndex = -1;
     private int carouselActiveSourceIndex = 0;
+    private int advancedDisplayedCountInCycle = 0;
+    private int advancedCycleMediaCount = 0;
     private final List<DevicePullResponse.MediaItem> cachedAdvancedImageItems = new ArrayList<DevicePullResponse.MediaItem>();
     private String cachedAdvancedImageItemsKey = "";
     private float drawerHandleDownX;
@@ -320,6 +333,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         sessionRepository = new DeviceSessionRepository(this);
         repository = new CloudAlbumRepository(this);
 
+        configureFullscreenWindow();
         setContentView(R.layout.activity_player);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
@@ -418,6 +432,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         enterImmersiveMode();
         applyPlaybackRotation();
         updateRotationSummary();
+        updateDisplayModeSummary();
+        updateDeviceSummary();
     }
 
     @Override
@@ -496,6 +512,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         muteSummaryText = findViewById(R.id.muteSummaryText);
         cacheTitleText = findViewById(R.id.cacheTitleText);
         cacheSummaryText = findViewById(R.id.cacheSummaryText);
+        displayModeTitleText = findViewById(R.id.displayModeTitleText);
+        displayModeSummaryText = findViewById(R.id.displayModeSummaryText);
         playbackSelectionTitleText = findViewById(R.id.playbackSelectionTitleText);
         playbackSelectionSummaryText = findViewById(R.id.playbackSelectionSummaryText);
         appUpdateTitleText = findViewById(R.id.appUpdateTitleText);
@@ -509,6 +527,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         cacheLimitSpinner = findViewById(R.id.cacheLimitSpinner);
         muteToggleCheckBox = findViewById(R.id.muteToggleCheckBox);
         cacheToggleCheckBox = findViewById(R.id.cacheToggleCheckBox);
+        displayModeToggleCheckBox = findViewById(R.id.displayModeToggleCheckBox);
         refreshButton = findViewById(R.id.refreshButton);
         setupButton = findViewById(R.id.setupButton);
         appUpdateButton = findViewById(R.id.appUpdateButton);
@@ -550,6 +569,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         cacheClearButton.setText(CACHE_CLEAR_LABEL);
         rebuildCacheLimitOptions();
         updateCacheSummary();
+        displayModeTitleText.setText(DISPLAY_MODE_TITLE);
+        displayModeToggleCheckBox.setText(DISPLAY_MODE_ENABLE_LABEL);
+        displayModeToggleCheckBox.setChecked(sessionRepository.isPreferNativeDisplayModeEnabled());
+        applyDrawerOptionStyle(displayModeToggleCheckBox);
+        updateDisplayModeSummary();
         brightnessTitleText.setText(BRIGHTNESS_TITLE);
         brightnessToggleCheckBox.setText(BRIGHTNESS_ENABLE_LABEL);
         brightnessToggleCheckBox.setChecked(sessionRepository.isBrightnessScheduleEnabled());
@@ -640,6 +664,18 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                     cacheHandler.removeCallbacks(cacheRefreshRunnable);
                     cacheHandler.post(cacheRefreshRunnable);
                 }
+            }
+        });
+        displayModeToggleCheckBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                sessionRepository.savePreferNativeDisplayModeEnabled(isChecked);
+                applyPreferredDisplayMode();
+                updateDisplayModeSummary();
+                updateDeviceSummary();
+                preloadedImageIdentities.clear();
+                lastRenderedMediaIdentity = "";
+                renderPlayback();
             }
         });
         brightnessToggleCheckBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
@@ -1243,7 +1279,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             }
         }
         final String requestedUrl = url;
-        AuthenticatedImageLoader.load(imageView, requestedUrl, sessionRepository, new AuthenticatedImageLoader.Callback() {
+        final int[] targetSize = resolvePreferredImageDecodeTarget(imageView);
+        AuthenticatedImageLoader.load(imageView, requestedUrl, sessionRepository, targetSize[0], targetSize[1], new AuthenticatedImageLoader.Callback() {
             @Override
             public void onSuccess() {
                 if (callback != null) callback.onSuccess();
@@ -1256,13 +1293,55 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                     mediaCacheManager.invalidateLocalUrl(requestedUrl);
                     if (remoteUrl != null && remoteUrl.length() > 0) {
                         media.setUrl(remoteUrl);
-                        AuthenticatedImageLoader.load(imageView, remoteUrl, sessionRepository, callback);
+                        AuthenticatedImageLoader.load(imageView, remoteUrl, sessionRepository, targetSize[0], targetSize[1], callback);
                         return;
                     }
                 }
                 if (callback != null) callback.onFailure();
             }
         });
+    }
+
+    private int[] resolvePreferredImageDecodeTarget(ImageView imageView) {
+        int[] defaultTarget = new int[] {0, 0};
+        if (imageView == null || sessionRepository == null || !sessionRepository.isPreferNativeDisplayModeEnabled()
+                || Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return defaultTarget;
+        }
+        Display.Mode mode = findLargestDisplayMode();
+        if (mode == null) {
+            return defaultTarget;
+        }
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        int appWidth = Math.max(1, metrics.widthPixels);
+        int appHeight = Math.max(1, metrics.heightPixels);
+        int modeWidth = Math.max(1, mode.getPhysicalWidth());
+        int modeHeight = Math.max(1, mode.getPhysicalHeight());
+        if ((appWidth < appHeight && modeWidth > modeHeight) || (appWidth > appHeight && modeWidth < modeHeight)) {
+            int tmp = modeWidth;
+            modeWidth = modeHeight;
+            modeHeight = tmp;
+        }
+        if ((long) modeWidth * (long) modeHeight <= (long) appWidth * (long) appHeight) {
+            return defaultTarget;
+        }
+        int viewWidth = imageView.getWidth();
+        int viewHeight = imageView.getHeight();
+        if (viewWidth <= 0 && imageView.getLayoutParams() != null && imageView.getLayoutParams().width > 0) {
+            viewWidth = imageView.getLayoutParams().width;
+        }
+        if (viewHeight <= 0 && imageView.getLayoutParams() != null && imageView.getLayoutParams().height > 0) {
+            viewHeight = imageView.getLayoutParams().height;
+        }
+        if (viewWidth <= 0) {
+            viewWidth = appWidth;
+        }
+        if (viewHeight <= 0) {
+            viewHeight = appHeight;
+        }
+        int targetWidth = Math.max(1, Math.round(viewWidth * (modeWidth / (float) appWidth)));
+        int targetHeight = Math.max(1, Math.round(viewHeight * (modeHeight / (float) appHeight)));
+        return new int[] {targetWidth, targetHeight};
     }
 
     private void renderCalendarMedia() {
@@ -1447,6 +1526,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         bentoNextSourceIndex = 0;
         bentoPreviousSlotIndex = -1;
         bentoPreviousSlotIndex2 = -1;
+        frameWallNextSourceIndex = 0;
+        frameWallPreviousSlotIndex = -1;
+        carouselActiveSourceIndex = 0;
+        advancedDisplayedCountInCycle = 0;
+        advancedCycleMediaCount = 0;
         if (advancedImageStage != null) {
             advancedImageStage.setVisibility(View.GONE);
             advancedImageStage.removeAllViews();
@@ -1475,6 +1559,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             renderPlayback();
             return;
         }
+        ensureAdvancedCycleStarted(imageItems.size());
         if ("CAROUSEL".equals(displayStyle)) {
             renderCarouselLayout(nextStage, imageItems);
         } else if ("FRAME_WALL".equals(displayStyle) || "FRAMEWALL".equals(displayStyle)) {
@@ -1553,6 +1638,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             float[] slot = slots[i];
             addAdvancedImage(container, imageItems.get(i % count), slot[0], slot[1], slot[2], slot[3], gap, i == 0);
         }
+        markAdvancedImagesDisplayed(Math.min(maxCount, count));
         bentoNextSourceIndex = maxCount % count;
     }
 
@@ -1666,8 +1752,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         }
         int parentWidth = Math.max(1, getContainerWidth(container));
         int parentHeight = Math.max(1, getContainerHeight(container));
-        int cellWidth = Math.max(1, (parentWidth - gap * (cols + 2)) / cols);
-        int cellHeight = Math.max(1, (parentHeight - gap * (rows + 2)) / rows);
+        int cellWidth = Math.max(1, (parentWidth - gap * (cols * 2 + 2)) / cols);
+        int cellHeight = Math.max(1, (parentHeight - gap * (rows * 2 + 2)) / rows);
         for (int i = 0; i < slotCount; i += 1) {
             ImageView imageView = createAdvancedImageView();
             GridLayout.LayoutParams params = createFrameWallCellParams(i, cellWidth, cellHeight, cols);
@@ -1676,6 +1762,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             frameWallImageViews.add(imageView);
             loadAdvancedImage(imageView, imageItems.get(i % imageItems.size()), i == 0);
         }
+        markAdvancedImagesDisplayed(Math.min(slotCount, imageItems.size()));
     }
 
     private GridLayout.LayoutParams createFrameWallCellParams(int index, int fallbackWidth, int fallbackHeight, int cols) {
@@ -1720,21 +1807,21 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             if (portrait) {
                 float heightRatio = primary ? 0.42f : 0.24f;
                 float widthRatio = primary ? 0.78f : 0.58f;
-                float spacingRatio = 0.22f;
+                float spacingRatio = 0.19f;
                 width = Math.max(1, Math.round(parentWidth * widthRatio));
                 height = Math.max(1, Math.round(parentHeight * heightRatio));
-                leftMargin = Math.round((parentWidth - width) / 2f);
+                leftMargin = clampMargin(Math.round((parentWidth - width) / 2f), width, parentWidth);
                 float centerRatio = 0.5f + offset * spacingRatio;
-                topMargin = Math.round(parentHeight * centerRatio - height / 2f);
+                topMargin = clampMargin(Math.round(parentHeight * centerRatio - height / 2f), height, parentHeight);
             } else {
                 float widthRatio = primary ? 0.42f : 0.24f;
                 float heightRatio = primary ? 0.78f : 0.58f;
-                float spacingRatio = 0.22f;
+                float spacingRatio = 0.19f;
                 width = Math.max(1, Math.round(parentWidth * widthRatio));
                 height = Math.max(1, Math.round(parentHeight * heightRatio));
                 float centerRatio = 0.5f + offset * spacingRatio;
-                leftMargin = Math.round(parentWidth * centerRatio - width / 2f);
-                topMargin = Math.round((parentHeight - height) / 2f);
+                leftMargin = clampMargin(Math.round(parentWidth * centerRatio - width / 2f), width, parentWidth);
+                topMargin = clampMargin(Math.round((parentHeight - height) / 2f), height, parentHeight);
             }
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
             params.leftMargin = leftMargin;
@@ -1746,17 +1833,38 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             container.addView(imageView, params);
             loadAdvancedImage(imageView, imageItems.get(sourceIndex), primary);
         }
+        if (advancedDisplayedCountInCycle == 0) {
+            markAdvancedImagesDisplayed(Math.min(layoutCount, imageItems.size()));
+        }
     }
 
     private void addAdvancedImage(FrameLayout container, DevicePullResponse.MediaItem media, float leftRatio, float topRatio, float widthRatio, float heightRatio, int margin, boolean marksReady) {
         ImageView imageView = createAdvancedImageView();
         int parentWidth = getContainerWidth(container);
         int parentHeight = getContainerHeight(container);
+        int availableLeft = container.getPaddingLeft();
+        int availableTop = container.getPaddingTop();
+        int availableWidth = Math.max(1, parentWidth - container.getPaddingLeft() - container.getPaddingRight());
+        int availableHeight = Math.max(1, parentHeight - container.getPaddingTop() - container.getPaddingBottom());
+        int slotLeft = availableLeft + Math.round(availableWidth * leftRatio);
+        int slotTop = availableTop + Math.round(availableHeight * topRatio);
+        int slotRight = availableLeft + Math.round(availableWidth * (leftRatio + widthRatio));
+        int slotBottom = availableTop + Math.round(availableHeight * (topRatio + heightRatio));
+        slotRight = Math.min(availableLeft + availableWidth, Math.max(slotLeft + 1, slotRight));
+        slotBottom = Math.min(availableTop + availableHeight, Math.max(slotTop + 1, slotBottom));
+
+        int imageLeft = slotLeft + margin;
+        int imageTop = slotTop + margin;
+        int imageRight = Math.max(imageLeft + 1, slotRight - margin);
+        int imageBottom = Math.max(imageTop + 1, slotBottom - margin);
+        imageRight = Math.min(availableLeft + availableWidth, imageRight);
+        imageBottom = Math.min(availableTop + availableHeight, imageBottom);
+
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                Math.max(1, Math.round(parentWidth * widthRatio) - margin * 2),
-                Math.max(1, Math.round(parentHeight * heightRatio) - margin * 2));
-        params.leftMargin = Math.round(parentWidth * leftRatio) + margin;
-        params.topMargin = Math.round(parentHeight * topRatio) + margin;
+                Math.max(1, imageRight - imageLeft),
+                Math.max(1, imageBottom - imageTop));
+        params.leftMargin = imageLeft;
+        params.topMargin = imageTop;
         container.addView(imageView, params);
         if ("BENTO".equals(resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle()))) {
             bentoImageViews.add(imageView);
@@ -1779,6 +1887,48 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             return container.getHeight();
         }
         return getScreenHeight();
+    }
+
+    private int clampMargin(int margin, int size, int parentSize) {
+        int maxMargin = Math.max(0, parentSize - size);
+        if (margin < 0) {
+            return 0;
+        }
+        if (margin > maxMargin) {
+            return maxMargin;
+        }
+        return margin;
+    }
+
+    private void markAdvancedImagesDisplayed(int count) {
+        if (advancedCycleMediaCount <= 0 || count <= 0) {
+            return;
+        }
+        advancedDisplayedCountInCycle = Math.min(advancedCycleMediaCount, advancedDisplayedCountInCycle + count);
+    }
+
+    private void ensureAdvancedCycleStarted(int mediaCount) {
+        if (mediaCount <= 0) {
+            advancedCycleMediaCount = 0;
+            advancedDisplayedCountInCycle = 0;
+            return;
+        }
+        if (advancedCycleMediaCount != mediaCount || advancedDisplayedCountInCycle <= 0) {
+            advancedCycleMediaCount = mediaCount;
+            advancedDisplayedCountInCycle = 0;
+        }
+    }
+
+    private boolean hasDisplayedCurrentAdvancedCycle() {
+        return advancedCycleMediaCount > 0 && advancedDisplayedCountInCycle >= advancedCycleMediaCount;
+    }
+
+    private void advanceToNextDistributionAfterAdvancedCycle() {
+        imageHandler.removeCallbacks(imageAdvanceRunnable);
+        advancedDisplayedCountInCycle = 0;
+        advancedCycleMediaCount = 0;
+        playbackEngine.nextDistribution();
+        renderPlayback();
     }
 
     private void loadAdvancedImage(ImageView imageView, DevicePullResponse.MediaItem media, final boolean marksReady) {
@@ -1830,7 +1980,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 break;
             }
         }
-        int imageLimit = "BENTO".equals(displayStyle) ? mediaList.size() : getAdaptiveAdvancedImagePoolSize();
+        int imageLimit = mediaList.size();
         for (int offset = 0; offset < mediaList.size() && result.size() < imageLimit; offset += 1) {
             DevicePullResponse.MediaItem candidate = mediaList.get((startIndex + offset) % mediaList.size());
             if (candidate != null && "IMAGE".equalsIgnoreCase(candidate.getMediaType())) {
@@ -1868,7 +2018,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         for (int i = 0; i < limit; i += 1) {
             DevicePullResponse.MediaItem imageItem = imageItems.get(i);
             if (imageItem != null) {
-                AuthenticatedImageLoader.preload(imageStage, imageItem.getUrl(), sessionRepository);
+                int[] targetSize = resolvePreferredImageDecodeTarget(imageStage);
+                AuthenticatedImageLoader.preload(imageStage, imageItem.getUrl(), sessionRepository, targetSize[0], targetSize[1], null);
             }
         }
     }
@@ -1877,7 +2028,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         for (int i = 0; i < count; i += 1) {
             DevicePullResponse.MediaItem item = imageItems.get((startIndex + i) % imageItems.size());
             if (item != null) {
-                AuthenticatedImageLoader.preload(imageStage, item.getUrl(), sessionRepository);
+                int[] targetSize = resolvePreferredImageDecodeTarget(imageStage);
+                AuthenticatedImageLoader.preload(imageStage, item.getUrl(), sessionRepository, targetSize[0], targetSize[1], null);
             }
         }
     }
@@ -2092,7 +2244,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         if (preloadedImageIdentities.contains(nextMediaIdentity)) {
             return;
         }
-        AuthenticatedImageLoader.preload(imageStage, nextMedia.getUrl(), sessionRepository, new AuthenticatedImageLoader.Callback() {
+        int[] targetSize = resolvePreferredImageDecodeTarget(imageStage);
+        AuthenticatedImageLoader.preload(imageStage, nextMedia.getUrl(), sessionRepository, targetSize[0], targetSize[1], new AuthenticatedImageLoader.Callback() {
             @Override
             public void onSuccess() {
                 preloadedImageIdentities.add(nextMediaIdentity);
@@ -2109,6 +2262,10 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         String displayStyle = resolveDisplayStyle(playbackEngine.getCurrentDisplayStyle(), playbackEngine.getCurrentTransitionStyle());
         DevicePullResponse.MediaItem currentMedia = playbackEngine.getCurrentMedia();
         if ("BENTO".equals(displayStyle) && currentMedia != null && "IMAGE".equalsIgnoreCase(currentMedia.getMediaType())) {
+            if (hasDisplayedCurrentAdvancedCycle()) {
+                advanceToNextDistributionAfterAdvancedCycle();
+                return;
+            }
             imageAdvanceRetryCount = 0;
             swapOneBentoImage();
             imageHandler.removeCallbacks(imageAdvanceRunnable);
@@ -2117,6 +2274,10 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         }
         if (("FRAME_WALL".equals(displayStyle) || "FRAMEWALL".equals(displayStyle))
                 && currentMedia != null && "IMAGE".equalsIgnoreCase(currentMedia.getMediaType())) {
+            if (hasDisplayedCurrentAdvancedCycle()) {
+                advanceToNextDistributionAfterAdvancedCycle();
+                return;
+            }
             imageAdvanceRetryCount = 0;
             swapFrameWallImages();
             imageHandler.removeCallbacks(imageAdvanceRunnable);
@@ -2124,8 +2285,13 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             return;
         }
         if ("CAROUSEL".equals(displayStyle) && currentMedia != null && "IMAGE".equalsIgnoreCase(currentMedia.getMediaType())) {
+            if (hasDisplayedCurrentAdvancedCycle()) {
+                advanceToNextDistributionAfterAdvancedCycle();
+                return;
+            }
             imageAdvanceRetryCount = 0;
             carouselActiveSourceIndex += 1;
+            markAdvancedImagesDisplayed(1);
             renderAdvancedImageMedia(displayStyle, PlaybackEngine.resolveMediaIdentity(currentMedia));
             return;
         }
@@ -2158,6 +2324,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         final ImageView imageView = bentoImageViews.get(slotIndex);
         final DevicePullResponse.MediaItem nextMedia = imageItems.get(bentoNextSourceIndex % imageItems.size());
         bentoNextSourceIndex = (bentoNextSourceIndex + 1) % imageItems.size();
+        markAdvancedImagesDisplayed(1);
         prefetchUpcomingImages(imageItems, bentoNextSourceIndex, Math.min(8, imageItems.size()));
         animateReplaceAdvancedImage(imageView, nextMedia);
     }
@@ -2180,6 +2347,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                     final ImageView imageView = frameWallImageViews.get(slotIndex);
                     final DevicePullResponse.MediaItem nextMedia = imageItems.get(frameWallNextSourceIndex % imageItems.size());
                     frameWallNextSourceIndex = (frameWallNextSourceIndex + 1) % imageItems.size();
+                    markAdvancedImagesDisplayed(1);
                     animateReplaceAdvancedImage(imageView, nextMedia);
                 }
             }, delay);
@@ -2204,7 +2372,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             }
         }
         final String preloadUrl = (mediaCacheRemoteUrl != null && mediaCacheRemoteUrl.length() > 0) ? mediaCacheRemoteUrl : url;
-        AuthenticatedImageLoader.preload(imageStage, preloadUrl, sessionRepository, new AuthenticatedImageLoader.Callback() {
+        int[] targetSize = resolvePreferredImageDecodeTarget(imageView);
+        AuthenticatedImageLoader.preload(imageView, preloadUrl, sessionRepository, targetSize[0], targetSize[1], new AuthenticatedImageLoader.Callback() {
             @Override
             public void onSuccess() {
                 if (isFinishing()) return;
@@ -2655,6 +2824,45 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         cacheSummaryText.setText(text);
     }
 
+    private void updateDisplayModeSummary() {
+        if (displayModeSummaryText == null || sessionRepository == null) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            displayModeSummaryText.setText("\u5f53\u524d\u7cfb\u7edf\u7248\u672c\u4e0d\u652f\u6301\u5207\u6362\u663e\u793a\u6a21\u5f0f");
+            return;
+        }
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        Display.Mode currentMode = getCurrentDisplayMode();
+        Display.Mode bestMode = findLargestDisplayMode();
+        String text = sessionRepository.isPreferNativeDisplayModeEnabled()
+                ? "\u5df2\u542f\u7528\uff0c\u5c06\u8bf7\u6c42\u6700\u9ad8\u5206\u8fa8\u7387\u6a21\u5f0f"
+                : DISPLAY_MODE_SUMMARY_DISABLED;
+        text += " / \u5e94\u7528\u7a97\u53e3 " + metrics.widthPixels + " x " + metrics.heightPixels;
+        if (currentMode != null) {
+            text += " / \u5f53\u524d\u6a21\u5f0f " + formatDisplayMode(currentMode);
+        }
+        if (bestMode != null) {
+            text += " / \u6700\u9ad8\u6a21\u5f0f " + formatDisplayMode(bestMode);
+        }
+        displayModeSummaryText.setText(text);
+    }
+
+    private String formatDisplayMode(Display.Mode mode) {
+        if (mode == null) {
+            return "-";
+        }
+        return mode.getPhysicalWidth() + " x " + mode.getPhysicalHeight() + " @ " + Math.round(mode.getRefreshRate()) + "Hz";
+    }
+
+    private Display.Mode getCurrentDisplayMode() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return null;
+        }
+        Display display = getWindowManager().getDefaultDisplay();
+        return display == null ? null : display.getMode();
+    }
+
     private String formatCacheLimit(int limitMb) {
         if (limitMb >= 1024) {
             return (limitMb / 1024) + " GB";
@@ -2831,7 +3039,12 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         appendKeyValue(builder, "Hardware", safeText(Build.HARDWARE, "-"));
         appendKeyValue(builder, "Android", safeText(Build.VERSION.RELEASE, "-") + " (SDK " + Build.VERSION.SDK_INT + ")");
         appendKeyValue(builder, "ABI", resolveSupportedAbis());
-        appendKeyValue(builder, "\u5206\u8fa8\u7387", getResources().getDisplayMetrics().widthPixels + " x " + getResources().getDisplayMetrics().heightPixels);
+        appendKeyValue(builder, "\u5e94\u7528\u7a97\u53e3\u5206\u8fa8\u7387", getResources().getDisplayMetrics().widthPixels + " x " + getResources().getDisplayMetrics().heightPixels);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            appendKeyValue(builder, "\u5f53\u524d\u663e\u793a\u6a21\u5f0f", formatDisplayMode(getCurrentDisplayMode()));
+            appendKeyValue(builder, "\u6700\u9ad8\u663e\u793a\u6a21\u5f0f", formatDisplayMode(findLargestDisplayMode()));
+            appendKeyValue(builder, "\u4f18\u5148\u9ad8\u5206\u8fa8\u7387", sessionRepository != null && sessionRepository.isPreferNativeDisplayModeEnabled() ? "\u5df2\u542f\u7528" : "\u5df2\u5173\u95ed");
+        }
 
         ActivityManager activityManager = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
         if (activityManager != null) {
@@ -3047,7 +3260,15 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void enterImmersiveMode() {
+        configureFullscreenWindow();
         View decorView = getWindow().getDecorView();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController controller = getWindow().getInsetsController();
+            if (controller != null) {
+                controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             decorView.setSystemUiVisibility(
                     View.SYSTEM_UI_FLAG_LAYOUT_STABLE
@@ -3060,6 +3281,72 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         } else {
             decorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN);
         }
+    }
+
+    private void configureFullscreenWindow() {
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        applyPreferredDisplayMode();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            WindowManager.LayoutParams attributes = getWindow().getAttributes();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
+            } else {
+                attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            }
+            getWindow().setAttributes(attributes);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !isTvDevice()) {
+            getWindow().setDecorFitsSystemWindows(false);
+        }
+    }
+
+    private void applyPreferredDisplayMode() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || sessionRepository == null) {
+            return;
+        }
+        WindowManager.LayoutParams attributes = getWindow().getAttributes();
+        int preferredModeId = 0;
+        if (sessionRepository.isPreferNativeDisplayModeEnabled()) {
+            Display.Mode mode = findLargestDisplayMode();
+            preferredModeId = mode == null ? 0 : mode.getModeId();
+        }
+        if (attributes.preferredDisplayModeId != preferredModeId) {
+            attributes.preferredDisplayModeId = preferredModeId;
+            getWindow().setAttributes(attributes);
+        }
+    }
+
+    private Display.Mode findLargestDisplayMode() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return null;
+        }
+        Display display = getWindowManager().getDefaultDisplay();
+        if (display == null) {
+            return null;
+        }
+        Display.Mode[] modes = display.getSupportedModes();
+        if (modes == null || modes.length == 0) {
+            return display.getMode();
+        }
+        Display.Mode best = modes[0];
+        for (Display.Mode mode : modes) {
+            if (mode == null) {
+                continue;
+            }
+            long modePixels = (long) mode.getPhysicalWidth() * (long) mode.getPhysicalHeight();
+            long bestPixels = (long) best.getPhysicalWidth() * (long) best.getPhysicalHeight();
+            if (modePixels > bestPixels
+                    || (modePixels == bestPixels && mode.getRefreshRate() > best.getRefreshRate())) {
+                best = mode;
+            }
+        }
+        return best;
+    }
+
+    private boolean isTvDevice() {
+        int uiModeType = getResources().getConfiguration().uiMode & Configuration.UI_MODE_TYPE_MASK;
+        return uiModeType == Configuration.UI_MODE_TYPE_TELEVISION
+                || getPackageManager().hasSystemFeature(PackageManager.FEATURE_LEANBACK);
     }
 
     private void toggleDrawerMenu() {
@@ -3098,6 +3385,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         addDrawerFocusableView(cacheToggleCheckBox);
         addDrawerFocusableView(cacheLimitSpinner);
         addDrawerFocusableView(cacheClearButton);
+        addDrawerFocusableView(displayModeToggleCheckBox);
         addDrawerFocusableView(brightnessToggleCheckBox);
         addDrawerFocusableView(brightnessStartSpinner);
         addDrawerFocusableView(brightnessEndSpinner);

@@ -72,6 +72,7 @@
             :muted="player.playbackMuted"
             :loading="player.syncStatus === 'loading' && !player.currentMedia"
             @ended="player.nextMedia"
+            @cycle-ended="player.nextDistribution"
             @loaded="handleMediaLoaded"
             @error="handleMediaError"
           />

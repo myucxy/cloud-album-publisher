@@ -1,6 +1,7 @@
 package com.cloudalbum.publisher.mediasource.sftp;
 
 import com.cloudalbum.publisher.mediasource.smb.MediaSourceFileClient;
+import lombok.extern.slf4j.Slf4j;
 import net.schmizz.sshj.SSHClient;
 import net.schmizz.sshj.sftp.RemoteResourceInfo;
 import net.schmizz.sshj.sftp.SFTPClient;
@@ -17,6 +18,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Component
 public class SftpMediaSourceFileClient implements MediaSourceFileClient {
 
@@ -62,13 +64,30 @@ public class SftpMediaSourceFileClient implements MediaSourceFileClient {
     @Override
     public InputStream open(MediaSourceConnection connection, String path) throws Exception {
         SSHClient sshClient = openClient(connection);
-        SFTPClient sftpClient = sshClient.newSFTPClient();
-        InputStream stream = sftpClient.open(normalizeRemotePath(path)).new RemoteFileInputStream();
-        return new SftpInputStream(stream, sftpClient, sshClient);
+        SFTPClient sftpClient;
+        try {
+            sftpClient = sshClient.newSFTPClient();
+        } catch (Exception e) {
+            disconnectQuietly(sshClient);
+            throw e;
+        }
+
+        try {
+            InputStream stream = sftpClient.open(normalizeRemotePath(path)).new RemoteFileInputStream();
+            return new SftpInputStream(stream, sftpClient, sshClient);
+        } catch (Exception e) {
+            try {
+                sftpClient.close();
+            } catch (Exception ignored) {
+            }
+            disconnectQuietly(sshClient);
+            throw e;
+        }
     }
 
     private SSHClient openClient(MediaSourceConnection connection) throws Exception {
         SSHClient client = new SSHClient();
+        log.debug("SFTP connection to {}:{}", connection.getHost(), connection.getPort());
         client.addHostKeyVerifier(new PromiscuousVerifier());
         client.connect(connection.getHost(), connection.getPort());
         client.authPassword(connection.getUsername(), connection.getPassword());

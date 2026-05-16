@@ -134,6 +134,20 @@ public class PlaybackEngine {
         currentMediaIndex = 0;
     }
 
+    public void nextDistribution() {
+        DevicePullResponse.DistributionItem distribution = getCurrentDistribution();
+        if (distribution == null) {
+            resetIndices();
+            return;
+        }
+        int nextDistributionIndex = getNextDistributionIndex();
+        if (nextDistributionIndex >= 0) {
+            currentDistributionIndex = nextDistributionIndex;
+        }
+        currentMediaIndex = 0;
+        currentBgmIndex = 0;
+    }
+
     public int getCurrentItemDurationSeconds() {
         DevicePullResponse.MediaItem currentMedia = getCurrentMedia();
         if (currentMedia != null && currentMedia.getItemDuration() != null && currentMedia.getItemDuration() > 0) {

@@ -107,6 +107,15 @@ public class AlbumController {
         return Result.success();
     }
 
+    @Operation(summary = "批量移除相册中的媒体")
+    @PostMapping("/{id}/contents/delete")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public Result<Void> removeContents(@PathVariable Long id,
+                                       @Valid @RequestBody AlbumBatchRemoveContentRequest request) {
+        albumService.removeContents(id, SecurityUtil.getCurrentUserId(), request.getContentIds());
+        return Result.success();
+    }
+
     @Operation(summary = "获取相册BGM列表")
     @GetMapping("/{id}/bgms")
     public Result<List<AlbumBgmItemResponse>> listBgms(@PathVariable Long id) {

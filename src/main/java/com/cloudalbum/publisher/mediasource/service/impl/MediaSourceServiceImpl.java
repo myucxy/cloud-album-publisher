@@ -6,6 +6,8 @@ import com.cloudalbum.publisher.common.enums.ResultCode;
 import com.cloudalbum.publisher.common.enums.TaskStatus;
 import com.cloudalbum.publisher.common.enums.TaskType;
 import com.cloudalbum.publisher.common.exception.BusinessException;
+import com.cloudalbum.publisher.common.model.PageRequest;
+import com.cloudalbum.publisher.common.model.PageResult;
 import com.cloudalbum.publisher.common.security.CredentialCryptoService;
 import com.cloudalbum.publisher.media.content.MediaHttpWriter;
 import com.cloudalbum.publisher.media.content.ObjectStorageMediaContentResolver;
@@ -15,6 +17,9 @@ import com.cloudalbum.publisher.media.entity.MediaProcessTask;
 import com.cloudalbum.publisher.media.mapper.MediaMapper;
 import com.cloudalbum.publisher.media.mapper.MediaProcessTaskMapper;
 import com.cloudalbum.publisher.media.util.MediaTypeUtil;
+import com.cloudalbum.publisher.mediasource.dto.ConnectionTestResponse;
+import com.cloudalbum.publisher.mediasource.dto.ExternalMediaItemResponse;
+import com.cloudalbum.publisher.mediasource.dto.ExternalMediaScanSummary;
 import com.cloudalbum.publisher.mediasource.dto.MediaSourceBrowseItemResponse;
 import com.cloudalbum.publisher.mediasource.dto.MediaSourceBrowseRequest;
 import com.cloudalbum.publisher.mediasource.dto.MediaSourceBrowseResponse;
@@ -34,6 +39,7 @@ import io.minio.GetObjectArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
 import io.minio.StatObjectArgs;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -60,12 +66,14 @@ import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -76,6 +84,8 @@ public class MediaSourceServiceImpl implements MediaSourceService {
     private static final String INGEST_MODE_LINKED = "LINKED";
     private static final String EXTERNAL_CACHE_PREFIX = "external-cache/";
     private static final int IMAGE_THUMB_MAX_EDGE = 480;
+    private static final int MAX_RECURSIVE_SCAN_DIRECTORIES = 500;
+    private static final int MAX_RECURSIVE_SCAN_FILES = 5000;
     private static final TypeReference<LinkedHashMap<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
 
@@ -152,8 +162,15 @@ public class MediaSourceServiceImpl implements MediaSourceService {
         mergedConfig = normalizeConfig(sourceType, mergedConfig);
 
         Map<String, Object> mergedCredentials = new LinkedHashMap<>(readCredentials(mediaSource));
-        if (!CollectionUtils.isEmpty(request.getCredentials())) {
-            mergedCredentials.putAll(request.getCredentials());
+        Map<String, Object> requestCredentials = request.getCredentials();
+        if (!CollectionUtils.isEmpty(requestCredentials)) {
+            for (Map.Entry<String, Object> entry : requestCredentials.entrySet()) {
+                String key = entry.getKey();
+                Object value = entry.getValue();
+                if (!"password".equals(key) || StringUtils.hasText(asText(value))) {
+                    mergedCredentials.put(key, value);
+                }
+            }
         }
         mergedCredentials = normalizeCredentials(sourceType, mergedCredentials, false);
 
@@ -183,7 +200,32 @@ public class MediaSourceServiceImpl implements MediaSourceService {
     @Transactional
     public void deleteMediaSource(Long mediaSourceId, Long userId) {
         MediaSource mediaSource = getOwnedMediaSource(mediaSourceId, userId);
+        List<Media> importedMediaList = mediaMapper.selectList(new LambdaQueryWrapper<Media>()
+                .eq(Media::getUserId, userId)
+                .eq(Media::getSourceId, mediaSource.getId()));
+        importedMediaList.forEach(this::deleteMediaObjects);
+        mediaMapper.delete(new LambdaQueryWrapper<Media>()
+                .eq(Media::getUserId, userId)
+                .eq(Media::getSourceId, mediaSource.getId()));
         mediaSourceMapper.deleteById(mediaSource.getId());
+    }
+
+    private void deleteMediaObjects(Media media) {
+        deleteObjectIfPresent(media.getBucketName(), media.getObjectKey());
+        deleteObjectIfPresent(media.getBucketName(), media.getThumbnailKey());
+    }
+
+    private void deleteObjectIfPresent(String bucketName, String objectKey) {
+        if (!StringUtils.hasText(bucketName) || !StringUtils.hasText(objectKey)) {
+            return;
+        }
+        try {
+            minioClient.removeObject(RemoveObjectArgs.builder()
+                    .bucket(bucketName)
+                    .object(objectKey)
+                    .build());
+        } catch (Exception ignored) {
+        }
     }
 
     @Override
@@ -218,6 +260,78 @@ public class MediaSourceServiceImpl implements MediaSourceService {
         String browseRoot = browseRootPath(mediaSource, false);
         String requestedPath = resolveRequestedPath(mediaSource, request.getPath(), browseRoot, false);
         return buildBrowseResponse(mediaSource, requestedPath, browseRoot);
+    }
+
+    @Override
+    public PageResult<ExternalMediaItemResponse> listExternalMedia(Long mediaSourceId,
+                                                                   Long userId,
+                                                                   PageRequest pageRequest,
+                                                                   String path,
+                                                                   String folderPath,
+                                                                   String mediaType,
+                                                                   String status,
+                                                                   Boolean coverOnly,
+                                                                   String keyword) {
+        MediaSource mediaSource = getEnabledMediaSource(mediaSourceId, userId);
+        String browseRoot = browseRootPath(mediaSource, true);
+        String startPath = resolveRequestedPath(mediaSource, path, browseRoot, true);
+        List<ExternalMediaItemResponse> items = scanExternalMediaItems(mediaSource, startPath).stream()
+                .filter(item -> !StringUtils.hasText(folderPath) || Objects.equals(item.getFolderPath(), folderPath))
+                .filter(item -> !StringUtils.hasText(mediaType) || Objects.equals(item.getMediaType(), mediaType))
+                .filter(item -> !Boolean.TRUE.equals(coverOnly) || "IMAGE".equals(item.getMediaType()) || "VIDEO".equals(item.getMediaType()))
+                .filter(item -> !StringUtils.hasText(status) || Objects.equals(item.getStatus(), status))
+                .filter(item -> !StringUtils.hasText(keyword)
+                        || containsIgnoreCase(item.getFileName(), keyword)
+                        || containsIgnoreCase(item.getFolderPath(), keyword)
+                        || containsIgnoreCase(item.getSourceName(), keyword))
+                .sorted(Comparator.comparing(ExternalMediaItemResponse::getFolderPath, String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(ExternalMediaItemResponse::getFileName, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+        int fromIndex = Math.min((int) pageRequest.getOffset(), items.size());
+        int toIndex = Math.min(fromIndex + pageRequest.getSize(), items.size());
+        return PageResult.of(items.size(), pageRequest.getPage(), pageRequest.getSize(), items.subList(fromIndex, toIndex));
+    }
+
+    @Override
+    public List<ExternalMediaScanSummary> scanExternalMediaSummaries(Long userId, String keyword) {
+        return mediaSourceMapper.selectList(new LambdaQueryWrapper<MediaSource>()
+                        .eq(MediaSource::getUserId, userId)
+                        .eq(MediaSource::getEnabled, true)
+                        .orderByAsc(MediaSource::getSourceType)
+                        .orderByAsc(MediaSource::getName)
+                        .orderByAsc(MediaSource::getId))
+                .stream()
+                .filter(mediaSource -> EXTERNAL_SOURCE_TYPES.contains(normalizeSourceType(mediaSource.getSourceType())))
+                .map(mediaSource -> buildExternalMediaSummary(mediaSource, keyword))
+                .toList();
+    }
+
+    @Override
+    public ConnectionTestResponse testConnection(Long mediaSourceId, Long userId) {
+        MediaSource mediaSource = getOwnedMediaSource(mediaSourceId, userId);
+        String sourceType = normalizeSourceType(mediaSource.getSourceType());
+        ensureImplementedSourceType(sourceType);
+
+        long startTime = System.currentTimeMillis();
+        try {
+            MediaSourceFileClient client = getRequiredFileClient(sourceType);
+            MediaSourceFileClient.MediaSourceConnection connection = buildConnection(mediaSource);
+            String browseRoot = browseRootPath(mediaSource, false);
+            client.list(connection, browseRoot);
+            long latency = System.currentTimeMillis() - startTime;
+            return ConnectionTestResponse.builder()
+                    .success(true)
+                    .message("连接成功")
+                    .latencyMs(latency)
+                    .build();
+        } catch (Exception e) {
+            long latency = System.currentTimeMillis() - startTime;
+            return ConnectionTestResponse.builder()
+                    .success(false)
+                    .message("连接失败: " + e.getMessage())
+                    .latencyMs(latency)
+                    .build();
+        }
     }
 
     @Override
@@ -350,12 +464,47 @@ public class MediaSourceServiceImpl implements MediaSourceService {
 
         String directoryPath = request != null ? request.getDirectoryPath() : null;
         String targetDirectory = resolveRequestedPath(mediaSource, directoryPath, browseRoot, true);
-        return listEntries(mediaSource, targetDirectory).stream()
-                .filter(entry -> !entry.isDirectory())
-                .map(MediaSourceFileClient.Entry::getPath)
-                .filter(this::isImportableFile)
-                .distinct()
-                .toList();
+        return resolveDirectoryImportPaths(mediaSource, targetDirectory, browseRoot);
+    }
+
+    private List<String> resolveDirectoryImportPaths(MediaSource mediaSource, String targetDirectory, String browseRoot) {
+        LinkedHashSet<String> paths = new LinkedHashSet<>();
+        if (shouldScanSubdirectories(mediaSource)) {
+            collectImportableFiles(mediaSource, targetDirectory, browseRoot, paths);
+        } else {
+            listEntries(mediaSource, targetDirectory).stream()
+                    .filter(entry -> !entry.isDirectory())
+                    .map(MediaSourceFileClient.Entry::getPath)
+                    .map(path -> resolveRequestedPath(mediaSource, path, browseRoot, true))
+                    .filter(this::isImportableFile)
+                    .forEach(paths::add);
+        }
+        return List.copyOf(paths);
+    }
+
+    private void collectImportableFiles(MediaSource mediaSource, String directoryPath, String browseRoot, LinkedHashSet<String> paths) {
+        for (MediaSourceFileClient.Entry entry : listEntries(mediaSource, directoryPath)) {
+            String resolvedPath = resolveRequestedPath(mediaSource, entry.getPath(), browseRoot, true);
+            if (entry.isDirectory()) {
+                collectImportableFiles(mediaSource, resolvedPath, browseRoot, paths);
+            } else if (isImportableFile(resolvedPath)) {
+                paths.add(resolvedPath);
+            }
+        }
+    }
+
+    private boolean shouldScanSubdirectories(MediaSource mediaSource) {
+        return asBoolean(readConfig(mediaSource).get("scanSubdirectories"));
+    }
+
+    private boolean asBoolean(Object value) {
+        if (value == null) {
+            return false;
+        }
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        return Boolean.parseBoolean(String.valueOf(value));
     }
 
     private boolean isImportableFile(String path) {
@@ -387,6 +536,124 @@ public class MediaSourceServiceImpl implements MediaSourceService {
         } catch (Exception ex) {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "读取媒体源目录失败: " + ex.getMessage());
         }
+    }
+
+    private List<ExternalMediaItemResponse> scanExternalMediaItems(MediaSource mediaSource, String startPath) {
+        LinkedHashMap<String, ExternalMediaItemResponse> items = new LinkedHashMap<>();
+        collectExternalMediaItems(mediaSource, startPath, browseRootPath(mediaSource, true), items, new ScanCounter());
+        return List.copyOf(items.values());
+    }
+
+    private void collectExternalMediaItems(MediaSource mediaSource,
+                                           String directoryPath,
+                                           String browseRoot,
+                                           LinkedHashMap<String, ExternalMediaItemResponse> items,
+                                           ScanCounter counter) {
+        if (!counter.visitedDirectories.add(directoryPath)
+                || counter.directories >= MAX_RECURSIVE_SCAN_DIRECTORIES
+                || items.size() >= MAX_RECURSIVE_SCAN_FILES) {
+            return;
+        }
+        counter.directories++;
+        for (MediaSourceFileClient.Entry entry : listEntries(mediaSource, directoryPath)) {
+            String resolvedPath = resolveRequestedPath(mediaSource, entry.getPath(), browseRoot, true);
+            if (entry.isDirectory()) {
+                collectExternalMediaItems(mediaSource, resolvedPath, browseRoot, items, counter);
+            } else if (isImportableFile(resolvedPath)) {
+                items.putIfAbsent(resolvedPath, toExternalMediaItem(mediaSource, entry, resolvedPath));
+                if (items.size() >= MAX_RECURSIVE_SCAN_FILES) {
+                    return;
+                }
+            }
+        }
+    }
+
+    private ExternalMediaItemResponse toExternalMediaItem(MediaSource mediaSource, MediaSourceFileClient.Entry entry, String normalizedPath) {
+        String fileName = fileName(normalizedPath);
+        String contentType = detectContentType(fileName);
+        String mediaType = MediaTypeUtil.detect(contentType, fileName).name();
+        ExternalMediaItemResponse item = new ExternalMediaItemResponse();
+        item.setExternalMediaKey(buildExternalMediaKey(mediaSource.getId(), normalizedPath));
+        item.setSourceId(mediaSource.getId());
+        item.setSourceType(normalizeSourceType(mediaSource.getSourceType()));
+        item.setSourceName(mediaSource.getName());
+        item.setPath(normalizedPath);
+        item.setFilePath(normalizedPath);
+        item.setOriginUri(normalizedPath);
+        item.setName(fileName);
+        item.setFileName(fileName);
+        item.setFolderPath(resolveFolderPath(mediaSource, normalizedPath));
+        item.setContentType(contentType);
+        item.setMediaType(mediaType);
+        item.setSize(entry.getSize());
+        item.setFileSize(entry.getSize());
+        item.setModifiedAt(entry.getModifiedAt());
+        item.setIngestMode(INGEST_MODE_LINKED);
+        item.setStatus(MediaStatus.READY.name());
+        item.setUrl(buildExternalContentUrl(mediaSource.getId(), normalizedPath));
+        if ("IMAGE".equals(mediaType)) {
+            item.setThumbnailUrl(buildExternalThumbnailUrl(mediaSource.getId(), normalizedPath));
+        }
+        return item;
+    }
+
+    private ExternalMediaScanSummary buildExternalMediaSummary(MediaSource mediaSource, String keyword) {
+        ExternalMediaScanSummary summary = new ExternalMediaScanSummary();
+        summary.setSourceId(mediaSource.getId());
+        summary.setSourceType(normalizeSourceType(mediaSource.getSourceType()));
+        summary.setSourceName(mediaSource.getName());
+        summary.setBoundPath(normalizeRootPath(mediaSource.getBoundPath()));
+        try {
+            String root = browseRootPath(mediaSource, true);
+            List<ExternalMediaItemResponse> items = scanExternalMediaItems(mediaSource, root).stream()
+                    .filter(item -> !StringUtils.hasText(keyword)
+                            || containsIgnoreCase(item.getFileName(), keyword)
+                            || containsIgnoreCase(item.getFolderPath(), keyword)
+                            || containsIgnoreCase(item.getSourceName(), keyword))
+                    .toList();
+            summary.setMediaCount(items.size());
+            items.forEach(item -> {
+                summary.getMediaTypeCounts().merge(item.getMediaType(), 1, Integer::sum);
+                addFolderSummary(summary, item.getFolderPath());
+            });
+        } catch (Exception ex) {
+            summary.setWarning(ex.getMessage());
+        }
+        return summary;
+    }
+
+    private void addFolderSummary(ExternalMediaScanSummary summary, String folderPath) {
+        ExternalMediaScanSummary.FolderSummary folder = summary.getFolders().stream()
+                .filter(item -> Objects.equals(item.getFolderPath(), folderPath))
+                .findFirst()
+                .orElseGet(() -> {
+                    ExternalMediaScanSummary.FolderSummary created = new ExternalMediaScanSummary.FolderSummary();
+                    created.setFolderPath(folderPath);
+                    created.setTitle(folderTitle(folderPath));
+                    summary.getFolders().add(created);
+                    return created;
+                });
+        folder.setMediaCount(folder.getMediaCount() + 1);
+    }
+
+    private boolean containsIgnoreCase(String value, String keyword) {
+        return StringUtils.hasText(value) && value.toLowerCase(Locale.ROOT).contains(keyword.toLowerCase(Locale.ROOT));
+    }
+
+    private String folderTitle(String folderPath) {
+        if (!StringUtils.hasText(folderPath) || "/".equals(folderPath)) {
+            return "根目录";
+        }
+        int index = folderPath.lastIndexOf('/');
+        if (index >= 0 && index < folderPath.length() - 1) {
+            return folderPath.substring(index + 1);
+        }
+        return folderPath;
+    }
+
+    private static final class ScanCounter {
+        private int directories;
+        private final Set<String> visitedDirectories = new LinkedHashSet<>();
     }
 
     private MediaSourceFileClient.Entry getFileEntry(MediaSource mediaSource, String path) {
@@ -794,7 +1061,11 @@ public class MediaSourceServiceImpl implements MediaSourceService {
 
     private Map<String, Object> readConfig(MediaSource mediaSource) {
         if (StringUtils.hasText(mediaSource.getConfigJson())) {
-            return parseJsonMap(mediaSource.getConfigJson(), "解析媒体源配置失败");
+            Map<String, Object> config = parseJsonMap(mediaSource.getConfigJson(), "解析媒体源配置失败");
+            if ("SMB".equalsIgnoreCase(mediaSource.getSourceType())) {
+                normalizeLegacySmbConfig(config);
+            }
+            return config;
         }
         Map<String, Object> config = new LinkedHashMap<>();
         if (StringUtils.hasText(mediaSource.getHost())) {
@@ -803,11 +1074,24 @@ public class MediaSourceServiceImpl implements MediaSourceService {
         if (mediaSource.getPort() != null) {
             config.put("port", mediaSource.getPort());
         }
+        String rootPath = normalizeRootPath(mediaSource.getRootPath());
         if (StringUtils.hasText(mediaSource.getShareName())) {
-            config.put("shareName", mediaSource.getShareName());
+            String shareName = normalizeRootPath(mediaSource.getShareName());
+            rootPath = "/".equals(rootPath) ? shareName : normalizeRootPath(shareName + rootPath);
         }
-        config.put("rootPath", normalizeRootPath(mediaSource.getRootPath()));
+        config.put("rootPath", rootPath);
         return config;
+    }
+
+    private void normalizeLegacySmbConfig(Map<String, Object> config) {
+        String shareName = asText(config.get("shareName"));
+        if (!StringUtils.hasText(shareName)) {
+            return;
+        }
+        String rootPath = normalizeRootPath(asText(config.get("rootPath")));
+        String normalizedShareName = normalizeRootPath(shareName);
+        config.put("rootPath", "/".equals(rootPath) ? normalizedShareName : normalizeRootPath(normalizedShareName + rootPath));
+        config.remove("shareName");
     }
 
     private Map<String, Object> readCredentials(MediaSource mediaSource) {

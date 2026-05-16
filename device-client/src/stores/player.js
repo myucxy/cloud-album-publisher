@@ -406,6 +406,19 @@ export const usePlayerStore = defineStore('player', () => {
     currentMediaIndex.value = 0
   }
 
+  function nextDistribution() {
+    if (!currentDistribution.value) {
+      resetIndices()
+      return
+    }
+    const nextDistributionIndex = getNextDistributionIndex()
+    if (nextDistributionIndex >= 0) {
+      currentDistributionIndex.value = nextDistributionIndex
+    }
+    currentMediaIndex.value = 0
+    currentBgmIndex.value = 0
+  }
+
   function previousMedia() {
     const list = currentMediaList.value
     if (!list.length) {
@@ -496,6 +509,7 @@ export const usePlayerStore = defineStore('player', () => {
     selectDistribution,
     setDistributionEnabled,
     nextMedia,
+    nextDistribution,
     previousMedia,
     nextBgm,
     resetIndices,

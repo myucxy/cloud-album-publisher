@@ -6,5 +6,6 @@ export const mediaSourceApi = {
   update: (id, data) => request.patch(`/media-sources/${id}`, data),
   remove: id => request.delete(`/media-sources/${id}`),
   browse: (id, params) => request.get(`/media-sources/${id}/browse`, { params }),
-  browseDraft: data => request.post('/media-sources/browse', data)
+  browseDraft: data => request.post('/media-sources/browse', data),
+  listMedia: (id, params) => request.get(`/media-sources/${id}/media`, { params })
 }

@@ -275,7 +275,7 @@ CREATE TABLE IF NOT EXISTS t_media_source (
     bound_path_name       VARCHAR(255),
     host                  VARCHAR(255) NOT NULL,
     port                  INT NOT NULL DEFAULT 445,
-    share_name            VARCHAR(255) NOT NULL,
+    share_name            VARCHAR(255) DEFAULT '',
     root_path             VARCHAR(500) NOT NULL DEFAULT '/',
     username              VARCHAR(255) NOT NULL,
     password_ciphertext   VARCHAR(1000),
@@ -308,6 +308,25 @@ ALTER TABLE t_media_source ADD COLUMN IF NOT EXISTS deleted TINYINT NOT NULL DEF
 UPDATE t_media_source SET source_type = 'SMB' WHERE source_type IS NULL OR source_type = '';
 UPDATE t_media_source SET port = 445 WHERE port IS NULL OR port <= 0;
 UPDATE t_media_source SET root_path = '/' WHERE root_path IS NULL OR root_path = '';
+UPDATE t_media_source SET root_path = CASE
+        WHEN root_path = '/' THEN '/' || TRIM(BOTH '/' FROM share_name)
+        ELSE '/' || TRIM(BOTH '/' FROM share_name) || '/' || TRIM(LEADING '/' FROM root_path)
+    END,
+    bound_path = CASE
+        WHEN bound_path IS NULL OR bound_path = '' THEN bound_path
+        WHEN bound_path = '/' THEN '/' || TRIM(BOTH '/' FROM share_name)
+        ELSE '/' || TRIM(BOTH '/' FROM share_name) || '/' || TRIM(LEADING '/' FROM bound_path)
+    END,
+    share_name = ''
+WHERE source_type = 'SMB'
+  AND share_name IS NOT NULL
+  AND share_name <> ''
+  AND (
+      root_path IS NULL
+      OR root_path = ''
+      OR root_path = '/'
+      OR root_path NOT LIKE '/' || TRIM(BOTH '/' FROM share_name) || '%'
+  );
 UPDATE t_media_source SET enabled = 1 WHERE enabled IS NULL;
 UPDATE t_media_source SET bound_path = root_path WHERE bound_path IS NULL OR bound_path = '';
 UPDATE t_media_source SET bound_path_name = name WHERE bound_path_name IS NULL OR bound_path_name = '';

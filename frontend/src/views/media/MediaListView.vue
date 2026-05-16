@@ -1,7 +1,7 @@
 <template>
   <div style="display:flex; gap:16px; align-items:flex-start">
     <div style="width:300px; flex-shrink:0">
-      <a-card title="媒体库分组" size="small">
+      <a-card title="媒体来源" size="small">
         <template #extra>
           <a-button type="link" size="small" @click="reloadLibrary" :loading="groupLoading || loading">刷新</a-button>
         </template>
@@ -154,7 +154,7 @@
           <template #message>{{ externalBrowseActive ? '当前为外部媒体目录视图' : '当前为系统媒体库视图' }}</template>
           <template #description>
             {{ externalBrowseActive
-              ? '外部媒体通过服务端代理预览，不默认导入系统内；相册和分发仍继续使用系统媒体库。'
+              ? '外部媒体实时读取外部来源；统计和列表会扫描绑定目录及子目录，不会导入系统媒体库。'
               : '自行上传和已缓存到系统内的媒体会显示在这里，可继续处理、审核和加入相册。' }}
           </template>
         </a-alert>
@@ -269,8 +269,9 @@
                 </div>
                 <div style="margin-top:10px; color:#595959; line-height:1.8">
                   <div>{{ sourceConnectionSummary(source) }}</div>
-                  <div>根目录：{{ normalizePath(source.config?.rootPath || source.configSummary?.rootPath || '/') }}</div>
+                  <div>根目录：{{ sourceRootPath(source) }}</div>
                   <div>绑定目录：{{ source.boundPathName || source.boundPath || '-' }}</div>
+                  <div>递归扫描：{{ sourceScanSubdirectories(source) ? '开启' : '关闭' }}</div>
                   <div>密码：{{ source.passwordConfigured ? '已配置' : '未配置' }}</div>
                   <div>更新时间：{{ formatDateTime(source.updatedAt) }}</div>
                 </div>
@@ -311,7 +312,7 @@
         <a-alert v-if="!currentSourceTypeImplemented" type="warning" show-icon style="margin-bottom:16px">
           <template #message>{{ sourceTypeLabel(mediaSourceForm.sourceType) }} 入口已预留</template>
           <template #description>
-            当前版本先完整打通 SMB；{{ sourceTypeLabel(mediaSourceForm.sourceType) }} 的连接校验、目录浏览和服务端代理预览链路将在同一套交互下继续接入。
+            当前媒体源类型暂未接入连接校验、目录浏览和服务端代理预览链路。
           </template>
         </a-alert>
 
@@ -319,39 +320,25 @@
           <a-input v-model:value="mediaSourceForm.name" placeholder="例如：家用 NAS" />
         </a-form-item>
 
-        <a-form-item label="主机地址" required>
-          <a-input v-model:value="mediaSourceForm.config.host" placeholder="例如：192.168.1.10" />
-        </a-form-item>
-        <a-form-item label="端口">
-          <a-input-number v-model:value="mediaSourceForm.config.port" :min="1" :max="65535" style="width:100%" />
-        </a-form-item>
-
-        <template v-if="mediaSourceForm.sourceType === 'SMB'">
-          <a-form-item label="共享名称" required extra="仅填写共享名（例如 other），不要包含目录分隔符；目录层级请填在“根目录”中。">
-            <a-input v-model:value="mediaSourceForm.config.shareName" placeholder="例如：other" />
-          </a-form-item>
-        </template>
-
-        <template v-if="mediaSourceForm.sourceType === 'FTP'">
-          <a-form-item label="安全连接">
-            <a-switch v-model:checked="mediaSourceForm.config.secure" checked-children="FTPS" un-checked-children="FTP" />
-          </a-form-item>
-        </template>
-
-        <template v-if="mediaSourceForm.sourceType === 'SFTP'">
-          <a-form-item label="主机指纹（可选）">
-            <a-input v-model:value="mediaSourceForm.config.hostKeyFingerprint" placeholder="例如：SHA256:xxxx" />
-          </a-form-item>
-        </template>
-
         <template v-if="mediaSourceForm.sourceType === 'WEBDAV'">
-          <a-form-item label="安全连接">
-            <a-switch v-model:checked="mediaSourceForm.config.secure" checked-children="HTTPS" un-checked-children="HTTP" />
+          <a-form-item label="WebDAV 地址" required>
+            <a-input v-model:value="mediaSourceForm.config.url" placeholder="例如：https://dav.example.com:443" />
+          </a-form-item>
+        </template>
+        <template v-else>
+          <a-form-item label="主机地址" required>
+            <a-input v-model:value="mediaSourceForm.config.host" placeholder="例如：192.168.1.10" />
+          </a-form-item>
+          <a-form-item label="端口">
+            <a-input-number v-model:value="mediaSourceForm.config.port" :min="1" :max="65535" style="width:100%" />
           </a-form-item>
         </template>
 
-        <a-form-item label="根目录">
+        <a-form-item label="根目录" :extra="mediaSourceForm.sourceType === 'SMB' ? 'SMB 路径格式：/共享名称/子目录，例如 /photos/2024。留空或填写 / 可列出所有共享。' : ''">
           <a-input v-model:value="mediaSourceForm.config.rootPath" placeholder="默认为 /" />
+        </a-form-item>
+        <a-form-item label="扫描子目录" extra="导入目录时递归扫描子目录中的图片、视频和音频文件">
+          <a-switch v-model:checked="mediaSourceForm.config.scanSubdirectories" checked-children="开启" un-checked-children="关闭" />
         </a-form-item>
         <a-form-item :label="editingMediaSourceId ? '用户名（留空则保持不变）' : '用户名'" :required="!editingMediaSourceId">
           <a-input v-model:value="mediaSourceForm.credentials.username" placeholder="请输入用户名" />
@@ -426,7 +413,7 @@
 
       <a-alert v-if="browseSelectionMode !== 'bind'" style="margin-bottom:12px" type="info" show-icon>
         <template #message>外部内容访问方式</template>
-        <template #description>当前目录中的媒体文件会通过服务端代理预览，不会默认导入系统媒体库。</template>
+        <template #description>当前目录中的媒体文件会通过服务端代理预览；媒体管理会递归扫描绑定目录及子目录，不会导入系统媒体库。</template>
       </a-alert>
 
       <a-alert v-if="browseSelectionMode !== 'bind' && browseBoundPath" style="margin-bottom:16px" type="success" show-icon>
@@ -801,7 +788,7 @@ const sourceTypeSections = computed(() => {
   const ensureSource = source => {
     const normalizedType = source?.sourceType || 'UPLOAD'
     const normalizedSourceId = source?.sourceId ?? source?.id ?? null
-    const key = sourceGroupKey({ sourceType: normalizedType, sourceId: normalizedSourceId, sourceName: source?.sourceName || source?.name })
+    const key = sourceGroupKey({ sourceType: normalizedType, sourceId: normalizedSourceId })
     if (!sourceMap.has(key)) {
       const base = {
         id: source?.id ?? normalizedSourceId,
@@ -810,7 +797,7 @@ const sourceTypeSections = computed(() => {
         sourceName: source?.sourceName || source?.name || (normalizedType === 'UPLOAD' ? '自行上传' : sourceTypeLabel(normalizedType)),
         mediaCount: 0,
         folders: [],
-        boundPath: source?.boundPath || source?.config?.rootPath || source?.configSummary?.rootPath || '/',
+        boundPath: source?.boundPath || sourceRootPath(source),
         boundPathName: source?.boundPathName || '',
         enabled: source?.enabled,
         config: source?.config || source?.configSummary || {},
@@ -823,6 +810,7 @@ const sourceTypeSections = computed(() => {
     const target = sourceMap.get(key)
     if (source?.id !== undefined && source?.id !== null) target.id = source.id
     if (source?.sourceId !== undefined && source?.sourceId !== null) target.sourceId = source.sourceId
+    if (target.sourceId === undefined || target.sourceId === null) target.sourceId = target.id
     if (source?.name && !source?.sourceName) target.sourceName = source.name
     if (source?.sourceName) target.sourceName = source.sourceName
     if (source?.boundPath) target.boundPath = source.boundPath
@@ -935,13 +923,18 @@ function createMediaSourceForm(sourceType = 'SMB') {
 
 function createDefaultSourceConfig(sourceType) {
   const option = EXTERNAL_SOURCE_TYPE_OPTIONS.find(item => item.value === sourceType)
+  if (sourceType === 'WEBDAV') {
+    return {
+      url: '',
+      rootPath: '/',
+      scanSubdirectories: false
+    }
+  }
   return {
     host: '',
     port: option?.defaultPort || 445,
-    shareName: '',
     rootPath: '/',
-    secure: sourceType === 'WEBDAV',
-    hostKeyFingerprint: ''
+    scanSubdirectories: false
   }
 }
 
@@ -1010,22 +1003,17 @@ async function load() {
         total.value = 0
         return
       }
-      const res = await mediaSourceApi.browse(sourceId, { path: externalBrowsePath.value || externalBrowseSource.value?.boundPath || '/' })
-      const items = Array.isArray(res.data?.items) ? res.data.items : []
-      const filteredItems = items
-        .filter(item => !item.directory)
-        .filter(item => !filterType.value || item.mediaType === filterType.value)
-        .filter(item => !filterStatus.value || item.status === filterStatus.value)
-        .filter(item => {
-          if (!keyword.value) {
-            return true
-          }
-          const text = `${item.fileName || ''} ${item.sourceName || ''} ${item.folderPath || ''}`.toLowerCase()
-          return text.includes(String(keyword.value).toLowerCase())
-        })
-      total.value = filteredItems.length
-      mediaList.value = paginateExternalItems(filteredItems)
-      externalBrowsePath.value = normalizePath(res.data?.currentPath || externalBrowsePath.value || '/')
+      const res = await mediaSourceApi.listMedia(sourceId, {
+        page: externalBrowsePage.value,
+        size: externalBrowsePageSize,
+        path: externalBrowsePath.value || externalBrowseSource.value?.boundPath || '/',
+        mediaType: filterType.value || undefined,
+        status: filterStatus.value || undefined,
+        folderPath: filterFolderPath.value || undefined,
+        keyword: keyword.value || undefined
+      })
+      mediaList.value = res.data?.list || []
+      total.value = res.data?.total || 0
       return
     }
 
@@ -1100,16 +1088,20 @@ function applyExternalBrowseToLibrary() {
   load()
 }
 
-function paginateExternalItems(items) {
-  const start = Math.max(0, (externalBrowsePage.value - 1) * externalBrowsePageSize)
-  return items.slice(start, start + externalBrowsePageSize)
-}
-
 async function openMediaSourceDrawer() {
   mediaSourceDrawerOpen.value = true
   if (!mediaSources.value.length) {
     await loadMediaSources()
   }
+}
+
+function sourceRootPath(source) {
+  return normalizePath(source?.config?.rootPath || source?.configSummary?.rootPath || '/')
+}
+
+function sourceScanSubdirectories(source) {
+  const value = source?.config?.scanSubdirectories ?? source?.configSummary?.scanSubdirectories
+  return value === true || value === 'true'
 }
 
 function openCreateMediaSource() {
@@ -1120,20 +1112,27 @@ function openCreateMediaSource() {
 
 function openEditMediaSource(source) {
   const sourceType = source?.sourceType || 'SMB'
+  const sourceConfig = source.config || source.configSummary || {}
+  const config = {
+    ...createDefaultSourceConfig(sourceType),
+    ...sourceConfig
+  }
+  if (sourceType === 'WEBDAV' && !config.url && config.host) {
+    const secure = !!config.secure
+    const port = config.port || (secure ? 443 : 80)
+    config.url = `${secure ? 'https' : 'http'}://${config.host}:${port}`
+  }
   editingMediaSourceId.value = source.id
   mediaSourceForm.value = {
     sourceType,
     name: source.name || '',
-    config: {
-      ...createDefaultSourceConfig(sourceType),
-      ...(source.config || {})
-    },
+    config,
     credentials: {
       username: '',
       password: ''
     },
     enabled: !!source.enabled,
-    boundPath: normalizePath(source.boundPath || source.config?.rootPath || '/'),
+    boundPath: normalizePath(source.boundPath || sourceRootPath(source)),
     boundPathName: source.boundPathName || ''
   }
   mediaSourceModalOpen.value = true
@@ -1158,36 +1157,19 @@ function resetBoundPath() {
 }
 
 function buildSourceConfigPayload() {
-  const basePayload = {
-    host: mediaSourceForm.value.config.host?.trim(),
-    port: mediaSourceForm.value.config.port,
-    rootPath: normalizePath(mediaSourceForm.value.config.rootPath || '/')
-  }
-  if (mediaSourceForm.value.sourceType === 'SMB') {
-    return {
-      ...basePayload,
-      shareName: mediaSourceForm.value.config.shareName?.trim()
-    }
-  }
-  if (mediaSourceForm.value.sourceType === 'FTP') {
-    return {
-      ...basePayload,
-      secure: !!mediaSourceForm.value.config.secure
-    }
-  }
-  if (mediaSourceForm.value.sourceType === 'SFTP') {
-    return {
-      ...basePayload,
-      hostKeyFingerprint: mediaSourceForm.value.config.hostKeyFingerprint?.trim() || undefined
-    }
-  }
   if (mediaSourceForm.value.sourceType === 'WEBDAV') {
     return {
-      ...basePayload,
-      secure: !!mediaSourceForm.value.config.secure
+      url: mediaSourceForm.value.config.url?.trim(),
+      rootPath: normalizePath(mediaSourceForm.value.config.rootPath || '/'),
+      scanSubdirectories: !!mediaSourceForm.value.config.scanSubdirectories
     }
   }
-  return basePayload
+  return {
+    host: mediaSourceForm.value.config.host?.trim(),
+    port: mediaSourceForm.value.config.port,
+    rootPath: normalizePath(mediaSourceForm.value.config.rootPath || '/'),
+    scanSubdirectories: !!mediaSourceForm.value.config.scanSubdirectories
+  }
 }
 
 function buildSourceCredentialsPayload() {
@@ -1217,16 +1199,13 @@ function validateMediaSourceForm({ requireCredentials, forBrowse = false } = {})
   const config = buildSourceConfigPayload()
   const credentials = buildSourceCredentialsPayload()
 
-  if (!config.host) {
+  if (mediaSourceForm.value.sourceType === 'WEBDAV') {
+    if (!config.url) {
+      message.warning('请填写 WebDAV 地址')
+      return false
+    }
+  } else if (!config.host) {
     message.warning('请填写主机地址')
-    return false
-  }
-  if (mediaSourceForm.value.sourceType === 'SMB' && !config.shareName) {
-    message.warning('请完整填写 SMB 连接信息')
-    return false
-  }
-  if (mediaSourceForm.value.sourceType === 'SMB' && /[\\/]/.test(config.shareName)) {
-    message.warning('共享名称仅填写共享名，不要包含目录分隔符；目录层级请填写在根目录')
     return false
   }
   if (requireCredentials && (!credentials.username || !credentials.password)) {
@@ -1285,7 +1264,7 @@ async function removeMediaSource(source) {
 
 async function openDraftBrowse() {
   const requireCredentials = !editingMediaSourceId.value || !!mediaSourceForm.value.credentials.username?.trim() || !!mediaSourceForm.value.credentials.password?.trim()
-  if (!validateMediaSourceForm({ requireCredentials: true, forBrowse: true })) {
+  if (!validateMediaSourceForm({ requireCredentials, forBrowse: true })) {
     return
   }
 
@@ -1307,8 +1286,8 @@ async function openBrowseSource(source, path = null) {
   browseMode.value = 'saved'
   browseSelectionMode.value = 'view'
   browseMediaSource.value = source
-  browseCurrentPath.value = normalizePath(path || source.boundPath || source.config?.rootPath || '/')
-  browseRootPath.value = normalizePath(source.boundPath || source.config?.rootPath || '/')
+  browseCurrentPath.value = normalizePath(path || source.boundPath || sourceRootPath(source))
+  browseRootPath.value = normalizePath(source.boundPath || sourceRootPath(source))
   browseBoundPath.value = normalizePath(source.boundPath || '')
   browseBoundPathName.value = source.boundPathName || ''
   browseModalOpen.value = true
@@ -1424,7 +1403,7 @@ async function selectSourceTypeSection(section) {
 }
 
 async function selectSource(source) {
-  if (source?.sourceType !== 'UPLOAD' && source?.sourceId && source?.boundPath) {
+  if (source?.sourceType !== 'UPLOAD' && source?.sourceId) {
     libraryMode.value = EXTERNAL_LIBRARY_MODE
     externalBrowseSource.value = source
     externalBrowsePath.value = normalizePath(source.boundPath)
@@ -1446,6 +1425,19 @@ async function selectSource(source) {
 }
 
 async function selectFolder(source, folder) {
+  if (source?.sourceType !== 'UPLOAD' && source?.sourceId) {
+    libraryMode.value = EXTERNAL_LIBRARY_MODE
+    externalBrowseSource.value = source
+    externalBrowsePath.value = normalizePath(source.boundPath || '/')
+    externalBrowsePage.value = 1
+    filterSourceType.value = source.sourceType || undefined
+    filterSourceId.value = source.sourceId ?? undefined
+    filterFolderPath.value = folder.folderPath || undefined
+    page.value = 1
+    await load()
+    return
+  }
+
   exitExternalBrowseMode()
   filterSourceType.value = source.sourceType || undefined
   filterSourceId.value = source.sourceId ?? undefined
@@ -1517,13 +1509,10 @@ function sourceTypeCardStyle(typeGroup) {
 }
 
 function sourceCardStyle(source) {
-  const externalSelected = externalBrowseActive.value
-    && source?.sourceId === externalBrowseSource.value?.id
-    && source?.sourceType === externalBrowseSource.value?.sourceType
-  const selected = externalSelected || (sourceMatches(source, filterSourceType.value, filterSourceId.value) && !filterFolderPath.value)
+  const selected = sourceMatches(source, filterSourceType.value, filterSourceId.value) && !filterFolderPath.value
   return selected
-    ? 'border:1px solid #91caff; border-radius:8px; padding:10px; background:#ffffff; cursor:pointer'
-    : 'border:1px solid #f5f5f5; border-radius:8px; padding:10px; background:#fafafa; cursor:pointer'
+    ? 'border:1px solid #1677ff; border-radius:8px; padding:10px 12px; background:#e6f4ff; cursor:pointer'
+    : 'border:1px solid #f0f0f0; border-radius:8px; padding:10px 12px; background:#fff; cursor:pointer'
 }
 
 function boundPathStyle(source) {
@@ -1533,12 +1522,11 @@ function boundPathStyle(source) {
 }
 
 function folderItemStyle(source, folder) {
-  const selected = !externalBrowseActive.value
-    && sourceMatches(source, filterSourceType.value, filterSourceId.value)
+  const selected = sourceMatches(source, filterSourceType.value, filterSourceId.value)
     && filterFolderPath.value === folder.folderPath
   return selected
     ? 'display:flex; justify-content:space-between; gap:8px; border-radius:6px; padding:6px 8px; background:#1677ff; color:#fff; cursor:pointer'
-    : 'display:flex; justify-content:space-between; gap:8px; border-radius:6px; padding:6px 8px; background:#fff; cursor:pointer; border:1px solid #f0f0f0'
+    : 'display:flex; justify-content:space-between; gap:8px; border-radius:6px; padding:6px 8px; background:#fafafa; cursor:pointer'
 }
 
 function sourceSummaryText(source) {
@@ -1547,7 +1535,10 @@ function sourceSummaryText(source) {
   }
   const summary = source.configSummary || source.config || {}
   if (source.sourceType === 'SMB') {
-    return `${summary.host || '-'}:${summary.port || '-'} / ${summary.shareName || '-'}`
+    return `${summary.host || '-'}:${summary.port || '-'} / ${normalizePath(summary.rootPath || '/')}`
+  }
+  if (source.sourceType === 'WEBDAV') {
+    return `${summary.url || `${summary.host || '-'}:${summary.port || '-'}`} / ${normalizePath(summary.rootPath || '/')}`
   }
   return `${summary.host || '-'}:${summary.port || '-'} / ${normalizePath(summary.rootPath || '/')}`
 }
@@ -1555,10 +1546,10 @@ function sourceSummaryText(source) {
 function sourceConnectionSummary(source) {
   const summary = source.configSummary || source.config || {}
   if (source.sourceType === 'SMB') {
-    return `连接：${summary.host || '-'}:${summary.port || '-'} / ${summary.shareName || '-'}`
+    return `连接：${summary.host || '-'}:${summary.port || '-'} / ${normalizePath(summary.rootPath || '/')}`
   }
   if (source.sourceType === 'WEBDAV') {
-    return `连接：${summary.secure ? 'https' : 'http'}://${summary.host || '-'}:${summary.port || '-'}`
+    return `连接：${summary.url || `${summary.host || '-'}:${summary.port || '-'}`}`
   }
   return `连接：${summary.host || '-'}:${summary.port || '-'} / ${normalizePath(summary.rootPath || '/')}`
 }
@@ -1567,17 +1558,16 @@ function draftSourceSummary(form) {
   const host = form.config.host?.trim() || '-'
   const port = form.config.port || EXTERNAL_SOURCE_TYPE_OPTIONS.find(item => item.value === form.sourceType)?.defaultPort || '-'
   if (form.sourceType === 'SMB') {
-    const shareName = form.config.shareName?.trim() || '-'
-    return `SMB / ${host}:${port} / ${shareName}`
+    return `SMB / ${host}:${port}`
   }
   if (form.sourceType === 'WEBDAV') {
-    return `${form.config.secure ? 'HTTPS' : 'HTTP'} / ${host}:${port}`
+    return `WebDAV / ${form.config.url?.trim() || '-'}`
   }
   if (form.sourceType === 'SFTP') {
     return `SFTP / ${host}:${port}`
   }
   if (form.sourceType === 'FTP') {
-    return `${form.config.secure ? 'FTPS' : 'FTP'} / ${host}:${port}`
+    return `FTP / ${host}:${port}`
   }
   return sourceTypeLabel(form.sourceType)
 }

@@ -25,6 +25,7 @@
         <minio.version>8.5.11</minio.version>
         <tika.version>2.9.2</tika.version>
         <smbj.version>0.14.0</smbj.version>
+        <jcifs-ng.version>2.1.10</jcifs-ng.version>
         <sshj.version>0.39.0</sshj.version>
         <commons-net.version>3.11.1</commons-net.version>
         <sardine.version>5.13</sardine.version>
@@ -136,6 +137,11 @@
             <groupId>com.hierynomus</groupId>
             <artifactId>smbj</artifactId>
             <version>${smbj.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>eu.agno3.jcifs</groupId>
+            <artifactId>jcifs-ng</artifactId>
+            <version>${jcifs-ng.version}</version>
         </dependency>
 
         <!-- FTP -->

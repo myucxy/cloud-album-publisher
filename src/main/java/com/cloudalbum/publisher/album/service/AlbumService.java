@@ -28,6 +28,8 @@ public interface AlbumService {
 
     void removeContent(Long albumId, Long contentId, Long userId);
 
+    void removeContents(Long albumId, Long userId, List<Long> contentIds);
+
     AlbumResponse updateCover(Long albumId, Long userId, AlbumCoverRequest request);
 
     AlbumResponse updateBgm(Long albumId, Long userId, AlbumBgmRequest request);

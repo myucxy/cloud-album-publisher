@@ -38,6 +38,10 @@ public class AuthenticatedImageLoader {
     }
 
     public static void load(ImageView imageView, String url, DeviceSessionRepository repository, final Callback callback) {
+        load(imageView, url, repository, 0, 0, callback);
+    }
+
+    public static void load(ImageView imageView, String url, DeviceSessionRepository repository, int targetWidth, int targetHeight, final Callback callback) {
         if (url == null || url.trim().isEmpty()) {
             imageView.setImageDrawable(null);
             imageView.setTag(null);
@@ -48,7 +52,7 @@ public class AuthenticatedImageLoader {
         }
         imageView.setTag(url);
         Drawable currentDrawable = imageView.getDrawable();
-        buildRequest(imageView, url, repository)
+        buildRequest(imageView, url, repository, targetWidth, targetHeight)
                 .placeholder(currentDrawable)
                 .listener(new RequestListener<Drawable>() {
                     @Override
@@ -75,13 +79,17 @@ public class AuthenticatedImageLoader {
     }
 
     public static void preload(ImageView imageView, String url, DeviceSessionRepository repository, final Callback callback) {
+        preload(imageView, url, repository, 0, 0, callback);
+    }
+
+    public static void preload(ImageView imageView, String url, DeviceSessionRepository repository, int targetWidth, int targetHeight, final Callback callback) {
         if (url == null || url.trim().isEmpty()) {
             if (callback != null) {
                 callback.onFailure();
             }
             return;
         }
-        buildRequest(imageView, url, repository)
+        buildRequest(imageView, url, repository, targetWidth, targetHeight)
                 .listener(new RequestListener<Drawable>() {
                     @Override
                     public boolean onLoadFailed(GlideException e, Object model, Target<Drawable> target, boolean isFirstResource) {
@@ -106,8 +114,8 @@ public class AuthenticatedImageLoader {
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
     }
 
-    private static RequestBuilder<Drawable> buildRequest(ImageView imageView, String url, DeviceSessionRepository repository) {
-        int[] targetSize = resolveTargetSize(imageView);
+    private static RequestBuilder<Drawable> buildRequest(ImageView imageView, String url, DeviceSessionRepository repository, int targetWidth, int targetHeight) {
+        int[] targetSize = resolveTargetSize(imageView, targetWidth, targetHeight);
         int cornerRadius = dp(imageView, IMAGE_CORNER_RADIUS_DP);
         RequestBuilder<Drawable> requestBuilder;
         if (isLocalUri(url)) {
@@ -136,7 +144,10 @@ public class AuthenticatedImageLoader {
         return Math.max(1, Math.round(value * imageView.getResources().getDisplayMetrics().density));
     }
 
-    private static int[] resolveTargetSize(ImageView imageView) {
+    private static int[] resolveTargetSize(ImageView imageView, int targetWidth, int targetHeight) {
+        if (targetWidth > 0 && targetHeight > 0) {
+            return new int[] {clampDecodeSize(targetWidth), clampDecodeSize(targetHeight)};
+        }
         int width = imageView.getWidth();
         int height = imageView.getHeight();
         if (width <= 0) {

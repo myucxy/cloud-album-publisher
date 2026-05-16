@@ -23,6 +23,7 @@ public class DeviceSessionRepository {
     private static final String KEY_PLAYBACK_MUTED = "playback_muted";
     private static final String KEY_MEDIA_CACHE_ENABLED = "media_cache_enabled";
     private static final String KEY_MEDIA_CACHE_LIMIT_MB = "media_cache_limit_mb";
+    private static final String KEY_PREFER_NATIVE_DISPLAY_MODE = "prefer_native_display_mode";
     private static final String KEY_BRIGHTNESS_ENABLED = "brightness_enabled";
     private static final String KEY_BRIGHTNESS_START_HOUR = "brightness_start_hour";
     private static final String KEY_BRIGHTNESS_END_HOUR = "brightness_end_hour";
@@ -165,6 +166,14 @@ public class DeviceSessionRepository {
 
     public void saveMediaCacheLimitMb(int limitMb) {
         preferences.edit().putInt(KEY_MEDIA_CACHE_LIMIT_MB, normalizeMediaCacheLimitMb(limitMb)).apply();
+    }
+
+    public boolean isPreferNativeDisplayModeEnabled() {
+        return preferences.getBoolean(KEY_PREFER_NATIVE_DISPLAY_MODE, false);
+    }
+
+    public void savePreferNativeDisplayModeEnabled(boolean enabled) {
+        preferences.edit().putBoolean(KEY_PREFER_NATIVE_DISPLAY_MODE, enabled).apply();
     }
 
     public boolean isBrightnessScheduleEnabled() {

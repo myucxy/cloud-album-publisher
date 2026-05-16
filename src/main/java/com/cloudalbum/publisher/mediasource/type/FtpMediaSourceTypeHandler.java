@@ -32,7 +32,7 @@ public class FtpMediaSourceTypeHandler implements MediaSourceTypeHandler {
         normalized.put("host", requireMapText(config, "host", "主机地址不能为空"));
         normalized.put("port", resolvePort(asInteger(config == null ? null : config.get("port"))));
         normalized.put("rootPath", normalizeRootPath(asText(config == null ? null : config.get("rootPath"))));
-        normalized.put("secure", asBoolean(config == null ? null : config.get("secure")));
+        normalized.put("scanSubdirectories", asBoolean(config == null ? null : config.get("scanSubdirectories")));
         return normalized;
     }
 
@@ -61,7 +61,6 @@ public class FtpMediaSourceTypeHandler implements MediaSourceTypeHandler {
                 .rootPath(normalizeRootPath(asText(config.get("rootPath"))))
                 .username(requireMapText(credentials, "username", "用户名不能为空"))
                 .password(requireMapText(credentials, "password", "密码不能为空"))
-                .secure(asBoolean(config.get("secure")))
                 .build();
     }
 
@@ -71,7 +70,7 @@ public class FtpMediaSourceTypeHandler implements MediaSourceTypeHandler {
         summary.put("host", config.get("host"));
         summary.put("port", config.get("port"));
         summary.put("rootPath", config.get("rootPath"));
-        summary.put("secure", asBoolean(config.get("secure")));
+        summary.put("scanSubdirectories", asBoolean(config.get("scanSubdirectories")));
         return summary;
     }
 
@@ -128,9 +127,9 @@ public class FtpMediaSourceTypeHandler implements MediaSourceTypeHandler {
         }
     }
 
-    private Boolean asBoolean(Object value) {
+    private boolean asBoolean(Object value) {
         if (value == null) {
-            return Boolean.FALSE;
+            return false;
         }
         if (value instanceof Boolean booleanValue) {
             return booleanValue;
