@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <title>客户端下载 - 智控云影</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, "Microsoft YaHei", sans-serif;
+        background: #f3f6fb;
+        color: #172033;
+      }
+      .page {
+        min-height: 100vh;
+        padding: 24px 14px;
+      }
+      .shell {
+        max-width: 920px;
+        margin: 0 auto;
+      }
+      .hero, .card, .reason-card, .browser-card, .guidance-card {
+        background: #fff;
+        border: 1px solid #e8edf5;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      }
+      .hero {
+        padding: 24px;
+        margin-bottom: 16px;
+      }
+      .eyebrow {
+        margin-bottom: 8px;
+        color: #2563eb;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+      h1 {
+        margin: 0 0 10px;
+        font-size: 28px;
+      }
+      p {
+        margin: 0;
+        color: #64748b;
+        line-height: 1.7;
+      }
+      /* --- Reason banner --- */
+      .reason-card {
+        padding: 20px;
+        margin-bottom: 16px;
+        border-left: 5px solid #ef4444;
+        display: none;
+      }
+      .reason-card.reason-proxy,
+      .reason-card.reason-symbol,
+      .reason-card.reason-nomodule,
+      .reason-card.reason-detection-error,
+      .reason-card.reason-generic {
+        border-left-color: #ef4444;
+      }
+      .reason-card.reason-collections,
+      .reason-card.reason-weakmap {
+        border-left-color: #f97316;
+      }
+      .reason-card.reason-promise,
+      .reason-card.reason-fetch {
+        border-left-color: #eab308;
+      }
+      .reason-card .reason-icon {
+        font-size: 28px;
+        margin-right: 14px;
+        float: left;
+      }
+      .reason-card .reason-title {
+        font-size: 18px;
+        font-weight: 700;
+        margin: 0 0 6px;
+      }
+      .reason-card .reason-desc {
+        font-size: 14px;
+        color: #475569;
+        line-height: 1.7;
+        margin: 0 0 10px;
+      }
+      .reason-card .reason-fix {
+        font-size: 14px;
+        color: #2563eb;
+        line-height: 1.7;
+        margin: 0;
+      }
+      /* --- Browser info --- */
+      .browser-card {
+        padding: 18px 20px;
+        margin-bottom: 16px;
+        display: none;
+      }
+      .browser-card h3 {
+        margin: 0 0 8px;
+        font-size: 15px;
+        color: #334155;
+      }
+      .browser-card .browser-meta {
+        font-size: 13px;
+        color: #94a3b8;
+        word-break: break-all;
+        line-height: 1.6;
+      }
+      .browser-card .browser-meta span {
+        color: #475569;
+      }
+      /* --- Section title --- */
+      .section-title {
+        font-size: 20px;
+        margin: 24px 0 14px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #e8edf5;
+      }
+      /* --- Download list (existing) --- */
+      .list {
+        display: block;
+      }
+      .card {
+        padding: 18px;
+        margin-bottom: 12px;
+      }
+      .card h2 {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+      .meta {
+        color: #64748b;
+        font-size: 14px;
+        line-height: 1.7;
+      }
+      .btn {
+        display: inline-block;
+        margin-top: 14px;
+        padding: 10px 18px;
+        border-radius: 999px;
+        background: #1677ff;
+        color: #fff;
+        text-decoration: none;
+        font-weight: 600;
+      }
+      .btn.disabled {
+        background: #cbd5e1;
+        pointer-events: none;
+      }
+      .fallback {
+        padding: 20px;
+        text-align: center;
+        color: #64748b;
+      }
+      .manual {
+        margin-top: 14px;
+        font-size: 14px;
+      }
+      .manual a {
+        color: #1677ff;
+      }
+      @media (max-width: 640px) {
+        .page { padding: 16px 10px; }
+        h1 { font-size: 22px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="shell">
+
+        <!-- Hero -->
+        <div class="hero">
+          <div class="eyebrow">CLOUD ALBUM PUBLISHER</div>
+          <h1>浏览器兼容性检测</h1>
+          <p>当前浏览器环境不满足运行此管理后台的最低要求，请参考以下指引操作。</p>
+        </div>
+
+        <!-- Reason banner (dynamically populated) -->
+        <div id="reason-card" class="reason-card">
+          <div class="reason-icon">&#9888;</div>
+          <h2 id="reason-title" class="reason-title"></h2>
+          <p id="reason-desc" class="reason-desc"></p>
+          <p id="reason-fix" class="reason-fix"></p>
+        </div>
+
+        <!-- Browser info (dynamically populated) -->
+        <div id="browser-card" class="browser-card">
+          <h3>&#9432; 当前浏览器信息</h3>
+          <div id="browser-meta" class="browser-meta"></div>
+        </div>
+
+        <!-- Download list heading -->
+        <h2 class="section-title">&#128230; 下载客户端</h2>
+        <div id="download-list" class="list">
+          <div class="fallback">正在加载客户端下载列表...</div>
+        </div>
+
+        <div class="manual">
+          如果下载列表加载失败，可稍后重试，或在新浏览器中打开 <a href="/client-downloads">客户端下载页面</a>。
+        </div>
+
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        /* ====================== Parse query params ====================== */
+        var params = {};
+        (location.search || '').replace(/[?&]+([^=&]+)=([^&]*)/gi, function (m, key, val) {
+          params[decodeURIComponent(key)] = decodeURIComponent(val);
+        });
+
+        var reason = params.reason || '';
+        var userAgent = params.ua || navigator.userAgent || '';
+
+        /* ====================== Reason messages ====================== */
+        var reasons = {
+          'no-proxy': {
+            title: '浏览器不支持 Proxy 特性',
+            desc: '此管理后台使用 Vue 3 框架构建，依赖 Proxy 特性实现数据响应式绑定。低版本 Android 系统自带浏览器或 WebView（Android 6.x 及以下）不提供此 API，因此页面无法加载。',
+            fix: '请在手机上安装最新版 Chrome 浏览器后重新访问，或直接下载下方 Android 客户端使用。'
+          },
+          'no-symbol': {
+            title: '浏览器不支持 Symbol 特性',
+            desc: '当前浏览器缺少 JavaScript Symbol 支持，这是现代 Web 框架的基础依赖，导致页面无法正常运行。',
+            fix: '请更新系统 WebView 组件或使用最新版 Chrome 浏览器访问，也可直接下载客户端。'
+          },
+          'no-collections': {
+            title: '浏览器不支持 Map / Set',
+            desc: '当前浏览器缺少 Map 和 Set 数据结构支持，无法加载需要这些特性的前端组件。',
+            fix: '建议使用新版浏览器（Chrome 50+）访问，或直接下载客户端。'
+          },
+          'no-weakmap': {
+            title: '浏览器不支持 WeakMap',
+            desc: '当前浏览器缺少 WeakMap 支持，Vue 3 运行时需要此特性。',
+            fix: '请更新至 Android 7.0+ 系统自带浏览器，或安装新版 Chrome 浏览器。'
+          },
+          'no-promise': {
+            title: '浏览器不支持 Promise',
+            desc: '当前浏览器版本过旧，不支持 Promise 异步编程特性，无法进行网络请求等操作。',
+            fix: '请使用 Android 5.0+ 系统自带浏览器或安装新版 Chrome，也可直接下载客户端。'
+          },
+          'no-fetch': {
+            title: '浏览器不支持 Fetch API',
+            desc: '当前浏览器缺少 Fetch API 支持，无法与服务器进行数据通信。',
+            fix: '建议更新浏览器或直接下载客户端使用。'
+          },
+          'no-object-assign': {
+            title: '浏览器不支持 Object.assign',
+            desc: '当前浏览器缺少 Object.assign 方法，无法处理对象合并等操作。',
+            fix: '请使用最新版 Chrome / Edge 浏览器访问，或直接下载客户端。'
+          },
+          'no-array-includes': {
+            title: '浏览器不支持 Array.prototype.includes',
+            desc: '当前浏览器缺少数组 includes 方法，无法执行数据检索操作。',
+            fix: '建议更新至 Chrome 47+ 或使用新版浏览器访问。'
+          },
+          'no-string-startswith': {
+            title: '浏览器不支持 String.prototype.startsWith',
+            desc: '当前浏览器缺少字符串 startsWith 方法。',
+            fix: '建议更新浏览器或直接下载客户端。'
+          },
+          'no-resize-observer': {
+            title: '浏览器不支持 ResizeObserver',
+            desc: '当前浏览器缺少 ResizeObserver API，界面组件无法自适应尺寸变化。',
+            fix: '请使用 Chrome 64+ 或新版浏览器访问，也可直接下载客户端。'
+          },
+          'via-browser': {
+            title: 'Via 浏览器兼容性不足',
+            desc: 'Via 浏览器为轻量级浏览器，可能缺少 Vue 3 框架所需的某些 JavaScript 特性（如 Proxy、Reflect 等），导致页面无法加载。',
+            fix: '请使用系统自带浏览器、Chrome 浏览器或 Edge 浏览器访问，或直接下载下方 Android 客户端使用。'
+          },
+          'no-reflect': {
+            title: '浏览器不支持 Reflect',
+            desc: '当前浏览器缺少 JavaScript Reflect API，Vue 3 框架需要此特性处理对象代理操作。',
+            fix: '请使用最新版 Chrome / Edge / Firefox 浏览器访问，或直接下载客户端。'
+          },
+          'no-array-flat': {
+            title: '浏览器不支持 Array.prototype.flat',
+            desc: '当前浏览器缺少数组 flat 方法，无法处理数据展平操作。',
+            fix: '建议更新浏览器或直接下载客户端使用。'
+          },
+          'nomodule': {
+            title: '浏览器不支持 ES Module',
+            desc: '当前浏览器不支持 ES Module（ES2015 模块标准），无法加载现代化的 Web 应用。多见于 Android 5.x 及以下系统自带浏览器。',
+            fix: '请安装最新版 Chrome 浏览器后重新访问，或直接下载客户端。'
+          },
+          'runtime-error': {
+            title: '页面运行异常',
+            desc: '浏览器通过了基础兼容性检测，但应用加载时出现异常，页面无法正常显示。常见原因：浏览器内核过旧、系统 WebView 版本过低、或浏览器插件干扰。',
+            fix: '请使用最新版 Chrome / Edge 浏览器访问，或直接下载下方客户端使用。'
+          },
+          'detection-error': {
+            title: '浏览器兼容性检测异常',
+            desc: '浏览器兼容性检测脚本执行出现异常，无法准确判断具体缺失特性。',
+            fix: '请使用最新版 Chrome、Edge 或 Firefox 浏览器访问，或直接下载客户端使用。'
+          },
+          'unsupported-browser': {
+            title: '浏览器版本过旧',
+            desc: '当前浏览器无法满足运行此管理后台的最低要求，页面可能显示为空白。',
+            fix: '请使用最新版 Chrome、Edge 或 Firefox 浏览器访问，或下载下方客户端使用。'
+          }
+        };
+
+        /* ====================== Browser detection ====================== */
+        function detectBrowser(ua) {
+          var info = { name: '未知', version: '', os: '' };
+          if (!ua) return info;
+
+          var match;
+
+          // OS detection
+          if (/android/i.test(ua)) {
+            match = ua.match(/Android\s+([\d.]+)/i);
+            info.os = 'Android' + (match ? ' ' + match[1] : '');
+            if (/wv/i.test(ua) || /WebView/i.test(ua)) {
+              info.name = '系统 WebView';
+            }
+          } else if (/iPhone|iPad|iPod/i.test(ua)) {
+            match = ua.match(/OS\s+([\d_]+)/i);
+            info.os = 'iOS' + (match ? ' ' + match[1].replace(/_/g, '.') : '');
+          } else if (/Windows/i.test(ua)) {
+            info.os = 'Windows';
+          } else if (/Mac OS X/i.test(ua)) {
+            info.os = 'macOS';
+          } else if (/Linux/i.test(ua)) {
+            info.os = 'Linux';
+          }
+
+          // Browser name
+          if (/Edg\//i.test(ua) || /Edge\//i.test(ua)) {
+            info.name = 'Edge';
+          } else if (/OPR\//i.test(ua) || /Opera/i.test(ua)) {
+            info.name = 'Opera';
+          } else if (/UCBrowser/i.test(ua)) {
+            info.name = 'UC 浏览器';
+          } else if (/SamsungBrowser/i.test(ua)) {
+            info.name = '三星浏览器';
+          } else if (/Chrome\/([\d.]+)/i.test(ua) && !/Edg\//i.test(ua)) {
+            info.name = 'Chrome';
+          } else if (/Firefox\/([\d.]+)/i.test(ua)) {
+            info.name = 'Firefox';
+          } else if (/Safari\/([\d.]+)/i.test(ua) && !/Chrome/i.test(ua)) {
+            info.name = 'Safari';
+          } else if (/Trident|MSIE/i.test(ua)) {
+            info.name = 'Internet Explorer';
+          }
+
+          // Browser version
+          if (info.name === 'Chrome') {
+            match = ua.match(/Chrome\/([\d.]+)/i);
+            info.version = match ? match[1] : '';
+          } else if (info.name === 'Firefox') {
+            match = ua.match(/Firefox\/([\d.]+)/i);
+            info.version = match ? match[1] : '';
+          } else if (info.name === 'Edge') {
+            match = ua.match(/Edg\/([\d.]+)/i);
+            if (!match) match = ua.match(/Edge\/([\d.]+)/i);
+            info.version = match ? match[1] : '';
+          } else if (info.name === 'Safari') {
+            match = ua.match(/Version\/([\d.]+)/i);
+            info.version = match ? match[1] : '';
+          } else if (info.name === 'UC 浏览器') {
+            match = ua.match(/UCBrowser\/([\d.]+)/i);
+            info.version = match ? match[1] : '';
+          } else if (info.name === '三星浏览器') {
+            match = ua.match(/SamsungBrowser\/([\d.]+)/i);
+            info.version = match ? match[1] : '';
+          } else if (info.name === '系统 WebView') {
+            match = ua.match(/Chrome\/([\d.]+)/i);
+            info.version = match ? match[1] : '(未知)';
+          }
+
+          return info;
+        }
+
+        /* ====================== Render ====================== */
+        var browserInfo = detectBrowser(userAgent);
+        var reasonData = reasons[reason] || reasons['unsupported-browser'];
+
+        // -- Reason banner --
+        var reasonCard = document.getElementById('reason-card');
+        var reasonTitle = document.getElementById('reason-title');
+        var reasonDesc = document.getElementById('reason-desc');
+        var reasonFix = document.getElementById('reason-fix');
+        if (reason && reasonData) {
+          reasonTitle.textContent = reasonData.title;
+          reasonDesc.textContent = reasonData.desc;
+          reasonFix.textContent = reasonData.fix;
+          reasonCard.className = 'reason-card reason-' + reason.replace(/[^a-z0-9-]/g, '');
+          reasonCard.style.display = 'block';
+        }
+
+        // -- Browser info --
+        var browserCard = document.getElementById('browser-card');
+        var browserMeta = document.getElementById('browser-meta');
+        if (browserInfo) {
+          var parts = [];
+          parts.push('<span>浏览器：</span>' + browserInfo.name);
+          if (browserInfo.version) parts.push(' v' + browserInfo.version);
+          if (browserInfo.os) parts.push(' &#124; <span>系统：</span>' + browserInfo.os);
+          parts.push('<br/><span>User-Agent：</span>' + userAgent.substring(0, 120));
+          browserMeta.innerHTML = parts.join('');
+          browserCard.style.display = 'block';
+        }
+
+        /* ====================== Download list (existing logic) ====================== */
+        var list = document.getElementById('download-list');
+
+        function text(value) {
+          return value === null || value === undefined || value === '' ? '-' : String(value);
+        }
+
+        function platformLabel(platform) {
+          var value = String(platform || '').toLowerCase();
+          if (value === 'pc') return '桌面客户端';
+          if (value === 'android') return 'Android 客户端';
+          if (value === 'ios') return 'iOS 客户端';
+          if (value === 'windows') return 'Windows 客户端';
+          if (value === 'linux') return 'Linux 客户端';
+          return platform || '未知平台';
+        }
+
+        function formatSize(size) {
+          var bytes = Number(size);
+          if (!isFinite(bytes) || bytes <= 0) return '-';
+          var units = ['B', 'KB', 'MB', 'GB'];
+          var index = 0;
+          while (bytes >= 1024 && index < units.length - 1) {
+            bytes = bytes / 1024;
+            index += 1;
+          }
+          return bytes.toFixed(index === 0 ? 0 : 1) + ' ' + units[index];
+        }
+
+        function fixUrl(url) {
+          if (!url) return '';
+          return url.replace(/^https?:\/\/localhost(?::\d+)?\//i, '/')
+                    .replace(/^https?:\/\/127\.0\.0\.1(?::\d+)?\//i, '/');
+        }
+
+        function render(platforms) {
+          if (!platforms || !platforms.length) {
+            list.innerHTML = '<div class="fallback">暂无可下载客户端，请稍后再试。</div>';
+            return;
+          }
+
+          var html = '';
+          for (var i = 0; i < platforms.length; i += 1) {
+            var platform = platforms[i] || {};
+            var channels = platform.channels || [];
+            var platformName = platformLabel(platform.platform);
+            for (var j = 0; j < channels.length; j += 1) {
+              var item = channels[j] || {};
+              var url = fixUrl(item.downloadUrl || '');
+              html += '<div class="card">'
+                + '<h2>' + platformName + '</h2>'
+                + '<div class="meta">版本：' + text(item.version) + '</div>'
+                + '<div class="meta">渠道：' + text(item.channel) + '</div>'
+                + '<div class="meta">大小：' + formatSize(item.size) + '</div>'
+                + '<div class="meta">更新时间：' + text(item.publishedAt || item.updatedAt) + '</div>'
+                + (url
+                  ? '<a class="btn" href="' + url + '" target="_blank" rel="noopener noreferrer">下载客户端</a>'
+                  : '<span class="btn disabled">暂无下载地址</span>')
+              + '</div>';
+            }
+          }
+          list.innerHTML = html;
+        }
+
+        if (!window.XMLHttpRequest) {
+          list.innerHTML = '<div class="fallback">当前浏览器过旧，请使用新浏览器下载客户端。</div>';
+          return;
+        }
+
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '/api/v1/client-updates/downloads', true);
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState !== 4) return;
+          if (xhr.status < 200 || xhr.status >= 300) {
+            list.innerHTML = '<div class="fallback">客户端下载列表加载失败，请稍后重试。</div>';
+            return;
+          }
+          try {
+            var body = JSON.parse(xhr.responseText || '{}');
+            var data = body.data || body;
+            render(data.platforms || []);
+          } catch (e) {
+            list.innerHTML = '<div class="fallback">客户端下载列表解析失败，请稍后重试。</div>';
+          }
+        };
+        xhr.send();
+      })();
+    </script>
+  </body>
+</html>

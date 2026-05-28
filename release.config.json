@@ -2,14 +2,14 @@
   "channel": "stable",
   "downloadsBasePath": "/downloads",
   "pc": {
-    "version": "1.0.3",
-    "versionCode": 103,
+    "version": "1.0.4",
+    "versionCode": 104,
     "forceUpdate": true,
     "releaseNotes": "优化"
   },
   "android": {
-    "version": "1.0.3",
-    "versionCode": 103,
+    "version": "1.0.4",
+    "versionCode": 104,
     "variant": "release",
     "forceUpdate": true,
     "releaseNotes": "优化。"

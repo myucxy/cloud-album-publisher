@@ -10,7 +10,6 @@ import lombok.Setter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -206,9 +205,7 @@ public class ClientUpdateService {
         if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
             return trimmed;
         }
-        return ServletUriComponentsBuilder.fromCurrentContextPath()
-                .path(trimmed.startsWith("/") ? trimmed : "/" + trimmed)
-                .toUriString();
+        return trimmed.startsWith("/") ? trimmed : "/" + trimmed;
     }
 
     private String normalize(String value, String fallback) {
