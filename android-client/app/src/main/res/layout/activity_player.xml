@@ -519,6 +519,21 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp" />
+
+                <CheckBox
+                    android:id="@+id/homeLauncherToggleCheckBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" />
+
+                <Button
+                    android:id="@+id/launchOriginalHomeButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:focusable="true"
+                    android:focusableInTouchMode="true"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <LinearLayout

@@ -171,24 +171,6 @@
             <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
 
-        <!-- OpenCV (JavaCV) for focal point detection -->
-        <dependency>
-            <groupId>org.bytedeco</groupId>
-            <artifactId>javacv-platform</artifactId>
-            <version>1.5.10</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.bytedeco</groupId>
-                    <artifactId>javacpp-presets</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>org.bytedeco</groupId>
-            <artifactId>opencv-platform</artifactId>
-            <version>4.9.0-1.5.10</version>
-        </dependency>
-
         <!-- ONNX Runtime for focal point detection -->
         <dependency>
             <groupId>com.microsoft.onnxruntime</groupId>
@@ -232,4 +214,50 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Default: all-platform native libs for local dev -->
+        <profile>
+            <id>default</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>org.bytedeco</groupId>
+                    <artifactId>javacv-platform</artifactId>
+                    <version>1.5.10</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>org.bytedeco</groupId>
+                            <artifactId>javacpp-presets</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+            </dependencies>
+        </profile>
+        <!-- Docker: linux-x86_64 only, saves ~640MB -->
+        <profile>
+            <id>docker</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.bytedeco</groupId>
+                    <artifactId>javacv</artifactId>
+                    <version>1.5.10</version>
+                </dependency>
+                <dependency>
+                    <groupId>org.bytedeco</groupId>
+                    <artifactId>javacpp</artifactId>
+                    <version>1.5.10</version>
+                    <classifier>linux-x86_64</classifier>
+                </dependency>
+                <dependency>
+                    <groupId>org.bytedeco</groupId>
+                    <artifactId>opencv</artifactId>
+                    <version>4.9.0-1.5.10</version>
+                    <classifier>linux-x86_64</classifier>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
 </project>

@@ -27,6 +27,7 @@ public class DeviceSessionRepository {
     private static final String KEY_BRIGHTNESS_END_HOUR = "brightness_end_hour";
     private static final String KEY_BRIGHTNESS_DIM_LEVEL = "brightness_dim_level";
     private static final String KEY_BOOT_AUTO_START = "boot_auto_start";
+    private static final String KEY_HOME_LAUNCHER = "home_launcher";
 
     public static final String PLAYBACK_ROTATION_AUTO = "auto";
     public static final String PLAYBACK_ROTATION_0 = "0";
@@ -194,6 +195,14 @@ public class DeviceSessionRepository {
 
     public void saveBootAutoStartEnabled(boolean enabled) {
         preferences.edit().putBoolean(KEY_BOOT_AUTO_START, enabled).apply();
+    }
+
+    public boolean isHomeLauncherEnabled() {
+        return preferences.getBoolean(KEY_HOME_LAUNCHER, false);
+    }
+
+    public void saveHomeLauncherEnabled(boolean enabled) {
+        preferences.edit().putBoolean(KEY_HOME_LAUNCHER, enabled).apply();
     }
 
     public String getDefaultDeviceName() {

@@ -140,6 +140,17 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private static final long BRIGHTNESS_CHECK_INTERVAL_MS = 60000L;
     private static final String BOOT_AUTO_START_TITLE = "开机自启动";
     private static final String BOOT_AUTO_START_LABEL = "开机时自动启动应用";
+    private static final String HOME_LAUNCHER_LABEL = "设置为默认桌面";
+    private static final String HOME_LAUNCHER_SUMMARY_SET = "已设为默认桌面，按HOME键回到本应用";
+    private static final String HOME_LAUNCHER_SUMMARY_UNSET = "设为默认桌面后，按HOME键将回到本应用";
+    private static final String LAUNCH_ORIGINAL_HOME_LABEL = "启动原桌面";
+    private static final String LAUNCH_ORIGINAL_HOME_CONFIRM = "将临时启动原桌面，按HOME键可返回本应用";
+    private static final String HOME_LAUNCHER_SET_SUCCESS = "已设置为默认桌面";
+    private static final String HOME_LAUNCHER_SET_FAILED = "设置失败，需要Root权限";
+    private static final String HOME_LAUNCHER_UNSET_SUCCESS = "已恢复原桌面";
+    private static final String HOME_LAUNCHER_UNSET_FAILED = "恢复失败";
+    private static final String ORIGINAL_HOME_PACKAGE = "com.dangbei.tvlauncher";
+    private static final String ORIGINAL_HOME_ACTIVITY = "com.dangbei.tvlauncher/com.dangbei.launcher.ui.main.MainActivity";
     private static final String SYSTEM_CAPABILITY_TITLE = "\u7cfb\u7edf\u80fd\u529b";
     private static final String SYSTEM_CAPABILITY_CLOSE = "\u5173\u95ed";
     private static final String[] SYSTEM_CAPABILITY_MIME_TYPES = new String[] {
@@ -275,6 +286,9 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private Spinner brightnessDimSpinner;
     private TextView bootAutoStartTitleText;
     private CheckBox bootAutoStartToggleCheckBox;
+    private CheckBox homeLauncherToggleCheckBox;
+    private Button launchOriginalHomeButton;
+    private CompoundButton.OnCheckedChangeListener homeLauncherCheckedChangeListener;
     private ScrollView systemCapabilityScrollView;
 
     private String lastRenderedMediaIdentity = "";
@@ -507,6 +521,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         brightnessDimSpinner = findViewById(R.id.brightnessDimSpinner);
         bootAutoStartTitleText = findViewById(R.id.bootAutoStartTitleText);
         bootAutoStartToggleCheckBox = findViewById(R.id.bootAutoStartToggleCheckBox);
+        homeLauncherToggleCheckBox = findViewById(R.id.homeLauncherToggleCheckBox);
+        launchOriginalHomeButton = findViewById(R.id.launchOriginalHomeButton);
     }
 
     private void loadPlaybackSelection() {
@@ -545,6 +561,13 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         bootAutoStartToggleCheckBox.setText(BOOT_AUTO_START_LABEL);
         bootAutoStartToggleCheckBox.setChecked(sessionRepository.isBootAutoStartEnabled());
         applyDrawerOptionStyle(bootAutoStartToggleCheckBox);
+        boolean isHomeLauncher = sessionRepository.isHomeLauncherEnabled();
+        homeLauncherToggleCheckBox.setText(HOME_LAUNCHER_LABEL);
+        homeLauncherToggleCheckBox.setChecked(isHomeLauncher);
+        applyDrawerOptionStyle(homeLauncherToggleCheckBox);
+        launchOriginalHomeButton.setText(LAUNCH_ORIGINAL_HOME_LABEL);
+        applyDrawerButtonStyle(launchOriginalHomeButton);
+        updateHomeLauncherUI(isHomeLauncher);
         playbackSelectionTitleText.setText(PLAYBACK_SELECTION_TITLE);
         showPlaybackSelectionMessage(PLAYBACK_SELECTION_WAITING);
         appUpdateTitleText.setText(APP_UPDATE_TITLE);
@@ -658,6 +681,54 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 sessionRepository.saveBootAutoStartEnabled(isChecked);
+            }
+        });
+        homeLauncherCheckedChangeListener = new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                boolean success = setHomeLauncherEnabled(isChecked);
+                if (success) {
+                    sessionRepository.saveHomeLauncherEnabled(isChecked);
+                    updateHomeLauncherUI(isChecked);
+                    Toast.makeText(PlayerActivity.this,
+                            isChecked ? HOME_LAUNCHER_SET_SUCCESS : HOME_LAUNCHER_UNSET_SUCCESS,
+                            Toast.LENGTH_SHORT).show();
+                } else {
+                    buttonView.setOnCheckedChangeListener(null);
+                    buttonView.setChecked(!isChecked);
+                    buttonView.setOnCheckedChangeListener(this);
+                    Toast.makeText(PlayerActivity.this,
+                            isChecked ? HOME_LAUNCHER_SET_FAILED : HOME_LAUNCHER_UNSET_FAILED,
+                            Toast.LENGTH_SHORT).show();
+                }
+            }
+        };
+        homeLauncherToggleCheckBox.setOnCheckedChangeListener(homeLauncherCheckedChangeListener);
+        launchOriginalHomeButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                boolean restored = setHomeLauncherEnabled(false);
+                if (!restored) {
+                    Toast.makeText(PlayerActivity.this, HOME_LAUNCHER_UNSET_FAILED, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                sessionRepository.saveHomeLauncherEnabled(false);
+                homeLauncherToggleCheckBox.setOnCheckedChangeListener(null);
+                homeLauncherToggleCheckBox.setChecked(false);
+                homeLauncherToggleCheckBox.setOnCheckedChangeListener(homeLauncherCheckedChangeListener);
+                updateHomeLauncherUI(false);
+                Toast.makeText(PlayerActivity.this, "已恢复原桌面，正在启动...", Toast.LENGTH_SHORT).show();
+                Intent launch = new Intent(Intent.ACTION_MAIN);
+                launch.addCategory(Intent.CATEGORY_HOME);
+                launch.addCategory(Intent.CATEGORY_DEFAULT);
+                launch.setClassName(ORIGINAL_HOME_PACKAGE, ORIGINAL_HOME_ACTIVITY);
+                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    startActivity(launch);
+                } catch (Exception e) {
+                    Log.w(TAG, "Failed to launch original home", e);
+                    Toast.makeText(PlayerActivity.this, "启动原桌面失败", Toast.LENGTH_SHORT).show();
+                }
             }
         });
         aboutButton.setOnClickListener(new View.OnClickListener() {
@@ -2685,6 +2756,38 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         option.setLayoutParams(params);
     }
 
+    private void applyDrawerButtonStyle(Button button) {
+        button.setBackgroundResource(R.drawable.bg_menu_option);
+        button.setTextColor(ContextCompat.getColor(this, R.color.ca_text_primary));
+        button.setPadding(dp(12), dp(10), dp(12), dp(10));
+        button.setMinHeight(dp(48));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.bottomMargin = dp(8);
+        button.setLayoutParams(params);
+    }
+
+    private void updateHomeLauncherUI(boolean isHomeLauncher) {
+        homeLauncherToggleCheckBox.setText(HOME_LAUNCHER_LABEL);
+        launchOriginalHomeButton.setVisibility(isHomeLauncher ? View.VISIBLE : View.GONE);
+    }
+
+    private boolean setHomeLauncherEnabled(boolean enabled) {
+        try {
+            String command = enabled
+                    ? "pm disable " + ORIGINAL_HOME_PACKAGE
+                    : "pm enable " + ORIGINAL_HOME_PACKAGE;
+            Process process = Runtime.getRuntime().exec(new String[]{"su", "-c", command});
+            int exitCode = process.waitFor();
+            return exitCode == 0;
+        } catch (Exception e) {
+            Log.w(TAG, "setHomeLauncherEnabled failed", e);
+            return false;
+        }
+    }
+
     private void bindSpinner(Spinner spinner, String[] labels, int selectedIndex, AdapterView.OnItemSelectedListener listener) {
         if (spinner == null) {
             return;
@@ -3397,6 +3500,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         addDrawerFocusableView(brightnessEndSpinner);
         addDrawerFocusableView(brightnessDimSpinner);
         addDrawerFocusableView(bootAutoStartToggleCheckBox);
+        addDrawerFocusableView(homeLauncherToggleCheckBox);
+        addDrawerFocusableView(launchOriginalHomeButton);
         collectFocusableChildren(playbackSelectionContainer);
         addDrawerFocusableView(aboutButton);
         addDrawerFocusableView(systemCapabilityButton);

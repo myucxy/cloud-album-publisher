@@ -92,10 +92,13 @@
     <a-pagination
       v-if="pagination.total > pagination.pageSize"
       v-model:current="pagination.current"
-      :page-size="pagination.pageSize"
+      v-model:page-size="pagination.pageSize"
       :total="pagination.total"
+      show-size-changer
+      :page-size-options="['20','30','50','100']"
+      :show-total="total => `共 ${total} 项`"
       style="margin-top:16px; text-align:center"
-      @change="loadMediaItems"
+      @change="onPageChange"
     />
 
     <!-- Detail Modal: preview + edit combined -->
@@ -324,6 +327,16 @@ const loadAlbum = async () => {
   } catch (e) {
     message.error('加载相册信息失败')
   }
+}
+
+const onPageChange = (page, pageSize) => {
+  if (pageSize !== pagination.pageSize) {
+    pagination.pageSize = pageSize
+    pagination.current = 1
+  } else {
+    pagination.current = page
+  }
+  loadMediaItems()
 }
 
 const loadMediaItems = async () => {
