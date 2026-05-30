@@ -23,6 +23,10 @@ public class DevicePullResponse {
         return pulledAt;
     }
 
+    public void setPulledAt(String pulledAt) {
+        this.pulledAt = pulledAt;
+    }
+
     public static class DistributionItem {
         private long id;
         private String name;
@@ -205,6 +209,11 @@ public class DevicePullResponse {
         private Integer height;
         private Integer sortOrder;
         private Integer itemDuration;
+        private Double focalPointX;
+        private Double focalPointY;
+        private String focalPointRegionType;
+        private Double focalPointRegionWidth;
+        private Double focalPointRegionHeight;
 
         public Long getId() {
             return id;
@@ -264,6 +273,26 @@ public class DevicePullResponse {
 
         public Integer getItemDuration() {
             return itemDuration;
+        }
+
+        public Double getFocalPointX() {
+            return focalPointX;
+        }
+
+        public Double getFocalPointY() {
+            return focalPointY;
+        }
+
+        public String getFocalPointRegionType() {
+            return focalPointRegionType;
+        }
+
+        public Double getFocalPointRegionWidth() {
+            return focalPointRegionWidth;
+        }
+
+        public Double getFocalPointRegionHeight() {
+            return focalPointRegionHeight;
         }
     }
 }

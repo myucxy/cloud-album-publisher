@@ -107,6 +107,13 @@ public class DeviceController {
         return Result.success(deviceService.pullContentByDevice(principal.getDeviceId()));
     }
 
+    @Operation(summary = "设备分批拉取内容")
+    @GetMapping("/pull/current/chunk")
+    public Result<DevicePullChunkResponse> pullCurrentDeviceContentChunk(@RequestParam(required = false) String cursor) {
+        DeviceAuthPrincipal principal = SecurityUtil.getCurrentDevicePrincipal();
+        return Result.success(deviceService.pullContentByDeviceChunk(principal.getDeviceId(), cursor));
+    }
+
     @Operation(summary = "设备访问相册封面")
     @GetMapping("/albums/{albumId}/cover")
     public void getDeviceAlbumCover(@PathVariable Long albumId,

@@ -8,8 +8,8 @@
     "releaseNotes": "优化"
   },
   "android": {
-    "version": "1.0.4",
-    "versionCode": 104,
+    "version": "1.0.8",
+    "versionCode": 108,
     "variant": "release",
     "forceUpdate": true,
     "releaseNotes": "优化。"

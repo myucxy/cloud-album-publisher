@@ -12,11 +12,13 @@ import com.cloudalbum.publisher.album.mapper.AlbumBgmMapper;
 import com.cloudalbum.publisher.album.mapper.AlbumMapper;
 import com.cloudalbum.publisher.album.mapper.AlbumMediaMapper;
 import com.cloudalbum.publisher.album.service.AlbumService;
+import com.cloudalbum.publisher.album.support.AlbumDisplaySettingsSupport;
 import com.cloudalbum.publisher.common.enums.MediaStatus;
 import com.cloudalbum.publisher.common.enums.ResultCode;
 import com.cloudalbum.publisher.common.exception.BusinessException;
 import com.cloudalbum.publisher.common.model.PageRequest;
 import com.cloudalbum.publisher.common.model.PageResult;
+import com.cloudalbum.publisher.focalpoint.service.FocalPointService;
 import com.cloudalbum.publisher.media.content.MediaHttpWriter;
 import com.cloudalbum.publisher.media.content.ObjectStorageMediaContentResolver;
 import com.cloudalbum.publisher.media.entity.Media;
@@ -26,6 +28,7 @@ import com.cloudalbum.publisher.mediasource.dto.MediaSourceBrowseResponse;
 import com.cloudalbum.publisher.mediasource.service.MediaSourceService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.Collections;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -43,11 +46,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AlbumServiceImpl implements AlbumService {
 
-    private static final Set<String> SUPPORTED_TRANSITION_STYLES = Set.of(
-            "NONE", "FADE", "SLIDE", "CUBE", "REVEAL", "FLIP", "RANDOM");
-    private static final Set<String> SUPPORTED_DISPLAY_STYLES = Set.of(
-            "SINGLE", "BENTO", "FRAME_WALL", "CAROUSEL", "CALENDAR");
-
     private final AlbumMapper albumMapper;
     private final AlbumBgmMapper albumBgmMapper;
     private final AlbumMediaMapper albumMediaMapper;
@@ -55,6 +53,7 @@ public class AlbumServiceImpl implements AlbumService {
     private final MediaSourceService mediaSourceService;
     private final ObjectStorageMediaContentResolver objectStorageMediaContentResolver;
     private final MediaHttpWriter mediaHttpWriter;
+    private final FocalPointService focalPointService;
 
     @org.springframework.beans.factory.annotation.Value("${minio.bucket}")
     private String bucket;
@@ -70,10 +69,43 @@ public class AlbumServiceImpl implements AlbumService {
         IPage<Album> page = albumMapper.selectPage(
                 new Page<>(pageRequest.getPage(), pageRequest.getSize()),
                 queryWrapper);
-        List<AlbumResponse> list = page.getRecords().stream()
-                .map(this::toResponse)
+        List<Album> albums = page.getRecords();
+
+        // Batch fetch image counts and detected counts in one query
+        Map<Long, long[]> countsMap = batchFetchFocalPointCounts(albums.stream().map(Album::getId).toList());
+
+        List<AlbumResponse> list = albums.stream()
+                .map(album -> {
+                    AlbumResponse resp = toResponse(album);
+                    long[] counts = countsMap.getOrDefault(album.getId(), new long[]{0, 0});
+                    resp.setContentCount((int) counts[0]);
+                    resp.setFocalPointDetectedCount((int) counts[1]);
+                    resp.setFocalPointTotalCount((int) counts[0]);
+                    return resp;
+                })
                 .collect(Collectors.toList());
         return PageResult.of(page.getTotal(), pageRequest.getPage(), pageRequest.getSize(), list);
+    }
+
+    private Map<Long, long[]> batchFetchFocalPointCounts(List<Long> albumIds) {
+        if (albumIds.isEmpty()) return Collections.emptyMap();
+        List<java.util.Map<String, Object>> rows = albumMediaMapper.selectMaps(
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<AlbumMedia>()
+                        .select("album_id",
+                                "COUNT(*) as image_count",
+                                "SUM(CASE WHEN focal_point_x IS NOT NULL THEN 1 ELSE 0 END) as detected_count")
+                        .in("album_id", albumIds)
+                        .eq("media_type", "IMAGE")
+                        .groupBy("album_id")
+        );
+        Map<Long, long[]> map = new java.util.HashMap<>();
+        for (java.util.Map<String, Object> row : rows) {
+            Long albumId = ((Number) row.get("album_id")).longValue();
+            long imageCount = ((Number) row.get("image_count")).longValue();
+            long detectedCount = ((Number) row.get("detected_count")).longValue();
+            map.put(albumId, new long[]{imageCount, detectedCount});
+        }
+        return map;
     }
 
     @Override
@@ -90,9 +122,9 @@ public class AlbumServiceImpl implements AlbumService {
         album.setTitle(request.getTitle());
         album.setDescription(request.getDescription());
         album.setVisibility(StringUtils.hasText(request.getVisibility()) ? request.getVisibility() : "PUBLIC");
-        album.setTransitionStyle(normalizeTransitionStyle(request.getTransitionStyle()));
-        album.setDisplayStyle(normalizeDisplayStyle(request.getDisplayStyle()));
-        album.setDisplayVariant(normalizeDisplayVariant(request.getDisplayVariant(), album.getDisplayStyle()));
+        album.setTransitionStyle(AlbumDisplaySettingsSupport.normalizeAlbumTransitionStyle(request.getTransitionStyle()));
+        album.setDisplayStyle(AlbumDisplaySettingsSupport.normalizeAlbumDisplayStyle(request.getDisplayStyle()));
+        album.setDisplayVariant(AlbumDisplaySettingsSupport.normalizeAlbumDisplayVariant(request.getDisplayVariant(), album.getDisplayStyle()));
         album.setShowTimeAndDate(Boolean.TRUE.equals(request.getShowTimeAndDate()));
         album.setStatus("PUBLISHED");
         album.setSortOrder(0);
@@ -108,10 +140,12 @@ public class AlbumServiceImpl implements AlbumService {
         if (StringUtils.hasText(request.getTitle())) album.setTitle(request.getTitle());
         if (request.getDescription() != null) album.setDescription(request.getDescription());
         if (StringUtils.hasText(request.getVisibility())) album.setVisibility(request.getVisibility());
-        if (request.getTransitionStyle() != null) album.setTransitionStyle(normalizeTransitionStyle(request.getTransitionStyle()));
-        if (request.getDisplayStyle() != null) album.setDisplayStyle(normalizeDisplayStyle(request.getDisplayStyle()));
-        if (request.getDisplayVariant() != null) album.setDisplayVariant(normalizeDisplayVariant(request.getDisplayVariant(), album.getDisplayStyle()));
+        if (request.getTransitionStyle() != null) album.setTransitionStyle(AlbumDisplaySettingsSupport.normalizeAlbumTransitionStyle(request.getTransitionStyle()));
+        if (request.getDisplayStyle() != null) album.setDisplayStyle(AlbumDisplaySettingsSupport.normalizeAlbumDisplayStyle(request.getDisplayStyle()));
+        if (request.getDisplayVariant() != null) album.setDisplayVariant(AlbumDisplaySettingsSupport.normalizeAlbumDisplayVariant(request.getDisplayVariant(), album.getDisplayStyle()));
         if (request.getShowTimeAndDate() != null) album.setShowTimeAndDate(request.getShowTimeAndDate());
+        if (request.getFocalPointEnabled() != null) album.setFocalPointEnabled(request.getFocalPointEnabled());
+        if (StringUtils.hasText(request.getFocalPointProvider())) album.setFocalPointProvider(request.getFocalPointProvider().toUpperCase(java.util.Locale.ROOT));
         if (StringUtils.hasText(request.getStatus())) album.setStatus(request.getStatus());
         if (request.getSortOrder() != null) album.setSortOrder(request.getSortOrder());
         albumMapper.updateById(album);
@@ -155,6 +189,7 @@ public class AlbumServiceImpl implements AlbumService {
         AlbumMedia albumMedia = request.isExternal()
                 ? addExternalContent(albumId, userId, request)
                 : addInternalContent(albumId, userId, request);
+        focalPointService.autoProcessIfEnabled(albumId, albumMedia.getId());
         Media media = albumMedia.getMediaId() != null ? mediaMapper.selectById(albumMedia.getMediaId()) : null;
         return toContentResponse(albumMedia, media);
     }
@@ -183,6 +218,7 @@ public class AlbumServiceImpl implements AlbumService {
             AlbumMedia albumMedia = request.isExternal()
                     ? addExternalContent(albumId, userId, request)
                     : addInternalContent(albumId, userId, request);
+            focalPointService.autoProcessIfEnabled(albumId, albumMedia.getId());
             Media media = albumMedia.getMediaId() != null ? mediaMapper.selectById(albumMedia.getMediaId()) : null;
             responses.add(toContentResponse(albumMedia, media));
         }
@@ -450,10 +486,12 @@ public class AlbumServiceImpl implements AlbumService {
         resp.setBgmContentType(album.getBgmContentType());
         resp.setBgmMediaType(album.getBgmMediaType());
         resp.setBgmVolume(album.getBgmVolume());
-        resp.setTransitionStyle(resolveTransitionStyle(album.getTransitionStyle()));
-        resp.setDisplayStyle(resolveDisplayStyle(album.getDisplayStyle()));
-        resp.setDisplayVariant(resolveDisplayVariant(album.getDisplayVariant()));
+        resp.setTransitionStyle(AlbumDisplaySettingsSupport.resolveTransitionStyle(album.getTransitionStyle()));
+        resp.setDisplayStyle(AlbumDisplaySettingsSupport.resolveDisplayStyle(album.getDisplayStyle()));
+        resp.setDisplayVariant(AlbumDisplaySettingsSupport.resolveDisplayVariant(album.getDisplayVariant()));
         resp.setShowTimeAndDate(Boolean.TRUE.equals(album.getShowTimeAndDate()));
+        resp.setFocalPointEnabled(Boolean.TRUE.equals(album.getFocalPointEnabled()));
+        resp.setFocalPointProvider(album.getFocalPointProvider());
         resp.setVisibility(album.getVisibility());
         resp.setStatus(album.getStatus());
         resp.setSortOrder(album.getSortOrder());
@@ -473,6 +511,11 @@ public class AlbumServiceImpl implements AlbumService {
         response.setPath(albumMedia.getFilePath());
         response.setSortOrder(albumMedia.getSortOrder());
         response.setDuration(albumMedia.getDuration());
+        response.setFocalPointX(albumMedia.getFocalPointX());
+        response.setFocalPointY(albumMedia.getFocalPointY());
+        response.setFocalPointProvider(albumMedia.getFocalPointProvider());
+        response.setFocalPointConfidence(albumMedia.getFocalPointConfidence());
+        response.setFocalPointRegionType(albumMedia.getFocalPointRegionType());
 
         if (media != null) {
             response.setFileName(media.getFileName());
@@ -910,62 +953,6 @@ public class AlbumServiceImpl implements AlbumService {
 
     private String firstText(String first, String fallback) {
         return StringUtils.hasText(first) ? first : fallback;
-    }
-
-    private String normalizeTransitionStyle(String transitionStyle) {
-        if (!StringUtils.hasText(transitionStyle)) {
-            return "NONE";
-        }
-        String normalized = transitionStyle.trim().toUpperCase(Locale.ROOT);
-        if (!SUPPORTED_TRANSITION_STYLES.contains(normalized)) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "不支持的播放转场样式");
-        }
-        return normalized;
-    }
-
-    private String resolveTransitionStyle(String transitionStyle) {
-        return StringUtils.hasText(transitionStyle) ? transitionStyle : "NONE";
-    }
-
-    private String normalizeDisplayStyle(String displayStyle) {
-        if (!StringUtils.hasText(displayStyle)) {
-            return "SINGLE";
-        }
-        String normalized = displayStyle.trim().toUpperCase(Locale.ROOT);
-        if ("FRAMEWALL".equals(normalized)) {
-            normalized = "FRAME_WALL";
-        }
-        if (!SUPPORTED_DISPLAY_STYLES.contains(normalized)) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "不支持的展示布局样式");
-        }
-        return normalized;
-    }
-
-    private String resolveDisplayStyle(String displayStyle) {
-        return StringUtils.hasText(displayStyle) ? displayStyle : "SINGLE";
-    }
-
-    private String normalizeDisplayVariant(String displayVariant, String displayStyle) {
-        if (!StringUtils.hasText(displayVariant)) {
-            return "DEFAULT";
-        }
-        String normalized = displayVariant.trim().toUpperCase(Locale.ROOT).replace('-', '_');
-        if (!normalized.matches("[A-Z0-9_]{1,32}")) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "不支持的展示布局子样式");
-        }
-        if ("FRAME_WALL".equals(displayStyle)) {
-            if ("DEFAULT".equals(normalized)) {
-                return "FRAME_WALL_8";
-            }
-            if (!java.util.Set.of("FRAME_WALL_2", "FRAME_WALL_4", "FRAME_WALL_6", "FRAME_WALL_8").contains(normalized)) {
-                throw new BusinessException(ResultCode.BAD_REQUEST, "不支持的相框墙子样式");
-            }
-        }
-        return normalized;
-    }
-
-    private String resolveDisplayVariant(String displayVariant) {
-        return StringUtils.hasText(displayVariant) ? displayVariant : "DEFAULT";
     }
 
     @Override

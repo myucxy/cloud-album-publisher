@@ -14,6 +14,7 @@ import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
+import android.graphics.Bitmap;
 import android.graphics.Rect;
 import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
@@ -70,8 +71,6 @@ import com.google.android.exoplayer2.audio.AudioAttributes;
 import com.google.android.exoplayer2.source.DefaultMediaSourceFactory;
 import com.google.android.exoplayer2.ui.StyledPlayerView;
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSource;
-import com.google.gson.Gson;
-
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashMap;
@@ -82,6 +81,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.text.SimpleDateFormat;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class PlayerActivity extends AppCompatActivity implements PullSyncCoordinator.Listener {
     private static final String TAG = "PlayerActivity";
@@ -129,9 +130,6 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private static final String MUTE_OPTION_LABEL = "\u9759\u97f3\u64ad\u653e";
     private static final String MUTE_ENABLED_LABEL = "\u5f53\u524d\u5df2\u9759\u97f3";
     private static final String MUTE_DISABLED_LABEL = "\u5f53\u524d\u5df2\u5f00\u542f\u58f0\u97f3";
-    private static final String CACHE_TITLE = "\u5a92\u4f53\u7f13\u5b58";
-    private static final String CACHE_ENABLE_LABEL = "\u542f\u7528\u672c\u5730\u7f13\u5b58";
-    private static final String CACHE_CLEAR_LABEL = "\u6e05\u7406\u7f13\u5b58";
     private static final String DISPLAY_MODE_TITLE = "\u663e\u793a\u6e05\u6670\u5ea6";
     private static final String DISPLAY_MODE_ENABLE_LABEL = "\u4f18\u5148\u4f7f\u7528\u8bbe\u5907\u6700\u9ad8\u5206\u8fa8\u7387";
     private static final String DISPLAY_MODE_SUMMARY_DISABLED = "\u5df2\u5173\u95ed\uff0c\u4f7f\u7528\u7cfb\u7edf\u9ed8\u8ba4\u663e\u793a\u6a21\u5f0f";
@@ -140,6 +138,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private static final String BRIGHTNESS_SUMMARY_ENABLED = "\u65f6\u6bb5\u5916\u81ea\u52a8\u964d\u4f4e\u4eae\u5ea6";
     private static final String BRIGHTNESS_SUMMARY_DISABLED = "\u672a\u542f\u7528\u5b9a\u65f6\u4eae\u5ea6";
     private static final long BRIGHTNESS_CHECK_INTERVAL_MS = 60000L;
+    private static final String BOOT_AUTO_START_TITLE = "开机自启动";
+    private static final String BOOT_AUTO_START_LABEL = "开机时自动启动应用";
     private static final String SYSTEM_CAPABILITY_TITLE = "\u7cfb\u7edf\u80fd\u529b";
     private static final String SYSTEM_CAPABILITY_CLOSE = "\u5173\u95ed";
     private static final String[] SYSTEM_CAPABILITY_MIME_TYPES = new String[] {
@@ -167,13 +167,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             "Vorbis"
     };
 
-    private final Handler imageHandler = new Handler(Looper.getMainLooper());
-    private final Handler errorHandler = new Handler(Looper.getMainLooper());
-    private final Handler tokenHandler = new Handler(Looper.getMainLooper());
-    private final Handler updateHandler = new Handler(Looper.getMainLooper());
-    private final Handler cacheHandler = new Handler(Looper.getMainLooper());
-    private final Handler brightnessHandler = new Handler(Looper.getMainLooper());
-    private final Gson gson = new Gson();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService backgroundExecutor = Executors.newFixedThreadPool(2);
     private final Rect drawerFocusRect = new Rect();
     private final Runnable imageAdvanceRunnable = new Runnable() {
         @Override
@@ -197,20 +192,14 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         @Override
         public void run() {
             updateClockViews();
-            imageHandler.postDelayed(this, 1000L);
-        }
-    };
-    private final Runnable cacheRefreshRunnable = new Runnable() {
-        @Override
-        public void run() {
-            reapplyCachedPlaylist();
+            mainHandler.postDelayed(this, 1000L);
         }
     };
     private final Runnable brightnessCheckRunnable = new Runnable() {
         @Override
         public void run() {
             applyBrightness();
-            brightnessHandler.postDelayed(this, BRIGHTNESS_CHECK_INTERVAL_MS);
+            mainHandler.postDelayed(this, BRIGHTNESS_CHECK_INTERVAL_MS);
         }
     };
     private final Set<String> disabledDistributionIds = new HashSet<String>();
@@ -222,7 +211,6 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private DeviceSessionRepository sessionRepository;
     private PullSyncCoordinator pullSyncCoordinator;
     private AppUpdateChecker appUpdateChecker;
-    private MediaCacheManager mediaCacheManager;
     private PlaybackEngine playbackEngine;
     private SimpleExoPlayer contentPlayer;
     private SimpleExoPlayer bgmPlayer;
@@ -246,6 +234,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private TextView emptyStateText;
     private FrameLayout calendarStage;
     private ImageView calendarImageView;
+    private ImageView calendarImageViewNext;
+    private boolean primaryCalendarStageActive = true;
     private LinearLayout calendarInfoPanel;
     private TextView calendarMonthText;
     private TextView calendarDayText;
@@ -258,8 +248,6 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private TextView rotationSummaryText;
     private TextView muteTitleText;
     private TextView muteSummaryText;
-    private TextView cacheTitleText;
-    private TextView cacheSummaryText;
     private TextView displayModeTitleText;
     private TextView displayModeSummaryText;
     private TextView playbackSelectionTitleText;
@@ -270,10 +258,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private TextView systemCapabilityContentText;
     private LinearLayout playbackSelectionContainer;
     private Spinner rotationSpinner;
-    private Spinner cacheLimitSpinner;
     private FrameLayout systemCapabilityOverlay;
     private CheckBox muteToggleCheckBox;
-    private CheckBox cacheToggleCheckBox;
     private CheckBox displayModeToggleCheckBox;
     private Button refreshButton;
     private Button setupButton;
@@ -281,13 +267,14 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private Button aboutButton;
     private Button systemCapabilityButton;
     private Button systemCapabilityCloseButton;
-    private Button cacheClearButton;
     private TextView brightnessTitleText;
     private TextView brightnessSummaryText;
     private CheckBox brightnessToggleCheckBox;
     private Spinner brightnessStartSpinner;
     private Spinner brightnessEndSpinner;
     private Spinner brightnessDimSpinner;
+    private TextView bootAutoStartTitleText;
+    private CheckBox bootAutoStartToggleCheckBox;
     private ScrollView systemCapabilityScrollView;
 
     private String lastRenderedMediaIdentity = "";
@@ -325,6 +312,9 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private boolean primaryImageStageActive = true;
     private int imageAdvanceRetryCount = 0;
     private Animator imageTransitionAnimator;
+    private boolean useSimpleTransition = false;
+    private int transitionPerfProbeCount = 0;
+    private long transitionStartTimeMs;
     private boolean bindingSpinners = false;
 
     @Override
@@ -340,19 +330,6 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         playbackEngine = new PlaybackEngine();
         pullSyncCoordinator = new PullSyncCoordinator(repository, this);
         appUpdateChecker = new AppUpdateChecker(this, repository);
-        mediaCacheManager = new MediaCacheManager(this, sessionRepository);
-        mediaCacheManager.setListener(new MediaCacheManager.Listener() {
-            @Override
-            public void onCacheChanged() {
-                cacheHandler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        updateCacheSummary();
-                    }
-                });
-            }
-
-        });
 
         bindViews();
         rotationController = new PageRotationController(this, pageRoot);
@@ -387,10 +364,9 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         super.onStop();
         pullSyncCoordinator.stop();
         clearScheduledTasks();
-        tokenHandler.removeCallbacks(tokenPollRunnable);
-        updateHandler.removeCallbacks(updatePollRunnable);
-        cacheHandler.removeCallbacks(cacheRefreshRunnable);
-        brightnessHandler.removeCallbacks(brightnessCheckRunnable);
+        mainHandler.removeCallbacks(tokenPollRunnable);
+        mainHandler.removeCallbacks(updatePollRunnable);
+        mainHandler.removeCallbacks(brightnessCheckRunnable);
         if (contentPlayer != null) {
             contentPlayer.pause();
         }
@@ -403,18 +379,10 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     protected void onDestroy() {
         super.onDestroy();
         clearScheduledTasks();
-        imageHandler.removeCallbacksAndMessages(null);
-        errorHandler.removeCallbacksAndMessages(null);
-        tokenHandler.removeCallbacksAndMessages(null);
-        updateHandler.removeCallbacksAndMessages(null);
-        cacheHandler.removeCallbacksAndMessages(null);
-        brightnessHandler.removeCallbacksAndMessages(null);
+        mainHandler.removeCallbacksAndMessages(null);
         unregisterNetworkCallback();
         pullSyncCoordinator.shutdown();
         releasePlayers();
-        if (mediaCacheManager != null) {
-            mediaCacheManager.shutdown();
-        }
     }
 
     @Override
@@ -492,6 +460,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         advancedImageStageNext = findViewById(R.id.advancedImageStageNext);
         calendarStage = findViewById(R.id.calendarStage);
         calendarImageView = findViewById(R.id.calendarImageView);
+        calendarImageViewNext = findViewById(R.id.calendarImageViewNext);
         calendarInfoPanel = findViewById(R.id.calendarInfoPanel);
         calendarMonthText = findViewById(R.id.calendarMonthText);
         calendarDayText = findViewById(R.id.calendarDayText);
@@ -510,8 +479,6 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         rotationSummaryText = findViewById(R.id.rotationSummaryText);
         muteTitleText = findViewById(R.id.muteTitleText);
         muteSummaryText = findViewById(R.id.muteSummaryText);
-        cacheTitleText = findViewById(R.id.cacheTitleText);
-        cacheSummaryText = findViewById(R.id.cacheSummaryText);
         displayModeTitleText = findViewById(R.id.displayModeTitleText);
         displayModeSummaryText = findViewById(R.id.displayModeSummaryText);
         playbackSelectionTitleText = findViewById(R.id.playbackSelectionTitleText);
@@ -524,9 +491,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         systemCapabilityScrollView = findViewById(R.id.systemCapabilityScrollView);
         playbackSelectionContainer = findViewById(R.id.playbackSelectionContainer);
         rotationSpinner = findViewById(R.id.rotationSpinner);
-        cacheLimitSpinner = findViewById(R.id.cacheLimitSpinner);
         muteToggleCheckBox = findViewById(R.id.muteToggleCheckBox);
-        cacheToggleCheckBox = findViewById(R.id.cacheToggleCheckBox);
         displayModeToggleCheckBox = findViewById(R.id.displayModeToggleCheckBox);
         refreshButton = findViewById(R.id.refreshButton);
         setupButton = findViewById(R.id.setupButton);
@@ -534,13 +499,14 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         aboutButton = findViewById(R.id.aboutButton);
         systemCapabilityButton = findViewById(R.id.systemCapabilityButton);
         systemCapabilityCloseButton = findViewById(R.id.systemCapabilityCloseButton);
-        cacheClearButton = findViewById(R.id.cacheClearButton);
         brightnessTitleText = findViewById(R.id.brightnessTitleText);
         brightnessSummaryText = findViewById(R.id.brightnessSummaryText);
         brightnessToggleCheckBox = findViewById(R.id.brightnessToggleCheckBox);
         brightnessStartSpinner = findViewById(R.id.brightnessStartSpinner);
         brightnessEndSpinner = findViewById(R.id.brightnessEndSpinner);
         brightnessDimSpinner = findViewById(R.id.brightnessDimSpinner);
+        bootAutoStartTitleText = findViewById(R.id.bootAutoStartTitleText);
+        bootAutoStartToggleCheckBox = findViewById(R.id.bootAutoStartToggleCheckBox);
     }
 
     private void loadPlaybackSelection() {
@@ -562,13 +528,6 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         muteToggleCheckBox.setChecked(playbackMuted);
         applyDrawerOptionStyle(muteToggleCheckBox);
         updateMuteSummary();
-        cacheTitleText.setText(CACHE_TITLE);
-        cacheToggleCheckBox.setText(CACHE_ENABLE_LABEL);
-        cacheToggleCheckBox.setChecked(sessionRepository.isMediaCacheEnabled());
-        applyDrawerOptionStyle(cacheToggleCheckBox);
-        cacheClearButton.setText(CACHE_CLEAR_LABEL);
-        rebuildCacheLimitOptions();
-        updateCacheSummary();
         displayModeTitleText.setText(DISPLAY_MODE_TITLE);
         displayModeToggleCheckBox.setText(DISPLAY_MODE_ENABLE_LABEL);
         displayModeToggleCheckBox.setChecked(sessionRepository.isPreferNativeDisplayModeEnabled());
@@ -582,6 +541,10 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         rebuildBrightnessHourOptions(brightnessEndSpinner, sessionRepository.getBrightnessEndHour());
         rebuildBrightnessDimOptions();
         updateBrightnessSummary();
+        bootAutoStartTitleText.setText(BOOT_AUTO_START_TITLE);
+        bootAutoStartToggleCheckBox.setText(BOOT_AUTO_START_LABEL);
+        bootAutoStartToggleCheckBox.setChecked(sessionRepository.isBootAutoStartEnabled());
+        applyDrawerOptionStyle(bootAutoStartToggleCheckBox);
         playbackSelectionTitleText.setText(PLAYBACK_SELECTION_TITLE);
         showPlaybackSelectionMessage(PLAYBACK_SELECTION_WAITING);
         appUpdateTitleText.setText(APP_UPDATE_TITLE);
@@ -640,32 +603,6 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 updatePlaybackMuted(isChecked);
             }
         });
-        cacheToggleCheckBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                sessionRepository.saveMediaCacheEnabled(isChecked);
-                updateCacheSummary();
-                if (remotePullResponse != null) {
-                    cacheHandler.removeCallbacks(cacheRefreshRunnable);
-                    cacheHandler.post(cacheRefreshRunnable);
-                } else if (!waitingForBinding) {
-                    pullSyncCoordinator.refreshNow();
-                }
-            }
-        });
-        cacheClearButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (mediaCacheManager != null) {
-                    mediaCacheManager.clearCache();
-                }
-                updateCacheSummary();
-                if (remotePullResponse != null) {
-                    cacheHandler.removeCallbacks(cacheRefreshRunnable);
-                    cacheHandler.post(cacheRefreshRunnable);
-                }
-            }
-        });
         displayModeToggleCheckBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
@@ -716,6 +653,12 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             }
             @Override
             public void onNothingSelected(AdapterView<?> parent) {}
+        });
+        bootAutoStartToggleCheckBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                sessionRepository.saveBootAutoStartEnabled(isChecked);
+            }
         });
         aboutButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -818,7 +761,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             @Override
             public void onPlayerError(@NonNull PlaybackException error) {
                 Toast.makeText(PlayerActivity.this, R.string.toast_media_error, Toast.LENGTH_SHORT).show();
-                errorHandler.postDelayed(new Runnable() {
+                mainHandler.postDelayed(new Runnable() {
                     @Override
                     public void run() {
                         if (isFinishing()) return;
@@ -849,7 +792,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             @Override
             public void onPlayerError(@NonNull PlaybackException error) {
                 Toast.makeText(PlayerActivity.this, R.string.toast_bgm_error, Toast.LENGTH_SHORT).show();
-                errorHandler.postDelayed(new Runnable() {
+                mainHandler.postDelayed(new Runnable() {
                     @Override
                     public void run() {
                         if (isFinishing()) return;
@@ -888,8 +831,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void attemptAcquireToken(boolean immediateFeedback) {
-        tokenHandler.removeCallbacks(tokenPollRunnable);
-        new Thread(new Runnable() {
+        mainHandler.removeCallbacks(tokenPollRunnable);
+        backgroundExecutor.execute(new Runnable() {
             @Override
             public void run() {
                 try {
@@ -935,12 +878,12 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                                     : error.getMessage();
                             updateStatus(errorMsg + " (重试 " + tokenRetryCount + "/" + TOKEN_MAX_RETRIES + ")");
                             long delay = Math.min(TOKEN_POLL_BASE_MS * (1L << Math.min(tokenRetryCount - 1, 4)), TOKEN_POLL_MAX_MS);
-                            tokenHandler.postDelayed(tokenPollRunnable, delay);
+                            mainHandler.postDelayed(tokenPollRunnable, delay);
                         }
                     });
                 }
             }
-        }).start();
+        });
     }
 
     private void updateDeviceSummary() {
@@ -990,46 +933,51 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
     @Override
     public void onPullSuccess(final DevicePullResponse response) {
-        new Thread(new Runnable() {
+        backgroundExecutor.execute(new Runnable() {
             @Override
             public void run() {
                 try {
-                    final DevicePullResponse cloned = clonePullResponse(response);
-                    final DevicePullResponse cached = mediaCacheManager == null ? response : mediaCacheManager.applyLocalCache(response);
+                    final DevicePullResponse cloned = deepCopyPullResponse(response);
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
                             if (isFinishing() || isDestroyed()) return;
                             remotePullResponse = cloned;
-                            applyPlaybackResponse(cached, true);
+                            applyPlaybackResponse(response, true);
                             updateStatus(getString(R.string.sync_status_ready) + " / "
                                     + (playbackEngine.getPulledAt().isEmpty() ? getString(R.string.unknown_value) : playbackEngine.getPulledAt()));
-                            updateCacheSummary();
                         }
                     });
                 } catch (Exception e) {
                     Log.e(TAG, "onPullSuccess processing failed", e);
                 }
             }
-        }).start();
+        });
     }
 
-    private void reapplyCachedPlaylist() {
-        if (remotePullResponse == null || waitingForBinding || mediaCacheManager == null) {
-            return;
-        }
-        DevicePullResponse cachedResponse = mediaCacheManager.applyLocalCache(clonePullResponse(remotePullResponse));
-        lastRenderedMediaIdentity = "";
-        lastRenderedMediaType = "";
-        lastRenderedStyleSignature = "";
-        applyPlaybackResponse(cachedResponse, false);
-    }
-
-    private DevicePullResponse clonePullResponse(DevicePullResponse response) {
+    private DevicePullResponse deepCopyPullResponse(DevicePullResponse response) {
         if (response == null) {
             return null;
         }
-        return gson.fromJson(gson.toJson(response), DevicePullResponse.class);
+        DevicePullResponse copy = new DevicePullResponse();
+        copy.setDistributions(new ArrayList<DevicePullResponse.DistributionItem>());
+        List<DevicePullResponse.DistributionItem> dists = response.getDistributions();
+        if (dists != null) {
+            for (DevicePullResponse.DistributionItem dist : dists) {
+                DevicePullResponse.DistributionItem distCopy = new DevicePullResponse.DistributionItem();
+                distCopy.setMediaList(new ArrayList<DevicePullResponse.MediaItem>());
+                List<DevicePullResponse.MediaItem> mediaList = dist.getMediaList();
+                if (mediaList != null) {
+                    for (DevicePullResponse.MediaItem media : mediaList) {
+                        DevicePullResponse.MediaItem mediaCopy = new DevicePullResponse.MediaItem();
+                        mediaCopy.setUrl(media.getUrl());
+                        distCopy.getMediaList().add(mediaCopy);
+                    }
+                }
+                copy.getDistributions().add(distCopy);
+            }
+        }
+        return copy;
     }
 
     private void applyPlaybackResponse(DevicePullResponse response, boolean syncSelection) {
@@ -1142,8 +1090,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 lastRenderedStyleSignature = styleSignature;
                 renderCalendarMedia();
             } else {
-                imageHandler.removeCallbacks(imageAdvanceRunnable);
-                imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+                mainHandler.removeCallbacks(imageAdvanceRunnable);
+                mainHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
             }
             renderBgm();
             return;
@@ -1183,11 +1131,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 }
             }
         } else if ("IMAGE".equalsIgnoreCase(media.getMediaType())) {
-            imageHandler.removeCallbacks(imageAdvanceRunnable);
+            mainHandler.removeCallbacks(imageAdvanceRunnable);
             if (!isAdvancedDisplayStyle(displayStyle)) {
                 preloadNextImage();
             }
-            imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+            mainHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
         } else if (contentPlayer != null && !contentPlayer.isPlaying()) {
             contentPlayer.play();
         }
@@ -1233,7 +1181,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 if (!mediaIdentity.equals(lastRenderedMediaIdentity)) {
                     return;
                 }
-                String transitionStyle = previousWasImage ? resolveImageTransitionStyle(playbackEngine.getCurrentTransitionStyle(), mediaIdentity) : "NONE";
+                String transitionStyle = (previousWasImage && !useSimpleTransition)
+                        ? resolveImageTransitionStyle(playbackEngine.getCurrentTransitionStyle(), mediaIdentity) : "NONE";
                 if ("NONE".equals(transitionStyle) || currentStage.getVisibility() != View.VISIBLE) {
                     showImageWithoutTransition(targetStage, currentStage);
                 } else {
@@ -1241,8 +1190,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 }
                 preloadedImageIdentities.add(mediaIdentity);
                 preloadNextImage();
-                imageHandler.removeCallbacks(imageAdvanceRunnable);
-                imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+                mainHandler.removeCallbacks(imageAdvanceRunnable);
+                mainHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
             }
 
             @Override
@@ -1252,7 +1201,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                     return;
                 }
                 Toast.makeText(PlayerActivity.this, R.string.toast_media_error, Toast.LENGTH_SHORT).show();
-                errorHandler.postDelayed(new Runnable() {
+                mainHandler.postDelayed(new Runnable() {
                     @Override
                     public void run() {
                         if (isFinishing()) return;
@@ -1269,37 +1218,19 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             if (callback != null) callback.onFailure();
             return;
         }
-        String url = media.getUrl();
-        if (mediaCacheManager != null && mediaCacheManager.isLocalCacheUrl(url) && !mediaCacheManager.isLocalCacheAvailable(url)) {
-            String remoteUrl = mediaCacheManager.getRemoteUrlForLocalUrl(url);
-            mediaCacheManager.invalidateLocalUrl(url);
-            if (remoteUrl != null && remoteUrl.length() > 0) {
-                media.setUrl(remoteUrl);
-                url = remoteUrl;
-            }
-        }
-        final String requestedUrl = url;
+        final String requestedUrl = media.getUrl();
         final int[] targetSize = resolvePreferredImageDecodeTarget(imageView);
-        AuthenticatedImageLoader.load(imageView, requestedUrl, sessionRepository, targetSize[0], targetSize[1], new AuthenticatedImageLoader.Callback() {
-            @Override
-            public void onSuccess() {
-                if (callback != null) callback.onSuccess();
-            }
 
-            @Override
-            public void onFailure() {
-                if (mediaCacheManager != null && mediaCacheManager.isLocalCacheUrl(requestedUrl)) {
-                    String remoteUrl = mediaCacheManager.getRemoteUrlForLocalUrl(requestedUrl);
-                    mediaCacheManager.invalidateLocalUrl(requestedUrl);
-                    if (remoteUrl != null && remoteUrl.length() > 0) {
-                        media.setUrl(remoteUrl);
-                        AuthenticatedImageLoader.load(imageView, remoteUrl, sessionRepository, targetSize[0], targetSize[1], callback);
-                        return;
-                    }
-                }
-                if (callback != null) callback.onFailure();
-            }
-        });
+        Double focalX = media.getFocalPointX();
+        Double focalY = media.getFocalPointY();
+
+        if (focalX != null && focalY != null) {
+            AuthenticatedImageLoader.loadWithFocalPoint(imageView, requestedUrl, sessionRepository,
+                    targetSize[0], targetSize[1], callback,
+                    focalX, focalY, media.getFocalPointRegionWidth(), media.getFocalPointRegionHeight());
+        } else {
+            AuthenticatedImageLoader.load(imageView, requestedUrl, sessionRepository, targetSize[0], targetSize[1], callback);
+        }
     }
 
     private int[] resolvePreferredImageDecodeTarget(ImageView imageView) {
@@ -1358,35 +1289,150 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         }
         layoutCalendarStage();
         DevicePullResponse.MediaItem media = playbackEngine.getCurrentMedia();
-        if (calendarImageView != null && media != null && "IMAGE".equalsIgnoreCase(media.getMediaType())) {
-            calendarImageView.setAlpha(0.2f);
-            loadPlaybackImage(calendarImageView, media, new AuthenticatedImageLoader.Callback() {
-                @Override
-                public void onSuccess() {
-                    calendarImageView.animate().alpha(1f).setDuration(2500L).start();
-                }
-
-                @Override
-                public void onFailure() {
-                    calendarImageView.setAlpha(1f);
-                }
-            });
+        if (media == null || !"IMAGE".equalsIgnoreCase(media.getMediaType())) {
+            updateClockViews();
+            mainHandler.removeCallbacks(clockRunnable);
+            mainHandler.postDelayed(clockRunnable, 1000L);
+            mainHandler.removeCallbacks(imageAdvanceRunnable);
+            mainHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+            return;
         }
+        final ImageView targetStage = getInactiveCalendarStage();
+        final ImageView currentStage = getActiveCalendarStage();
+        resetImageStage(targetStage);
+        targetStage.setVisibility(View.INVISIBLE);
+        loadPlaybackImage(targetStage, media, new AuthenticatedImageLoader.Callback() {
+            @Override
+            public void onSuccess() {
+                if (isFinishing()) return;
+                String currentIdentity = PlaybackEngine.resolveMediaIdentity(playbackEngine.getCurrentMedia());
+                if (!currentIdentity.equals(lastRenderedMediaIdentity)) return;
+                if (useSimpleTransition) {
+                    showCalendarImageWithoutTransition(targetStage, currentStage);
+                    targetStage.setAlpha(0.2f);
+                    targetStage.animate().alpha(1f).setDuration(800L).start();
+                    return;
+                }
+                boolean previousWasCalendarImage = "CALENDAR".equals(lastRenderedMediaType) && currentStage.getDrawable() != null;
+                String transitionStyle = previousWasCalendarImage
+                        ? resolveImageTransitionStyle(playbackEngine.getCurrentTransitionStyle(), currentIdentity)
+                        : "NONE";
+                if ("NONE".equals(transitionStyle) || currentStage.getVisibility() != View.VISIBLE) {
+                    showCalendarImageWithoutTransition(targetStage, currentStage);
+                } else {
+                    runCalendarImageTransition(currentStage, targetStage, transitionStyle);
+                }
+            }
+
+            @Override
+            public void onFailure() {
+                if (isFinishing()) return;
+                showCalendarImageWithoutTransition(targetStage, currentStage);
+            }
+        });
         updateClockViews();
-        imageHandler.removeCallbacks(clockRunnable);
-        imageHandler.postDelayed(clockRunnable, 1000L);
-        imageHandler.removeCallbacks(imageAdvanceRunnable);
-        imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+        mainHandler.removeCallbacks(clockRunnable);
+        mainHandler.postDelayed(clockRunnable, 1000L);
+        mainHandler.removeCallbacks(imageAdvanceRunnable);
+        mainHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+    }
+
+    private void showCalendarImageWithoutTransition(ImageView targetStage, ImageView oldStage) {
+        cancelCalendarImageTransition();
+        resetImageStage(targetStage);
+        targetStage.setVisibility(View.VISIBLE);
+        oldStage.setVisibility(View.GONE);
+        resetImageStage(oldStage);
+        primaryCalendarStageActive = targetStage == calendarImageView;
+    }
+
+    private Animator calendarImageTransitionAnimator;
+
+    private void markTransitionStart() {
+        transitionStartTimeMs = System.currentTimeMillis();
+    }
+
+    private void evaluateTransitionPerformance() {
+        if (useSimpleTransition) return;
+        long elapsed = System.currentTimeMillis() - transitionStartTimeMs;
+        if (transitionPerfProbeCount < 2) {
+            transitionPerfProbeCount += 1;
+            if (elapsed > IMAGE_TRANSITION_DURATION_MS * 2) {
+                useSimpleTransition = true;
+            }
+        }
+    }
+
+    private void cancelCalendarImageTransition() {
+        if (calendarImageTransitionAnimator != null) {
+            calendarImageTransitionAnimator.cancel();
+            calendarImageTransitionAnimator = null;
+        }
+    }
+
+    private void runCalendarImageTransition(final ImageView fromStage, final ImageView toStage, String transitionStyle) {
+        cancelCalendarImageTransition();
+        resetImageStage(fromStage);
+        resetImageStage(toStage);
+        fromStage.setVisibility(View.VISIBLE);
+        toStage.setVisibility(View.VISIBLE);
+        markTransitionStart();
+        Animator animator;
+        if ("SLIDE".equals(transitionStyle)) {
+            animator = buildSlideTransition(fromStage, toStage);
+        } else if ("CUBE".equals(transitionStyle)) {
+            animator = buildCubeTransition(fromStage, toStage);
+        } else if ("REVEAL".equals(transitionStyle)) {
+            animator = buildRevealTransition(fromStage, toStage);
+        } else if ("FLIP".equals(transitionStyle)) {
+            animator = buildFlipTransition(fromStage, toStage);
+        } else {
+            animator = buildFadeTransition(fromStage, toStage);
+        }
+        calendarImageTransitionAnimator = animator;
+        animator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                calendarImageTransitionAnimator = null;
+                evaluateTransitionPerformance();
+                fromStage.setVisibility(View.GONE);
+                resetImageStage(fromStage);
+                resetImageStage(toStage);
+                toStage.setVisibility(View.VISIBLE);
+                primaryCalendarStageActive = toStage == calendarImageView;
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                calendarImageTransitionAnimator = null;
+            }
+        });
+        animator.start();
+    }
+
+    private ImageView getActiveCalendarStage() {
+        return primaryCalendarStageActive ? calendarImageView : calendarImageViewNext;
+    }
+
+    private ImageView getInactiveCalendarStage() {
+        return primaryCalendarStageActive ? calendarImageViewNext : calendarImageView;
     }
 
     private void hideCalendarStage() {
-        imageHandler.removeCallbacks(clockRunnable);
+        cancelCalendarImageTransition();
+        mainHandler.removeCallbacks(clockRunnable);
         if (calendarStage != null) {
             calendarStage.setVisibility(View.GONE);
         }
         if (calendarImageView != null) {
             calendarImageView.setImageDrawable(null);
+            resetImageStage(calendarImageView);
         }
+        if (calendarImageViewNext != null) {
+            calendarImageViewNext.setImageDrawable(null);
+            resetImageStage(calendarImageViewNext);
+        }
+        primaryCalendarStageActive = true;
     }
 
     private void layoutCalendarStage() {
@@ -1403,6 +1449,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             imageParams.leftMargin = 0;
             imageParams.topMargin = 0;
             calendarImageView.setLayoutParams(imageParams);
+            if (calendarImageViewNext != null) calendarImageViewNext.setLayoutParams(new FrameLayout.LayoutParams(imageParams));
             FrameLayout.LayoutParams infoParams = new FrameLayout.LayoutParams(width, infoHeight);
             infoParams.leftMargin = 0;
             infoParams.topMargin = imageHeight;
@@ -1419,6 +1466,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         imageParams.leftMargin = 0;
         imageParams.topMargin = 0;
         calendarImageView.setLayoutParams(imageParams);
+        if (calendarImageViewNext != null) calendarImageViewNext.setLayoutParams(new FrameLayout.LayoutParams(imageParams));
         FrameLayout.LayoutParams infoParams = new FrameLayout.LayoutParams(infoWidth, height);
         infoParams.leftMargin = imageWidth;
         infoParams.topMargin = 0;
@@ -1444,10 +1492,10 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         }
         if (show || calendar) {
             updateClockViews();
-            imageHandler.removeCallbacks(clockRunnable);
-            imageHandler.postDelayed(clockRunnable, 1000L);
+            mainHandler.removeCallbacks(clockRunnable);
+            mainHandler.postDelayed(clockRunnable, 1000L);
         } else {
-            imageHandler.removeCallbacks(clockRunnable);
+            mainHandler.removeCallbacks(clockRunnable);
         }
     }
 
@@ -1591,7 +1639,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             return;
         }
         advancedReadyRetryCount += 1;
-        imageHandler.postDelayed(new Runnable() {
+        mainHandler.postDelayed(new Runnable() {
             @Override
             public void run() {
                 waitForAdvancedStageReady(mediaIdentity, nextStage);
@@ -1612,8 +1660,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             }
         }).start();
         advancedPrimaryStageActive = nextStage == advancedImageStage;
-        imageHandler.removeCallbacks(imageAdvanceRunnable);
-        imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+        mainHandler.removeCallbacks(imageAdvanceRunnable);
+        mainHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
     }
 
     private FrameLayout getActiveAdvancedStage() {
@@ -1627,16 +1675,23 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private void renderBentoLayout(FrameLayout container, List<DevicePullResponse.MediaItem> imageItems) {
         String variant = playbackEngine.getCurrentDisplayVariant();
         int gapDp = isDenseBentoVariant(variant) ? 2 : 3;
-        int padding = dp(gapDp);
         int gap = dp(gapDp);
         int count = imageItems.size();
         bentoImageViews.clear();
-        container.setPadding(padding, padding, padding, padding);
-        float[][] slots = getBentoSlots(variant, isPortraitContainer(container));
-        int maxCount = Math.min(slots.length, ADVANCED_IMAGE_POOL_SIZE);
+        container.setPadding(0, 0, 0, 0);
+        float[][] rawSlots = getBentoSlots(variant, isPortraitContainer(container));
+        int maxCount = Math.min(rawSlots.length, ADVANCED_IMAGE_POOL_SIZE);
+        int cw = getContainerWidth(container);
+        int ch = getContainerHeight(container);
+        float sx = cw > 0 ? (float) gap / cw : 0f;
+        float sy = ch > 0 ? (float) gap / ch : 0f;
         for (int i = 0; i < maxCount; i += 1) {
-            float[] slot = slots[i];
-            addAdvancedImage(container, imageItems.get(i % count), slot[0], slot[1], slot[2], slot[3], gap, i == 0);
+            float[] s = rawSlots[i];
+            float left = s[0] * (1f - 2f * sx) + sx;
+            float top = s[1] * (1f - 2f * sy) + sy;
+            float w = s[2] * (1f - 2f * sx);
+            float h = s[3] * (1f - 2f * sy);
+            addAdvancedImage(container, imageItems.get(i % count), left, top, w, h, gap, i == 0);
         }
         markAdvancedImagesDisplayed(Math.min(maxCount, count));
         bentoNextSourceIndex = maxCount % count;
@@ -1924,7 +1979,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void advanceToNextDistributionAfterAdvancedCycle() {
-        imageHandler.removeCallbacks(imageAdvanceRunnable);
+        mainHandler.removeCallbacks(imageAdvanceRunnable);
         advancedDisplayedCountInCycle = 0;
         advancedCycleMediaCount = 0;
         playbackEngine.nextDistribution();
@@ -2019,7 +2074,10 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             DevicePullResponse.MediaItem imageItem = imageItems.get(i);
             if (imageItem != null) {
                 int[] targetSize = resolvePreferredImageDecodeTarget(imageStage);
-                AuthenticatedImageLoader.preload(imageStage, imageItem.getUrl(), sessionRepository, targetSize[0], targetSize[1], null);
+                AuthenticatedImageLoader.preloadWithFocalPoint(imageStage, imageItem.getUrl(), sessionRepository,
+                        targetSize[0], targetSize[1], null,
+                        imageItem.getFocalPointX(), imageItem.getFocalPointY(),
+                        imageItem.getFocalPointRegionWidth(), imageItem.getFocalPointRegionHeight());
             }
         }
     }
@@ -2029,7 +2087,10 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             DevicePullResponse.MediaItem item = imageItems.get((startIndex + i) % imageItems.size());
             if (item != null) {
                 int[] targetSize = resolvePreferredImageDecodeTarget(imageStage);
-                AuthenticatedImageLoader.preload(imageStage, item.getUrl(), sessionRepository, targetSize[0], targetSize[1], null);
+                AuthenticatedImageLoader.preloadWithFocalPoint(imageStage, item.getUrl(), sessionRepository,
+                        targetSize[0], targetSize[1], null,
+                        item.getFocalPointX(), item.getFocalPointY(),
+                        item.getFocalPointRegionWidth(), item.getFocalPointRegionHeight());
             }
         }
     }
@@ -2074,6 +2135,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         resetImageStage(toStage);
         fromStage.setVisibility(View.VISIBLE);
         toStage.setVisibility(View.VISIBLE);
+        markTransitionStart();
         Animator animator;
         if ("SLIDE".equals(transitionStyle)) {
             animator = buildSlideTransition(fromStage, toStage);
@@ -2091,6 +2153,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             @Override
             public void onAnimationEnd(Animator animation) {
                 imageTransitionAnimator = null;
+                evaluateTransitionPerformance();
                 fromStage.setVisibility(View.GONE);
                 resetImageStage(fromStage);
                 resetImageStage(toStage);
@@ -2245,7 +2308,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             return;
         }
         int[] targetSize = resolvePreferredImageDecodeTarget(imageStage);
-        AuthenticatedImageLoader.preload(imageStage, nextMedia.getUrl(), sessionRepository, targetSize[0], targetSize[1], new AuthenticatedImageLoader.Callback() {
+        AuthenticatedImageLoader.preloadWithFocalPoint(imageStage, nextMedia.getUrl(), sessionRepository,
+                targetSize[0], targetSize[1], new AuthenticatedImageLoader.Callback() {
             @Override
             public void onSuccess() {
                 preloadedImageIdentities.add(nextMediaIdentity);
@@ -2255,7 +2319,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             public void onFailure() {
                 preloadedImageIdentities.remove(nextMediaIdentity);
             }
-        });
+        }, nextMedia.getFocalPointX(), nextMedia.getFocalPointY(),
+                nextMedia.getFocalPointRegionWidth(), nextMedia.getFocalPointRegionHeight());
     }
 
     private void advanceImageWhenReady() {
@@ -2268,8 +2333,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             }
             imageAdvanceRetryCount = 0;
             swapOneBentoImage();
-            imageHandler.removeCallbacks(imageAdvanceRunnable);
-            imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+            mainHandler.removeCallbacks(imageAdvanceRunnable);
+            mainHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
             return;
         }
         if (("FRAME_WALL".equals(displayStyle) || "FRAMEWALL".equals(displayStyle))
@@ -2280,8 +2345,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             }
             imageAdvanceRetryCount = 0;
             swapFrameWallImages();
-            imageHandler.removeCallbacks(imageAdvanceRunnable);
-            imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+            mainHandler.removeCallbacks(imageAdvanceRunnable);
+            mainHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
             return;
         }
         if ("CAROUSEL".equals(displayStyle) && currentMedia != null && "IMAGE".equalsIgnoreCase(currentMedia.getMediaType())) {
@@ -2302,7 +2367,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                     && imageAdvanceRetryCount < IMAGE_ADVANCE_MAX_RETRY_COUNT) {
                 imageAdvanceRetryCount += 1;
                 preloadNextImage();
-                imageHandler.postDelayed(imageAdvanceRunnable, IMAGE_ADVANCE_RETRY_DELAY_MS);
+                mainHandler.postDelayed(imageAdvanceRunnable, IMAGE_ADVANCE_RETRY_DELAY_MS);
                 return;
             }
         }
@@ -2338,7 +2403,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         int replaceCount = Math.max(1, frameWallImageViews.size() / 10 + 1);
         for (int i = 0; i < replaceCount; i += 1) {
             final int delay = i * 800;
-            imageHandler.postDelayed(new Runnable() {
+            mainHandler.postDelayed(new Runnable() {
                 @Override
                 public void run() {
                     if (isFinishing() || frameWallImageViews.isEmpty()) return;
@@ -2363,17 +2428,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         if (url == null || url.trim().isEmpty()) {
             return;
         }
-        String mediaCacheRemoteUrl = null;
-        if (mediaCacheManager != null && mediaCacheManager.isLocalCacheUrl(url) && !mediaCacheManager.isLocalCacheAvailable(url)) {
-            mediaCacheRemoteUrl = mediaCacheManager.getRemoteUrlForLocalUrl(url);
-            if (mediaCacheRemoteUrl != null && mediaCacheRemoteUrl.length() > 0) {
-                mediaCacheManager.invalidateLocalUrl(url);
-                nextMedia.setUrl(mediaCacheRemoteUrl);
-            }
-        }
-        final String preloadUrl = (mediaCacheRemoteUrl != null && mediaCacheRemoteUrl.length() > 0) ? mediaCacheRemoteUrl : url;
         int[] targetSize = resolvePreferredImageDecodeTarget(imageView);
-        AuthenticatedImageLoader.preload(imageView, preloadUrl, sessionRepository, targetSize[0], targetSize[1], new AuthenticatedImageLoader.Callback() {
+        AuthenticatedImageLoader.preload(imageView, url, sessionRepository, targetSize[0], targetSize[1], new AuthenticatedImageLoader.Callback() {
             @Override
             public void onSuccess() {
                 if (isFinishing()) return;
@@ -2693,9 +2749,9 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void startBrightnessCheck() {
-        brightnessHandler.removeCallbacks(brightnessCheckRunnable);
+        mainHandler.removeCallbacks(brightnessCheckRunnable);
         applyBrightness();
-        brightnessHandler.postDelayed(brightnessCheckRunnable, BRIGHTNESS_CHECK_INTERVAL_MS);
+        mainHandler.postDelayed(brightnessCheckRunnable, BRIGHTNESS_CHECK_INTERVAL_MS);
     }
 
     private void applyBrightness() {
@@ -2777,52 +2833,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         }
     }
 
+
     private void updateMuteSummary() {
         muteSummaryText.setText(playbackMuted ? MUTE_ENABLED_LABEL : MUTE_DISABLED_LABEL);
     }
 
-    private void rebuildCacheLimitOptions() {
-        final int[] limits = new int[] {512, 1024, 2048, 5120, 10240};
-        String[] labels = new String[] {"512 MB", "1 GB", "2 GB", "5 GB", "10 GB"};
-        bindSpinner(cacheLimitSpinner, labels, indexOf(limits, sessionRepository.getMediaCacheLimitMb()), new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (bindingSpinners || position < 0 || position >= limits.length) {
-                    return;
-                }
-                int limitMb = limits[position];
-                if (sessionRepository.getMediaCacheLimitMb() == limitMb) {
-                    return;
-                }
-                sessionRepository.saveMediaCacheLimitMb(limitMb);
-                updateCacheSummary();
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {
-            }
-        });
-        rebuildDrawerFocusOrder();
-    }
-
-    private void updateCacheSummary() {
-        if (cacheSummaryText == null || sessionRepository == null) {
-            return;
-        }
-        long usedBytes = mediaCacheManager == null ? 0L : mediaCacheManager.getCacheBytes();
-        int fileCount = mediaCacheManager == null ? 0 : mediaCacheManager.getCacheFileCount();
-        int pending = mediaCacheManager == null ? 0 : mediaCacheManager.getPendingDownloads();
-        int failed = mediaCacheManager == null ? 0 : mediaCacheManager.getFailedDownloads();
-        String enabled = sessionRepository.isMediaCacheEnabled() ? "已启用" : "已关闭";
-        String text = enabled
-                + " / 已用 " + formatBytes(usedBytes)
-                + " / 文件 " + fileCount
-                + " / 上限 " + formatCacheLimit(sessionRepository.getMediaCacheLimitMb());
-        if (pending > 0 || failed > 0) {
-            text += " / 下载中 " + pending + " / 失败 " + failed;
-        }
-        cacheSummaryText.setText(text);
-    }
 
     private void updateDisplayModeSummary() {
         if (displayModeSummaryText == null || sessionRepository == null) {
@@ -2863,12 +2878,6 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         return display == null ? null : display.getMode();
     }
 
-    private String formatCacheLimit(int limitMb) {
-        if (limitMb >= 1024) {
-            return (limitMb / 1024) + " GB";
-        }
-        return limitMb + " MB";
-    }
 
     private void applyPlaybackMutedState() {
         if (contentPlayer != null) {
@@ -2951,7 +2960,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             return;
         }
         final String currentIdentity = PlaybackEngine.resolveMediaIdentity(currentMedia);
-        imageHandler.removeCallbacks(imageAdvanceRunnable);
+        mainHandler.removeCallbacks(imageAdvanceRunnable);
         pendingAdvancedMediaIdentity = currentIdentity;
         advancedNextReady = false;
         advancedReadyRetryCount = 0;
@@ -2981,7 +2990,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         } else {
             renderBentoLayout(targetStage, imageItems);
         }
-        imageHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
+        mainHandler.postDelayed(imageAdvanceRunnable, playbackEngine.getCurrentItemDurationSeconds() * 1000L);
     }
 
     private void showPlaybackSelectionMessage(String message) {
@@ -3200,7 +3209,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void checkAppUpdate(final boolean showInitialDialog) {
-        updateHandler.removeCallbacks(updatePollRunnable);
+        mainHandler.removeCallbacks(updatePollRunnable);
         if (showInitialDialog) {
             updateAppUpdatePanel(availableUpdate, APP_UPDATE_CHECKING);
         }
@@ -3220,8 +3229,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void scheduleNextUpdateCheck() {
-        updateHandler.removeCallbacks(updatePollRunnable);
-        updateHandler.postDelayed(updatePollRunnable, UPDATE_POLL_INTERVAL_MS);
+        mainHandler.removeCallbacks(updatePollRunnable);
+        mainHandler.postDelayed(updatePollRunnable, UPDATE_POLL_INTERVAL_MS);
     }
 
     private void updateAppUpdatePanel(AppUpdateResponse update, String fallbackMessage) {
@@ -3254,8 +3263,8 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void clearScheduledTasks() {
-        imageHandler.removeCallbacks(imageAdvanceRunnable);
-        errorHandler.removeCallbacksAndMessages(null);
+        mainHandler.removeCallbacks(imageAdvanceRunnable);
+        mainHandler.removeCallbacksAndMessages(null);
         cancelImageTransition();
     }
 
@@ -3382,14 +3391,12 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         addDrawerFocusableView(appUpdateButton);
         addDrawerFocusableView(rotationSpinner);
         addDrawerFocusableView(muteToggleCheckBox);
-        addDrawerFocusableView(cacheToggleCheckBox);
-        addDrawerFocusableView(cacheLimitSpinner);
-        addDrawerFocusableView(cacheClearButton);
         addDrawerFocusableView(displayModeToggleCheckBox);
         addDrawerFocusableView(brightnessToggleCheckBox);
         addDrawerFocusableView(brightnessStartSpinner);
         addDrawerFocusableView(brightnessEndSpinner);
         addDrawerFocusableView(brightnessDimSpinner);
+        addDrawerFocusableView(bootAutoStartToggleCheckBox);
         collectFocusableChildren(playbackSelectionContainer);
         addDrawerFocusableView(aboutButton);
         addDrawerFocusableView(systemCapabilityButton);

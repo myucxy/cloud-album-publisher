@@ -1,0 +1,3 @@
+ALTER TABLE t_media_source
+    ADD COLUMN storage_mode VARCHAR(20) NOT NULL DEFAULT 'EXTERNAL_CACHE'
+    COMMENT 'EXTERNAL_CACHE=按需缓存, IMPORTED=永久导入' AFTER enabled;

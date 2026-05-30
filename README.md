@@ -1,6 +1,6 @@
 # 智控云影后端服务（cloud-album-publisher）
 
-Spring Boot 3 后端主工程，承载认证、用户、相册、媒体源、设备、内容分发、审核等核心能力；仓库同时包含管理端前端和设备端客户端。
+Spring Boot 3 后端主工程，承载认证、用户、相册、媒体源、设备、内容分发、审核、焦点检测等核心能力；仓库同时包含管理端前端、设备端客户端和安卓播放客户端。
 
 ## 技术栈
 
@@ -17,6 +17,7 @@ Spring Boot 3 后端主工程，承载认证、用户、相册、媒体源、设
 | SpringDoc OpenAPI | 2.5.0 |
 | Vue 3 + Vite | frontend / device-client |
 | Electron | device-client |
+| Android (Gradle) | android-client |
 
 ## 仓库结构
 
@@ -24,6 +25,7 @@ Spring Boot 3 后端主工程，承载认证、用户、相册、媒体源、设
 - `src/main/resources/...`：配置、数据库脚本、日志配置
 - `frontend/`：管理端前端（Vue + Vite）
 - `device-client/`：设备播放客户端（Vue + Vite + Electron）
+- `android-client/`：安卓播放客户端（Java + Gradle）
 
 ## 本地快速启动
 
@@ -33,6 +35,7 @@ Spring Boot 3 后端主工程，承载认证、用户、相册、媒体源、设
 - JDK 17+
 - Maven 3.8+
 - Node.js / npm（用于 `frontend` 和 `device-client`）
+- Android Studio（可选，用于 `android-client`）
 
 ### 第一步：启动基础设施
 
@@ -163,6 +166,53 @@ npm run dev
 - 外部媒体缩略图访问
 - 相册封面（包括外部封面）访问
 
+### 4. 焦点检测（Focal Point）
+支持对相册图片进行焦点检测，用于智能裁切显示。
+
+支持的检测方式：
+- **OpenCV**：基于 Haar 级联分类器的人脸检测
+- **ONNX Runtime**：基于 ONNX 模型的显著性检测
+- **Vision LLM**：基于视觉大模型的智能焦点分析
+- **手动**：管理端 UI 手动设置焦点坐标
+
+焦点数据会下发到设备端和安卓客户端，播放时根据焦点位置进行智能裁切（`object-fit: cover` + `object-position`）。
+
+管理端入口：`/focal-point` 路由下的焦点管理页面。
+
+### 5. 相册显示模式
+相册支持多种设备端显示模式：
+- `SINGLE`：单图轮播
+- `BENTO`：Bento 布局
+- `FRAME_WALL`：相框墙
+- `CAROUSEL`：轮播墙
+- `CALENDAR`：日历模式
+
+显示模式可通过分发配置覆盖，也可在相册级别设置默认值。
+
+### 6. 安卓播放客户端
+安卓客户端（`android-client/`）支持：
+- 设备绑定与激活
+- 自动/手动同步播放队列
+- 焦点裁切（`FocalCropTransformation`）
+- 分块拉取（`pullCurrentChunk`）
+- 开机自启动（可在设置中开关，默认关闭）
+- 自动更新检查
+- 多种显示模式（单图、日历等）
+
+构建命令：
+```bash
+# 使用隔离 Gradle 环境
+GRADLE_USER_HOME="android-client/.gradle-user-home" gradle -p android-client :app:assembleDebug --no-daemon
+```
+
+### 7. 设备播放客户端
+设备端客户端（`device-client/`）支持：
+- Electron 桌面应用
+- 自动同步播放队列
+- 焦点裁切显示
+- 多种显示模式
+- 时钟叠加层
+
 ## 重要业务规则 / 注意事项
 
 ### 相册可见性规则
@@ -178,7 +228,7 @@ npm run dev
 - 分发激活时也会直接拦截 `PRIVATE` 相册并返回明确错误
 - 前端分发页会提示：私有相册不能下发到设备
 
-因此，如果遇到“客户端没有获取到新的分发队列数据”，要优先检查：
+因此，如果遇到"客户端没有获取到新的分发队列数据"，要优先检查：
 1. 分发是否是 `ACTIVE`
 2. 目标设备是否正确绑定到该分发
 3. 相册是否是 `PUBLIC` 或 `DEVICE_ONLY`
@@ -249,10 +299,25 @@ npm run dev
 - `PATCH /api/v1/distributions/{id}/activate`
 - `PATCH /api/v1/distributions/{id}/disable`
 
+### 焦点检测 `/api/v1/focal-points`
+- `POST /api/v1/focal-points/albums/{albumId}/batch`
+- `PUT /api/v1/focal-points/albums/{albumId}/media/{mediaId}`
+- `DELETE /api/v1/focal-points/albums/{albumId}/media/{mediaId}`
+- `GET /api/v1/focal-points/albums/{albumId}/settings`
+- `PUT /api/v1/focal-points/albums/{albumId}/settings`
+
+### Vision LLM 配置 `/api/v1/vision-llm-configs`
+- `GET /api/v1/vision-llm-configs`
+- `POST /api/v1/vision-llm-configs`
+- `PUT /api/v1/vision-llm-configs/{id}`
+- `DELETE /api/v1/vision-llm-configs/{id}`
+- `POST /api/v1/vision-llm-configs/{id}/test`
+
 ### 设备 `/api/v1/devices`
 - 用户侧：设备管理、分组、按设备 UID 拉取内容
 - 设备侧：
   - `GET /api/v1/devices/pull/current`
+  - `GET /api/v1/devices/pull/current/chunk`
   - `GET /api/v1/devices/albums/{albumId}/cover`
   - `GET /api/v1/devices/media/{mediaId}/content`
   - `GET /api/v1/devices/media/{mediaId}/thumbnail`
@@ -283,4 +348,3 @@ docker-compose down
 ```bash
 docker-compose down -v
 ```
-

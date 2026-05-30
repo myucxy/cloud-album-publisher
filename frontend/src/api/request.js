@@ -32,6 +32,8 @@ const request = axios.create({
   timeout: 15000
 })
 
+let refreshPromise = null
+
 request.interceptors.request.use(config => {
   const token = localStorage.getItem('access_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
@@ -59,9 +61,16 @@ request.interceptors.response.use(
       if (refreshToken && !err.config._retry) {
         err.config._retry = true
         try {
-          const res = await axios.post('/api/v1/auth/refresh', { refreshToken })
-          const { accessToken } = res.data.data
-          localStorage.setItem('access_token', accessToken)
+          if (!refreshPromise) {
+            refreshPromise = axios.post('/api/v1/auth/refresh', { refreshToken })
+              .then(res => {
+                const { accessToken } = res.data.data
+                localStorage.setItem('access_token', accessToken)
+                return accessToken
+              })
+              .finally(() => { refreshPromise = null })
+          }
+          const accessToken = await refreshPromise
           err.config.headers.Authorization = `Bearer ${accessToken}`
           return request(err.config)
         } catch {

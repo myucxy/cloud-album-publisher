@@ -21,6 +21,10 @@ public class AlbumUpdateRequest {
 
     private Boolean showTimeAndDate;
 
+    private Boolean focalPointEnabled;
+
+    private String focalPointProvider;
+
     private String visibility;
 
     private String status;

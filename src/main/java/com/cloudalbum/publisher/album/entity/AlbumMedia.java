@@ -41,6 +41,30 @@ public class AlbumMedia {
     /** 展示时长（秒） */
     private Integer duration;
 
+    /** 焦点 X 坐标 (0.0-1.0) */
+    private Double focalPointX;
+
+    /** 焦点 Y 坐标 (0.0-1.0) */
+    private Double focalPointY;
+
+    /** 焦点检测 Provider */
+    private String focalPointProvider;
+
+    /** 焦点检测置信度 (0.0-1.0) */
+    private Double focalPointConfidence;
+
+    /** 焦点区域类型: FACE / SALIENCY / CENTER */
+    private String focalPointRegionType;
+
+    /** 焦点区域宽度 (0.0-1.0) */
+    private Double focalPointRegionWidth;
+
+    /** 焦点区域高度 (0.0-1.0) */
+    private Double focalPointRegionHeight;
+
+    /** 焦点最后更新时间 */
+    private LocalDateTime focalPointUpdatedAt;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

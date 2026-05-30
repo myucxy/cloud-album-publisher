@@ -17,6 +17,8 @@ public class MediaSourceUpdateRequest {
 
     private Boolean enabled;
 
+    private String storageMode;
+
     private Map<String, Object> config;
 
     private Map<String, Object> credentials;

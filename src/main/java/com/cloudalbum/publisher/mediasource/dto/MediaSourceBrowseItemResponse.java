@@ -29,4 +29,6 @@ public class MediaSourceBrowseItemResponse {
     private String url;
     private String thumbnailUrl;
     private Boolean hasChildren;
+    private Long importedMediaId;
+    private Boolean importable;
 }

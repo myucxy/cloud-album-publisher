@@ -17,5 +17,6 @@ public class MediaSourceBrowseResponse {
     private String currentPath;
     private String boundPath;
     private String boundPathName;
+    private String storageMode;
     private List<MediaSourceBrowseItemResponse> items = new ArrayList<>();
 }

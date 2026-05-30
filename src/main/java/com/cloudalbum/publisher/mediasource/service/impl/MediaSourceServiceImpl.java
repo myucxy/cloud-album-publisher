@@ -130,6 +130,7 @@ public class MediaSourceServiceImpl implements MediaSourceService {
         mediaSource.setSourceType(sourceType);
         mediaSource.setName(requireText(request.getName(), "媒体源名称不能为空"));
         mediaSource.setEnabled(resolveEnabled(request.getEnabled()));
+        mediaSource.setStorageMode(resolveStorageMode(request.getStorageMode()));
 
         Map<String, Object> config = normalizeConfig(sourceType, request.getConfig());
         Map<String, Object> credentials = normalizeCredentials(sourceType, request.getCredentials(), true);
@@ -190,6 +191,15 @@ public class MediaSourceServiceImpl implements MediaSourceService {
 
         if (request.getEnabled() != null) {
             mediaSource.setEnabled(resolveEnabled(request.getEnabled()));
+        }
+
+        if (request.getStorageMode() != null) {
+            String newMode = resolveStorageMode(request.getStorageMode());
+            String currentMode = mediaSource.getStorageMode();
+            if ("IMPORTED".equals(currentMode) && !"IMPORTED".equals(newMode)) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "已导入模式不允许切换回实时缓存模式");
+            }
+            mediaSource.setStorageMode(newMode);
         }
 
         mediaSourceMapper.updateById(mediaSource);
@@ -343,6 +353,26 @@ public class MediaSourceServiceImpl implements MediaSourceService {
                                   HttpServletResponse response) {
         MediaSource mediaSource = getEnabledMediaSource(mediaSourceId, userId);
         String normalizedPath = resolveRequestedPath(mediaSource, path, browseRootPath(mediaSource, true), true);
+
+        // IMPORTED mode: try to serve from MinIO via t_media record first
+        if ("IMPORTED".equals(mediaSource.getStorageMode())) {
+            Media imported = mediaMapper.selectOne(new LambdaQueryWrapper<Media>()
+                    .eq(Media::getSourceId, mediaSource.getId())
+                    .eq(Media::getOriginUri, normalizedPath)
+                    .last("LIMIT 1"));
+            if (imported != null) {
+                String objectKey = thumbnail ? imported.getThumbnailKey() : imported.getObjectKey();
+                String ct = thumbnail ? "image/jpeg" : imported.getContentType();
+                String errMsg = thumbnail ? "缩略图不存在" : "媒体内容不存在";
+                mediaHttpWriter.write(
+                        objectStorageMediaContentResolver.resolveObject(imported.getBucketName(), objectKey, ct, errMsg),
+                        request, response,
+                        thumbnail ? "读取已导入媒体缩略图失败" : "读取已导入媒体内容失败");
+                return;
+            }
+            // Not imported yet → fallback to external source on-demand cache
+        }
+
         MediaSourceFileClient.Entry entry = getFileEntry(mediaSource, normalizedPath);
         if (entry.isDirectory()) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "目录不支持直接预览");
@@ -364,6 +394,18 @@ public class MediaSourceServiceImpl implements MediaSourceService {
                 request,
                 response,
                 thumbnail ? "读取外部媒体缩略图失败" : "读取外部媒体内容失败");
+    }
+
+    @Override
+    public InputStream openExternalContent(Long mediaSourceId, Long userId, String path) {
+        MediaSource mediaSource = getEnabledMediaSource(mediaSourceId, userId);
+        String normalizedPath = resolveRequestedPath(mediaSource, path, browseRootPath(mediaSource, true), true);
+        try {
+            return getRequiredFileClient(normalizeSourceType(mediaSource.getSourceType()))
+                    .open(buildConnection(mediaSource), normalizedPath);
+        } catch (Exception e) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "打开外部媒体内容失败: " + e.getMessage());
+        }
     }
 
     @Override
@@ -521,12 +563,29 @@ public class MediaSourceServiceImpl implements MediaSourceService {
         response.setCurrentPath(requestedPath);
         response.setBoundPath(normalizeRootPath(mediaSource.getBoundPath()));
         response.setBoundPathName(resolveBoundPathName(mediaSource.getBoundPathName(), mediaSource.getBoundPath()));
+        response.setStorageMode(mediaSource.getStorageMode() != null ? mediaSource.getStorageMode() : "EXTERNAL_CACHE");
+
+        // For IMPORTED mode, batch-query t_media to find already-imported files
+        Map<String, Long> importedMap = buildImportedMediaMap(mediaSource);
+
         response.setItems(entries.stream()
                 .sorted(Comparator.comparing(MediaSourceFileClient.Entry::isDirectory).reversed()
                         .thenComparing(MediaSourceFileClient.Entry::getName, String.CASE_INSENSITIVE_ORDER))
-                .map(entry -> toBrowseItem(mediaSource, entry))
+                .map(entry -> toBrowseItem(mediaSource, entry, importedMap))
                 .toList());
         return response;
+    }
+
+    private Map<String, Long> buildImportedMediaMap(MediaSource mediaSource) {
+        if (!"IMPORTED".equals(mediaSource.getStorageMode())) {
+            return Map.of();
+        }
+        List<Media> importedList = mediaMapper.selectList(new LambdaQueryWrapper<Media>()
+                .eq(Media::getSourceId, mediaSource.getId())
+                .select(Media::getId, Media::getOriginUri));
+        return importedList.stream()
+                .filter(m -> m.getOriginUri() != null)
+                .collect(Collectors.toMap(Media::getOriginUri, Media::getId, (a, b) -> a));
     }
 
     private List<MediaSourceFileClient.Entry> listEntries(MediaSource mediaSource, String path) {
@@ -709,6 +768,7 @@ public class MediaSourceServiceImpl implements MediaSourceService {
         response.setBoundPath(normalizeRootPath(mediaSource.getBoundPath()));
         response.setBoundPathName(resolveBoundPathName(mediaSource.getBoundPathName(), mediaSource.getBoundPath()));
         response.setEnabled(Boolean.TRUE.equals(mediaSource.getEnabled()));
+        response.setStorageMode(mediaSource.getStorageMode() != null ? mediaSource.getStorageMode() : "EXTERNAL_CACHE");
         response.setPasswordConfigured(hasStoredCredentials(mediaSource));
         response.setLastScanAt(mediaSource.getLastScanAt());
         response.setCreatedAt(mediaSource.getCreatedAt());
@@ -716,7 +776,7 @@ public class MediaSourceServiceImpl implements MediaSourceService {
         return response;
     }
 
-    private MediaSourceBrowseItemResponse toBrowseItem(MediaSource mediaSource, MediaSourceFileClient.Entry entry) {
+    private MediaSourceBrowseItemResponse toBrowseItem(MediaSource mediaSource, MediaSourceFileClient.Entry entry, Map<String, Long> importedMap) {
         MediaSourceBrowseItemResponse item = new MediaSourceBrowseItemResponse();
         String normalizedPath = normalizeRootPath(entry.getPath());
         item.setExternalMediaKey(buildExternalMediaKey(mediaSource.getId(), normalizedPath));
@@ -740,10 +800,24 @@ public class MediaSourceServiceImpl implements MediaSourceService {
             item.setMediaType(mediaType);
             item.setIngestMode(INGEST_MODE_LINKED);
             item.setStatus(MediaStatus.READY.name());
-            if (!"OTHER".equals(mediaType) && mediaSource.getId() != null) {
-                item.setUrl(buildExternalContentUrl(mediaSource.getId(), normalizedPath));
+
+            // IMPORTED mode: mark import status
+            Long importedMediaId = importedMap.get(normalizedPath);
+            if (importedMediaId != null) {
+                item.setImportedMediaId(importedMediaId);
+                item.setImportable(false);
+                // Use internal media URLs for imported files
+                item.setUrl(buildContentUrl(importedMediaId));
                 if ("IMAGE".equals(mediaType)) {
-                    item.setThumbnailUrl(buildExternalThumbnailUrl(mediaSource.getId(), normalizedPath));
+                    item.setThumbnailUrl(buildThumbnailUrl(importedMediaId, null));
+                }
+            } else {
+                item.setImportable(!"OTHER".equals(mediaType));
+                if (!"OTHER".equals(mediaType) && mediaSource.getId() != null) {
+                    item.setUrl(buildExternalContentUrl(mediaSource.getId(), normalizedPath));
+                    if ("IMAGE".equals(mediaType)) {
+                        item.setThumbnailUrl(buildExternalThumbnailUrl(mediaSource.getId(), normalizedPath));
+                    }
                 }
             }
         }
@@ -1026,6 +1100,13 @@ public class MediaSourceServiceImpl implements MediaSourceService {
 
     private Boolean resolveEnabled(Boolean enabled) {
         return enabled == null ? Boolean.TRUE : enabled;
+    }
+
+    private String resolveStorageMode(String storageMode) {
+        if ("IMPORTED".equals(storageMode)) {
+            return "IMPORTED";
+        }
+        return "EXTERNAL_CACHE";
     }
 
     private void ensureSupportedSourceType(String sourceType) {

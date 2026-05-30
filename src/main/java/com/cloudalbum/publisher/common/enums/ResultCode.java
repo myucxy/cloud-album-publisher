@@ -61,7 +61,12 @@ public enum ResultCode {
     // 审核相关
     REVIEW_NOT_FOUND(404, "审核记录不存在"),
     REVIEW_ALREADY_PROCESSED(409, "该内容已完成审核，不可重复操作"),
-    MEDIA_REVIEW_PENDING(403, "媒体内容尚未通过审核");
+    MEDIA_REVIEW_PENDING(403, "媒体内容尚未通过审核"),
+
+    // 焦点检测相关
+    FOCAL_POINT_CONFIG_NOT_FOUND(404, "焦点配置不存在"),
+    FOCAL_POINT_PROVIDER_ERROR(500, "焦点检测 Provider 错误"),
+    FOCAL_POINT_LLM_API_ERROR(502, "Vision LLM API 调用失败");
 
     private final int code;
     private final String message;

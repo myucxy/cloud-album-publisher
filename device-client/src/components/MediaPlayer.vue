@@ -18,6 +18,7 @@
             v-if="media.mediaType === 'IMAGE' && mediaResolvedUrl"
             :key="`calendar-image-${mediaIdentity}`"
             class="calendar-image"
+            :style="calendarImageStyle"
             :src="mediaResolvedUrl"
             :alt="media.fileName"
             @load="handleMediaLoaded"
@@ -64,7 +65,7 @@
       </div>
       <Transition :name="imageTransitionName" :css="imageTransitionEnabled">
         <img
-          v-if="!isAdvancedImageLayout && media.mediaType === 'IMAGE' && mediaResolvedUrl"
+          v-if="!isCalendarLayout && !isAdvancedImageLayout && media.mediaType === 'IMAGE' && mediaResolvedUrl"
           :key="`image-${mediaIdentity}`"
           class="image-content transition-image"
           :src="mediaResolvedUrl"
@@ -74,7 +75,7 @@
         />
       </Transition>
       <video
-        v-if="media.mediaType === 'VIDEO' && mediaResolvedUrl"
+        v-if="!isCalendarLayout && media.mediaType === 'VIDEO' && mediaResolvedUrl"
         :key="`video-${mediaIdentity}`"
         ref="videoRef"
         class="video-content"
@@ -262,6 +263,10 @@ const advancedLayoutStyle = computed(() => {
   return null
 })
 const primaryAdvancedIndex = computed(() => normalizedDisplayStyle.value === 'CAROUSEL' && displayedAdvancedItems.value.length >= 3 ? Math.floor(displayedAdvancedItems.value.length / 2) : 0)
+const calendarImageStyle = computed(() => {
+  const pos = getFocalObjectPosition(props.media)
+  return pos ? { objectPosition: pos } : null
+})
 const imageTransitionEnabled = computed(() => enableImageTransition.value && concreteImageTransition.value !== 'NONE')
 const imageTransitionName = computed(() => `image-${concreteImageTransition.value.toLowerCase()}`)
 const calendarParts = computed(() => formatCalendarParts(now.value))
@@ -369,9 +374,16 @@ function getBentoSlotCount() {
   return getBentoSlots(99).length
 }
 
+function getFocalObjectPosition(media) {
+  if (!media || media.focalPointX == null || media.focalPointY == null) return null
+  return `${(media.focalPointX * 100).toFixed(1)}% ${(media.focalPointY * 100).toFixed(1)}%`
+}
+
 function getAdvancedItemStyle(index) {
   void viewportVersion.value
   const portrait = isPortraitViewport.value
+  const focalPos = getFocalObjectPosition(displayedAdvancedItems.value[index]?.media)
+  const focalStyle = focalPos ? { objectPosition: focalPos } : null
   if (normalizedDisplayStyle.value === 'CAROUSEL') {
     const count = displayedAdvancedItems.value.length
     const center = Math.floor(count / 2)
@@ -389,7 +401,8 @@ function getAdvancedItemStyle(index) {
         height: `${height}%`,
         zIndex: 20 - Math.abs(offset),
         opacity: Math.max(0.46, 1 - Math.abs(offset) * 0.18),
-        transform: `scale(${isPrimary ? 1 : Math.max(0.82, 0.94 - Math.abs(offset) * 0.04)})`
+        transform: `scale(${isPrimary ? 1 : Math.max(0.82, 0.94 - Math.abs(offset) * 0.04)})`,
+        ...focalStyle
       }
     }
     const width = isPrimary ? 42 : 24
@@ -402,16 +415,17 @@ function getAdvancedItemStyle(index) {
       height: `${height}%`,
       zIndex: 20 - Math.abs(offset),
       opacity: Math.max(0.46, 1 - Math.abs(offset) * 0.18),
-      transform: `scale(${isPrimary ? 1 : Math.max(0.82, 0.94 - Math.abs(offset) * 0.04)})`
+      transform: `scale(${isPrimary ? 1 : Math.max(0.82, 0.94 - Math.abs(offset) * 0.04)})`,
+      ...focalStyle
     }
   }
-  if (normalizedDisplayStyle.value !== 'BENTO') return null
+  if (normalizedDisplayStyle.value !== 'BENTO') return focalStyle
   const slot = getBentoSlots(displayedAdvancedItems.value.length)[index]
-  if (!slot) return null
+  if (!slot) return focalStyle
   if (portrait) {
-    return { gridColumn: slot[1], gridRow: slot[0] }
+    return { gridColumn: slot[1], gridRow: slot[0], ...focalStyle }
   }
-  return { gridColumn: slot[0], gridRow: slot[1] }
+  return { gridColumn: slot[0], gridRow: slot[1], ...focalStyle }
 }
 
 function clampPercent(value, size) {

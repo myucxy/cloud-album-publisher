@@ -5,11 +5,125 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>智控云影</title>
-    <script type="module" crossorigin src="/assets/index-BmisDYBk.js"></script>
+    <style>
+      .nojs-warning {
+        padding: 40px 20px;
+        font-family: -apple-system, "Microsoft YaHei", sans-serif;
+        text-align: center;
+        color: #333;
+      }
+      .nojs-warning h1 { font-size: 22px; }
+      .nojs-warning p { font-size: 14px; color: #666; }
+    </style>
+    <script type="module" crossorigin src="/assets/index-Cy4_FSbw.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/axios-DsxkehSS.js">
     <link rel="stylesheet" crossorigin href="/assets/index-B6VCboLO.css">
   </head>
   <body>
+    <noscript>
+      <div class="nojs-warning">
+        <h1>浏览器未启用 JavaScript</h1>
+        <p>请启用 JavaScript 后刷新页面，或<a href="/client-download.html">下载客户端</a>使用。</p>
+      </div>
+    </noscript>
     <div id="app"></div>
+    <script>
+      (function () {
+        try {
+          var missing = null;
+          var ua = navigator.userAgent || '';
+
+          // Known incompatible browsers
+          if (/via\b/i.test(ua) && !/chrome|edge|firefox|safari/i.test(ua)) {
+            missing = 'via-browser';
+          } else if (typeof Proxy === 'undefined') {
+            missing = 'no-proxy';
+          } else if (typeof Symbol === 'undefined') {
+            missing = 'no-symbol';
+          } else if (typeof Symbol.for !== 'function') {
+            missing = 'no-symbol';
+          } else if (typeof Map === 'undefined' || typeof Set === 'undefined') {
+            missing = 'no-collections';
+          } else if (typeof WeakMap === 'undefined') {
+            missing = 'no-weakmap';
+          } else if (typeof Promise === 'undefined') {
+            missing = 'no-promise';
+          } else if (typeof Reflect === 'undefined') {
+            missing = 'no-reflect';
+          } else if (typeof fetch === 'undefined') {
+            missing = 'no-fetch';
+          } else if (typeof Object.assign !== 'function') {
+            missing = 'no-object-assign';
+          } else if (typeof Array.prototype.includes !== 'function') {
+            missing = 'no-array-includes';
+          } else if (typeof Array.prototype.flat !== 'function') {
+            missing = 'no-array-flat';
+          } else if (typeof String.prototype.startsWith !== 'function') {
+            missing = 'no-string-startswith';
+          } else if (typeof ResizeObserver === 'undefined') {
+            missing = 'no-resize-observer';
+          } else {
+            try {
+              var _proxyObj = {};
+              var _proxyInst = new Proxy(_proxyObj, {
+                get: function (t, p) { return t[p]; },
+                set: function (t, p, v) { t[p] = v; return true; }
+              });
+              _proxyInst.x = 42;
+              if (_proxyInst.x !== 42) {
+                missing = 'no-proxy';
+              }
+            } catch (proxyErr) {
+              missing = 'no-proxy';
+            }
+          }
+
+          if (missing && location.pathname !== '/client-download.html') {
+            var _params = 'reason=' + encodeURIComponent(missing);
+            try {
+              _params += '&ua=' + encodeURIComponent((navigator.userAgent || '').substring(0, 300));
+            } catch (uaErr) {}
+            window.location.replace('/client-download.html?' + _params);
+          }
+        } catch (e) {
+          if (location.pathname !== '/client-download.html') {
+            window.location.replace('/client-download.html?reason=detection-error');
+          }
+        }
+      })();
+    </script>
+    <script nomodule>
+      if (location.pathname !== '/client-download.html') {
+        window.location.replace('/client-download.html?reason=nomodule');
+      }
+    </script>
+    <script>
+      (function () {
+        var _appEl = document.getElementById('app');
+        var _observer = null;
+        if (window.MutationObserver && _appEl) {
+          _observer = new MutationObserver(function () {
+            if (_appEl.children.length > 0 && _appEl.textContent.trim() !== '') {
+              _observer.disconnect();
+            }
+          });
+          _observer.observe(_appEl, { childList: true, subtree: true, characterData: true });
+        }
+        setTimeout(function () {
+          if (_observer) _observer.disconnect();
+          try {
+            if (!_appEl || (_appEl.children.length === 0 || (_appEl.textContent || '').trim() === '')) {
+              if (location.pathname !== '/client-download.html') {
+                window.location.replace('/client-download.html?reason=runtime-error');
+              }
+            }
+          } catch (e) {
+            if (location.pathname !== '/client-download.html') {
+              window.location.replace('/client-download.html?reason=runtime-error');
+            }
+          }
+        }, 6000);
+      })();
+    </script>
   </body>
 </html>

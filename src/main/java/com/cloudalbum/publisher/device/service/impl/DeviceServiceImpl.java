@@ -1,5 +1,7 @@
 package com.cloudalbum.publisher.device.service.impl;
 
+import java.io.IOException;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.cloudalbum.publisher.album.entity.Album;
@@ -7,6 +9,7 @@ import com.cloudalbum.publisher.album.entity.AlbumBgm;
 import com.cloudalbum.publisher.album.entity.AlbumMedia;
 import com.cloudalbum.publisher.album.mapper.AlbumBgmMapper;
 import com.cloudalbum.publisher.album.mapper.AlbumMapper;
+import com.cloudalbum.publisher.album.support.AlbumDisplaySettingsSupport;
 import com.cloudalbum.publisher.album.mapper.AlbumMediaMapper;
 import com.cloudalbum.publisher.common.enums.DeviceStatus;
 import com.cloudalbum.publisher.common.enums.ResultCode;
@@ -44,15 +47,23 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.data.redis.core.RedisTemplate;
+
 import java.net.URI;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -62,6 +73,9 @@ public class DeviceServiceImpl implements DeviceService {
 
     @Value("${minio.bucket}")
     private String bucket;
+
+    @Value("${device.pull.chunk-size-distributions:2}")
+    private int chunkSizeDistributions;
 
     private final DeviceMapper deviceMapper;
     private final DeviceGroupMapper deviceGroupMapper;
@@ -78,6 +92,8 @@ public class DeviceServiceImpl implements DeviceService {
     private final MediaSourceService mediaSourceService;
     private final JwtUtil jwtUtil;
     private final ObjectStorageMediaContentResolver objectStorageMediaContentResolver;
+    private final RedisTemplate<String, Object> devicePullRedisTemplate;
+    private final ObjectMapper devicePullObjectMapper;
 
     @Override
     public List<DeviceResponse> listDevices(Long userId) {
@@ -280,6 +296,13 @@ public class DeviceServiceImpl implements DeviceService {
     }
 
     @Override
+    public DevicePullChunkResponse pullContentByDeviceChunk(Long deviceId, String cursor) {
+        Device device = getDevice(deviceId);
+        ensureDeviceBound(device);
+        return buildPullChunkResponse(device, true, cursor);
+    }
+
+    @Override
     public List<DeviceGroupResponse> listGroups(Long userId) {
         List<DeviceGroup> groups = deviceGroupMapper.selectList(new LambdaQueryWrapper<DeviceGroup>()
                 .eq(DeviceGroup::getUserId, userId)
@@ -375,17 +398,21 @@ public class DeviceServiceImpl implements DeviceService {
         ensureDeviceBound(device);
         Media media = mediaMapper.selectById(mediaId);
         if (media == null) {
-            throw new BusinessException(ResultCode.MEDIA_NOT_FOUND);
+            sendHttpError(response, HttpServletResponse.SC_NOT_FOUND, "媒体不存在");
+            return;
         }
         if (!Objects.equals(media.getUserId(), device.getUserId())) {
-            throw new BusinessException(ResultCode.MEDIA_ACCESS_DENIED);
+            sendHttpError(response, HttpServletResponse.SC_FORBIDDEN, "无权访问该媒体");
+            return;
         }
         if (!"READY".equals(media.getStatus())) {
-            throw new BusinessException(ResultCode.MEDIA_NOT_READY);
+            sendHttpError(response, HttpServletResponse.SC_CONFLICT, "媒体尚未就绪");
+            return;
         }
         ReviewRecord latestReview = queryLatestReviewMap(List.of(mediaId)).get(mediaId);
         if (latestReview == null || !"APPROVED".equals(latestReview.getStatus())) {
-            throw new BusinessException(ResultCode.MEDIA_REVIEW_PENDING);
+            sendHttpError(response, HttpServletResponse.SC_FORBIDDEN, "媒体内容尚未通过审核");
+            return;
         }
         mediaHttpWriter.write(
                 mediaContentResolverRegistry.resolve(media, thumbnail),
@@ -403,22 +430,29 @@ public class DeviceServiceImpl implements DeviceService {
         ensureDeviceBound(device);
         Album album = albumMapper.selectById(albumId);
         if (album == null) {
-            throw new BusinessException(ResultCode.ALBUM_NOT_FOUND);
+            sendHttpError(response, HttpServletResponse.SC_NOT_FOUND, "相册不存在");
+            return;
         }
         if (!Objects.equals(album.getUserId(), device.getUserId())) {
-            throw new BusinessException(ResultCode.ALBUM_ACCESS_DENIED);
+            sendHttpError(response, HttpServletResponse.SC_FORBIDDEN, "无权访问该相册");
+            return;
         }
         if (!canDeviceAccessAlbum(album, true)) {
-            throw new BusinessException(ResultCode.ALBUM_ACCESS_DENIED);
+            sendHttpError(response, HttpServletResponse.SC_FORBIDDEN, "无权访问该相册");
+            return;
         }
         if (hasExternalCover(album)) {
-            mediaSourceService.writeMediaContent(
-                    album.getCoverSourceId(),
-                    album.getUserId(),
-                    album.getCoverPath(),
-                    shouldUseExternalThumbnailForCover(album),
-                    request,
-                    response);
+            try {
+                mediaSourceService.writeMediaContent(
+                        album.getCoverSourceId(),
+                        album.getUserId(),
+                        album.getCoverPath(),
+                        shouldUseExternalThumbnailForCover(album),
+                        request,
+                        response);
+            } catch (BusinessException e) {
+                sendHttpError(response, e.getCode() == 404 ? HttpServletResponse.SC_NOT_FOUND : HttpServletResponse.SC_FORBIDDEN, e.getMessage());
+            }
             return;
         }
 
@@ -434,7 +468,8 @@ public class DeviceServiceImpl implements DeviceService {
 
         String objectKey = resolveCoverObjectKey(album.getCoverUrl());
         if (!StringUtils.hasText(objectKey)) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "相册封面不存在");
+            sendHttpError(response, HttpServletResponse.SC_NOT_FOUND, "相册封面不存在");
+            return;
         }
 
         mediaHttpWriter.write(
@@ -453,22 +488,29 @@ public class DeviceServiceImpl implements DeviceService {
         ensureDeviceBound(device);
         Album album = albumMapper.selectById(albumId);
         if (album == null) {
-            throw new BusinessException(ResultCode.ALBUM_NOT_FOUND);
+            sendHttpError(response, HttpServletResponse.SC_NOT_FOUND, "相册不存在");
+            return;
         }
         if (!Objects.equals(album.getUserId(), device.getUserId())) {
-            throw new BusinessException(ResultCode.ALBUM_ACCESS_DENIED);
+            sendHttpError(response, HttpServletResponse.SC_FORBIDDEN, "无权访问该相册");
+            return;
         }
         if (!canDeviceAccessAlbum(album, true)) {
-            throw new BusinessException(ResultCode.ALBUM_ACCESS_DENIED);
+            sendHttpError(response, HttpServletResponse.SC_FORBIDDEN, "无权访问该相册");
+            return;
         }
         if (hasExternalBgm(album)) {
-            mediaSourceService.writeMediaContent(
-                    album.getBgmSourceId(),
-                    album.getUserId(),
-                    album.getBgmPath(),
-                    false,
-                    request,
-                    response);
+            try {
+                mediaSourceService.writeMediaContent(
+                        album.getBgmSourceId(),
+                        album.getUserId(),
+                        album.getBgmPath(),
+                        false,
+                        request,
+                        response);
+            } catch (BusinessException e) {
+                sendHttpError(response, e.getCode() == 404 ? HttpServletResponse.SC_NOT_FOUND : HttpServletResponse.SC_FORBIDDEN, e.getMessage());
+            }
             return;
         }
 
@@ -482,7 +524,7 @@ public class DeviceServiceImpl implements DeviceService {
             return;
         }
 
-        throw new BusinessException(ResultCode.NOT_FOUND, "相册BGM不存在");
+        sendHttpError(response, HttpServletResponse.SC_NOT_FOUND, "相册BGM不存在");
     }
 
     @Override
@@ -494,8 +536,12 @@ public class DeviceServiceImpl implements DeviceService {
                                                 HttpServletResponse response) {
         Device device = getDevice(deviceId);
         ensureDeviceBound(device);
-        resolveExternalMediaItem(sourceId, device.getUserId(), path, null);
-        mediaSourceService.writeMediaContent(sourceId, device.getUserId(), path, thumbnail, request, response);
+        try {
+            resolveExternalMediaItem(sourceId, device.getUserId(), path, null);
+            mediaSourceService.writeMediaContent(sourceId, device.getUserId(), path, thumbnail, request, response);
+        } catch (BusinessException e) {
+            sendHttpError(response, e.getCode() == 404 ? HttpServletResponse.SC_NOT_FOUND : HttpServletResponse.SC_FORBIDDEN, e.getMessage());
+        }
     }
 
     private DevicePullResponse buildPullResponse(Device device, boolean deviceTokenAccess) {
@@ -522,12 +568,194 @@ public class DeviceServiceImpl implements DeviceService {
                         .eq(Distribution::getStatus, "ACTIVE")
                         .orderByDesc(Distribution::getCreatedAt));
 
+        Map<String, MediaSourceBrowseResponse> externalBrowseCache = new HashMap<>();
+        Map<Long, Album> albumCache = loadAlbumMap(distributions);
+        Map<Long, List<AlbumMedia>> albumMediaCache = loadAlbumMediaMap(albumCache.keySet());
+        Set<Long> allInternalMediaIds = albumMediaCache.values().stream()
+                .flatMap(List::stream)
+                .map(AlbumMedia::getMediaId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, Media> mediaCache = loadMediaMap(allInternalMediaIds);
+        Map<Long, ReviewRecord> reviewCache = queryLatestReviewMap(new ArrayList<>(allInternalMediaIds));
+        Map<Long, List<AlbumBgm>> bgmCache = loadAlbumBgmMap(albumCache.keySet());
+
         List<DevicePullResponse.DistributionItem> items = distributions.stream()
-                .map(distribution -> toPullDistribution(distribution, device.getUserId(), deviceTokenAccess))
+                .map(distribution -> toPullDistribution(distribution, device.getUserId(), deviceTokenAccess, true, externalBrowseCache, albumCache, albumMediaCache, mediaCache, reviewCache, bgmCache))
                 .filter(Objects::nonNull)
                 .toList();
         response.setDistributions(items);
         return response;
+    }
+
+    private DevicePullChunkResponse buildPullChunkResponse(Device device, boolean deviceTokenAccess, String cursor) {
+        ensureDeviceBound(device);
+        LocalDateTime now = LocalDateTime.now();
+        device.setStatus(DeviceStatus.ONLINE.name());
+        device.setLastHeartbeatAt(now);
+        deviceMapper.updateById(device);
+
+        DevicePullSnapshot snapshot;
+        int nextDistributionIndex;
+        int returnedMediaCount;
+
+        if (!StringUtils.hasText(cursor)) {
+            List<Long> distributionIds = queryTargetDistributionIds(device.getId());
+            List<Long> orderedDistributionIds = CollectionUtils.isEmpty(distributionIds) ? Collections.emptyList() : distributionMapper.selectList(
+                    new LambdaQueryWrapper<Distribution>()
+                            .in(Distribution::getId, distributionIds)
+                            .eq(Distribution::getUserId, device.getUserId())
+                            .eq(Distribution::getStatus, "ACTIVE")
+                            .orderByDesc(Distribution::getCreatedAt)
+            ).stream().map(Distribution::getId).toList();
+
+            String snapshotId = UUID.randomUUID().toString();
+            snapshot = new DevicePullSnapshot();
+            snapshot.setSnapshotId(snapshotId);
+            snapshot.setUserId(device.getUserId());
+            snapshot.setDeviceTokenAccess(deviceTokenAccess);
+            snapshot.setCreatedAt(now);
+            snapshot.setOrderedDistributionIds(orderedDistributionIds);
+            nextDistributionIndex = 0;
+            returnedMediaCount = 0;
+            storeDevicePullSnapshot(snapshot);
+        } else {
+            PullChunkCursor parsedCursor = parsePullChunkCursor(cursor);
+            snapshot = loadDevicePullSnapshot(parsedCursor.snapshotId());
+            if (snapshot == null || !Objects.equals(snapshot.getUserId(), device.getUserId())) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "拉取快照已失效，请重新开始拉取");
+            }
+            deviceTokenAccess = snapshot.isDeviceTokenAccess();
+            nextDistributionIndex = parsedCursor.nextDistributionIndex();
+            returnedMediaCount = parsedCursor.returnedMediaCount();
+        }
+
+        DevicePullChunkResponse response = new DevicePullChunkResponse();
+        response.setDevice(toDeviceResponse(device));
+        response.setPulledAt(now);
+        response.setSnapshotId(snapshot.getSnapshotId());
+
+        List<Long> orderedDistributionIds = snapshot.getOrderedDistributionIds();
+        if (CollectionUtils.isEmpty(orderedDistributionIds) || nextDistributionIndex >= orderedDistributionIds.size()) {
+            response.setDistributions(Collections.emptyList());
+            response.setHasMore(false);
+            response.setFinalChunk(true);
+            response.setCursor(null);
+            response.setReturnedDistributionCount(0);
+            response.setReturnedMediaCount(0);
+            refreshDevicePullSnapshotTtl(snapshot.getSnapshotId());
+            return response;
+        }
+
+        List<Long> chunkDistributionIds = orderedDistributionIds.subList(nextDistributionIndex, Math.min(nextDistributionIndex + chunkSizeDistributions, orderedDistributionIds.size()));
+        Map<Long, Distribution> distributionById = distributionMapper.selectList(
+                new LambdaQueryWrapper<Distribution>()
+                        .in(Distribution::getId, chunkDistributionIds)
+                        .eq(Distribution::getUserId, device.getUserId())
+                        .eq(Distribution::getStatus, "ACTIVE")
+        ).stream().collect(Collectors.toMap(Distribution::getId, Function.identity(), (a, b) -> a));
+
+        Map<String, MediaSourceBrowseResponse> externalBrowseCache = new HashMap<>();
+        List<Distribution> chunkDistributions = chunkDistributionIds.stream()
+                .map(distributionById::get)
+                .filter(Objects::nonNull)
+                .toList();
+        Map<Long, Album> albumCache = loadAlbumMap(chunkDistributions);
+        Map<Long, List<AlbumMedia>> albumMediaCache = loadAlbumMediaMap(albumCache.keySet());
+        Set<Long> allInternalMediaIds = albumMediaCache.values().stream()
+                .flatMap(List::stream)
+                .map(AlbumMedia::getMediaId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, Media> mediaCache = loadMediaMap(allInternalMediaIds);
+        Map<Long, ReviewRecord> reviewCache = queryLatestReviewMap(new ArrayList<>(allInternalMediaIds));
+        Map<Long, List<AlbumBgm>> bgmCache = loadAlbumBgmMap(albumCache.keySet());
+
+        List<DevicePullResponse.DistributionItem> items = new ArrayList<>();
+        int chunkReturnedMediaCount = 0;
+        int nextIndexAfterChunk = nextDistributionIndex;
+
+        for (Long distributionId : chunkDistributionIds) {
+            Distribution distribution = distributionById.get(distributionId);
+            nextIndexAfterChunk++;
+            if (distribution == null) {
+                continue;
+            }
+            DevicePullResponse.DistributionItem item = toPullDistribution(distribution, device.getUserId(), deviceTokenAccess, true, externalBrowseCache, albumCache, albumMediaCache, mediaCache, reviewCache, bgmCache);
+            if (item == null) {
+                continue;
+            }
+            int mediaCount = item.getMediaList() == null ? 0 : item.getMediaList().size();
+            items.add(item);
+            chunkReturnedMediaCount += mediaCount;
+        }
+
+        response.setDistributions(items);
+        response.setReturnedDistributionCount(items.size());
+        response.setReturnedMediaCount(chunkReturnedMediaCount);
+
+        boolean hasMore = nextIndexAfterChunk < orderedDistributionIds.size();
+        response.setHasMore(hasMore);
+        response.setFinalChunk(!hasMore);
+
+        if (hasMore) {
+            PullChunkCursor nextCursor = new PullChunkCursor(snapshot.getSnapshotId(), nextIndexAfterChunk, returnedMediaCount + chunkReturnedMediaCount);
+            response.setCursor(encodePullChunkCursor(nextCursor));
+        } else {
+            response.setCursor(null);
+            deleteDevicePullSnapshot(snapshot.getSnapshotId());
+        }
+
+        if (hasMore) {
+            refreshDevicePullSnapshotTtl(snapshot.getSnapshotId());
+        }
+
+        return response;
+    }
+
+    private Map<Long, Album> loadAlbumMap(List<Distribution> distributions) {
+        Set<Long> albumIds = distributions.stream().map(Distribution::getAlbumId).filter(Objects::nonNull).collect(Collectors.toSet());
+        if (albumIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return albumMapper.selectBatchIds(albumIds).stream().collect(Collectors.toMap(Album::getId, Function.identity(), (a, b) -> a));
+    }
+
+    private Map<Long, List<AlbumMedia>> loadAlbumMediaMap(Set<Long> albumIds) {
+        if (CollectionUtils.isEmpty(albumIds)) {
+            return Collections.emptyMap();
+        }
+        List<AlbumMedia> list = albumMediaMapper.selectList(new LambdaQueryWrapper<AlbumMedia>()
+                .in(AlbumMedia::getAlbumId, albumIds)
+                .orderByAsc(AlbumMedia::getSortOrder)
+                .orderByAsc(AlbumMedia::getId));
+        Map<Long, List<AlbumMedia>> map = new HashMap<>();
+        for (AlbumMedia albumMedia : list) {
+            map.computeIfAbsent(albumMedia.getAlbumId(), key -> new ArrayList<>()).add(albumMedia);
+        }
+        return map;
+    }
+
+    private Map<Long, Media> loadMediaMap(Set<Long> mediaIds) {
+        if (CollectionUtils.isEmpty(mediaIds)) {
+            return Collections.emptyMap();
+        }
+        return mediaMapper.selectBatchIds(mediaIds).stream().collect(Collectors.toMap(Media::getId, Function.identity(), (a, b) -> a));
+    }
+
+    private Map<Long, List<AlbumBgm>> loadAlbumBgmMap(Set<Long> albumIds) {
+        if (CollectionUtils.isEmpty(albumIds)) {
+            return Collections.emptyMap();
+        }
+        List<AlbumBgm> list = albumBgmMapper.selectList(new LambdaQueryWrapper<AlbumBgm>()
+                .in(AlbumBgm::getAlbumId, albumIds)
+                .orderByAsc(AlbumBgm::getSortOrder)
+                .orderByAsc(AlbumBgm::getId));
+        Map<Long, List<AlbumBgm>> map = new HashMap<>();
+        for (AlbumBgm bgm : list) {
+            map.computeIfAbsent(bgm.getAlbumId(), key -> new ArrayList<>()).add(bgm);
+        }
+        return map;
     }
 
     private List<Long> queryTargetDistributionIds(Long deviceId) {
@@ -554,8 +782,17 @@ public class DeviceServiceImpl implements DeviceService {
         return distributionIds.stream().toList();
     }
 
-    private DevicePullResponse.DistributionItem toPullDistribution(Distribution distribution, Long userId, boolean deviceTokenAccess) {
-        Album album = albumMapper.selectById(distribution.getAlbumId());
+    private DevicePullResponse.DistributionItem toPullDistribution(Distribution distribution,
+                                                                   Long userId,
+                                                                   boolean deviceTokenAccess,
+                                                                   boolean trustExternalMetadata,
+                                                                   Map<String, MediaSourceBrowseResponse> externalBrowseCache,
+                                                                   Map<Long, Album> albumCache,
+                                                                   Map<Long, List<AlbumMedia>> albumMediaCache,
+                                                                   Map<Long, Media> mediaCache,
+                                                                   Map<Long, ReviewRecord> reviewCache,
+                                                                   Map<Long, List<AlbumBgm>> bgmCache) {
+        Album album = albumCache.get(distribution.getAlbumId());
         if (album == null || !Objects.equals(album.getUserId(), userId)) {
             return null;
         }
@@ -563,29 +800,19 @@ public class DeviceServiceImpl implements DeviceService {
             return null;
         }
 
-        List<AlbumMedia> albumMediaList = albumMediaMapper.selectList(new LambdaQueryWrapper<AlbumMedia>()
-                .eq(AlbumMedia::getAlbumId, album.getId())
-                .orderByAsc(AlbumMedia::getSortOrder)
-                .orderByAsc(AlbumMedia::getId));
+        List<AlbumMedia> albumMediaList = albumMediaCache.getOrDefault(album.getId(), Collections.emptyList());
         if (CollectionUtils.isEmpty(albumMediaList)) {
             return null;
         }
 
-        List<Long> mediaIds = albumMediaList.stream()
-                .map(AlbumMedia::getMediaId)
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
-        Map<Long, Media> mediaMap = mediaIds.isEmpty() ? Collections.emptyMap()
-                : mediaMapper.selectBatchIds(mediaIds).stream().collect(Collectors.toMap(Media::getId, Function.identity()));
-        Map<Long, ReviewRecord> reviewMap = queryLatestReviewMap(mediaIds);
-
         List<DevicePullResponse.MediaItem> mediaItems = albumMediaList.stream()
                 .map(albumMedia -> toPullMediaItem(albumMedia,
-                        albumMedia.getMediaId() == null ? null : mediaMap.get(albumMedia.getMediaId()),
-                        albumMedia.getMediaId() == null ? null : reviewMap.get(albumMedia.getMediaId()),
+                        albumMedia.getMediaId() == null ? null : mediaCache.get(albumMedia.getMediaId()),
+                        albumMedia.getMediaId() == null ? null : reviewCache.get(albumMedia.getMediaId()),
                         userId,
-                        distribution.getItemDuration()))
+                        distribution.getItemDuration(),
+                        trustExternalMetadata,
+                        externalBrowseCache))
                 .filter(Objects::nonNull)
                 .toList();
         if (CollectionUtils.isEmpty(mediaItems)) {
@@ -599,7 +826,7 @@ public class DeviceServiceImpl implements DeviceService {
         item.setLoopPlay(distribution.getLoopPlay());
         item.setShuffle(distribution.getShuffle());
         item.setItemDuration(distribution.getItemDuration());
-        item.setAlbum(toPullAlbumItem(album));
+        item.setAlbum(toPullAlbumItem(album, distribution, trustExternalMetadata, externalBrowseCache, bgmCache.getOrDefault(album.getId(), Collections.emptyList())));
         item.setMediaList(mediaItems);
         return item;
     }
@@ -615,34 +842,57 @@ public class DeviceServiceImpl implements DeviceService {
         return deviceTokenAccess || !"DEVICE_ONLY".equals(visibility);
     }
 
-    private DevicePullResponse.AlbumItem toPullAlbumItem(Album album) {
+    private DevicePullResponse.AlbumItem toPullAlbumItem(Album album,
+                                                        Distribution distribution,
+                                                        boolean trustExternalMetadata,
+                                                        Map<String, MediaSourceBrowseResponse> externalBrowseCache,
+                                                        List<AlbumBgm> cachedBgms) {
         DevicePullResponse.AlbumItem item = new DevicePullResponse.AlbumItem();
         item.setId(album.getId());
         item.setTitle(album.getTitle());
         item.setDescription(album.getDescription());
         item.setCoverUrl(buildAlbumCoverUrl(album));
-        List<DevicePullResponse.BgmItem> bgmList = loadAlbumBgms(album.getId()).stream()
-                .map(bgm -> toPullBgmItem(bgm, album.getUserId()))
+        List<DevicePullResponse.BgmItem> bgmList = cachedBgms.stream()
+                .map(bgm -> toPullBgmItem(bgm, album.getUserId(), trustExternalMetadata, externalBrowseCache))
                 .filter(Objects::nonNull)
                 .toList();
         item.setBgmList(bgmList);
-        item.setBgmUrl(!bgmList.isEmpty() ? bgmList.get(0).getUrl() : buildAlbumBgmUrl(album));
+        item.setBgmUrl(!bgmList.isEmpty() ? bgmList.get(0).getUrl() : buildAlbumBgmUrl(album, trustExternalMetadata, externalBrowseCache));
         item.setBgmVolume(album.getBgmVolume());
-        item.setTransitionStyle(StringUtils.hasText(album.getTransitionStyle()) ? album.getTransitionStyle() : "NONE");
-        item.setDisplayStyle(StringUtils.hasText(album.getDisplayStyle()) ? album.getDisplayStyle() : "SINGLE");
-        item.setDisplayVariant(StringUtils.hasText(album.getDisplayVariant()) ? album.getDisplayVariant() : "DEFAULT");
-        item.setShowTimeAndDate(Boolean.TRUE.equals(album.getShowTimeAndDate()));
+        item.setTransitionStyle(AlbumDisplaySettingsSupport.resolveTransitionStyle(
+                StringUtils.hasText(distribution.getTransitionStyle()) ? distribution.getTransitionStyle() : album.getTransitionStyle()));
+        item.setDisplayStyle(AlbumDisplaySettingsSupport.resolveDisplayStyle(
+                StringUtils.hasText(distribution.getDisplayStyle()) ? distribution.getDisplayStyle() : album.getDisplayStyle()));
+        item.setDisplayVariant(AlbumDisplaySettingsSupport.resolveDisplayVariant(
+                StringUtils.hasText(distribution.getDisplayVariant()) ? distribution.getDisplayVariant() : album.getDisplayVariant()));
+        item.setShowTimeAndDate(distribution.getShowTimeAndDate() != null
+                ? distribution.getShowTimeAndDate()
+                : Boolean.TRUE.equals(album.getShowTimeAndDate()));
         item.setVisibility(album.getVisibility());
         return item;
     }
 
-    private DevicePullResponse.BgmItem toPullBgmItem(AlbumBgm bgm, Long userId) {
+    private DevicePullResponse.BgmItem toPullBgmItem(AlbumBgm bgm, Long userId, boolean trustExternalMetadata, Map<String, MediaSourceBrowseResponse> externalBrowseCache) {
         if (bgm.isExternal()) {
+            if (trustExternalMetadata && bgm.getSourceId() != null && StringUtils.hasText(bgm.getFilePath())) {
+                DevicePullResponse.BgmItem item = new DevicePullResponse.BgmItem();
+                item.setId(bgm.getId());
+                item.setExternalMediaKey(bgm.getExternalMediaKey());
+                item.setSourceId(bgm.getSourceId());
+                item.setSourceType(bgm.getSourceType());
+                item.setFileName(bgm.getFileName());
+                item.setMediaType(bgm.getMediaType());
+                item.setContentType(bgm.getContentType());
+                item.setUrl(buildDeviceExternalContentUrl(bgm.getSourceId(), bgm.getFilePath()));
+                item.setSortOrder(bgm.getSortOrder());
+                return item;
+            }
             MediaSourceBrowseItemResponse externalItem = resolveExternalMediaItem(
                     bgm.getSourceId(),
                     userId,
                     bgm.getFilePath(),
-                    bgm.getExternalMediaKey());
+                    bgm.getExternalMediaKey(),
+                    externalBrowseCache);
             DevicePullResponse.BgmItem item = new DevicePullResponse.BgmItem();
             item.setId(bgm.getId());
             item.setExternalMediaKey(externalItem.getExternalMediaKey());
@@ -680,10 +930,10 @@ public class DeviceServiceImpl implements DeviceService {
                 .orderByAsc(AlbumBgm::getId));
     }
 
-    private String buildAlbumBgmUrl(Album album) {
+    private String buildAlbumBgmUrl(Album album, boolean trustExternalMetadata, Map<String, MediaSourceBrowseResponse> externalBrowseCache) {
         List<AlbumBgm> bgms = loadAlbumBgms(album.getId());
         if (!bgms.isEmpty()) {
-            DevicePullResponse.BgmItem first = toPullBgmItem(bgms.get(0), album.getUserId());
+            DevicePullResponse.BgmItem first = toPullBgmItem(bgms.get(0), album.getUserId(), trustExternalMetadata, externalBrowseCache);
             return first != null ? first.getUrl() : null;
         }
         if (hasExternalBgm(album) || resolveBgmMedia(album) != null) {
@@ -716,9 +966,11 @@ public class DeviceServiceImpl implements DeviceService {
                                                          Media media,
                                                          ReviewRecord latestReview,
                                                          Long userId,
-                                                         Integer distributionItemDuration) {
+                                                         Integer distributionItemDuration,
+                                                         boolean trustExternalMetadata,
+                                                         Map<String, MediaSourceBrowseResponse> externalBrowseCache) {
         if (albumMedia.isExternal()) {
-            return toPullExternalMediaItem(albumMedia, userId, distributionItemDuration);
+            return toPullExternalMediaItem(albumMedia, userId, distributionItemDuration, trustExternalMetadata, externalBrowseCache);
         }
         return toPullInternalMediaItem(albumMedia, media, latestReview, userId, distributionItemDuration);
     }
@@ -752,17 +1004,45 @@ public class DeviceServiceImpl implements DeviceService {
         item.setHeight(media.getHeight());
         item.setSortOrder(albumMedia.getSortOrder());
         item.setItemDuration(resolveItemDuration(albumMedia, distributionItemDuration));
+        item.setFocalPointX(albumMedia.getFocalPointX());
+        item.setFocalPointY(albumMedia.getFocalPointY());
+        item.setFocalPointRegionType(albumMedia.getFocalPointRegionType());
+        item.setFocalPointRegionWidth(albumMedia.getFocalPointRegionWidth());
+        item.setFocalPointRegionHeight(albumMedia.getFocalPointRegionHeight());
         return item;
     }
 
     private DevicePullResponse.MediaItem toPullExternalMediaItem(AlbumMedia albumMedia,
                                                                  Long userId,
-                                                                 Integer distributionItemDuration) {
+                                                                 Integer distributionItemDuration,
+                                                                 boolean trustExternalMetadata,
+                                                                 Map<String, MediaSourceBrowseResponse> externalBrowseCache) {
+        if (trustExternalMetadata && albumMedia.getSourceId() != null && StringUtils.hasText(albumMedia.getFilePath())) {
+            DevicePullResponse.MediaItem item = new DevicePullResponse.MediaItem();
+            item.setExternalMediaKey(albumMedia.getExternalMediaKey());
+            item.setSourceId(albumMedia.getSourceId());
+            item.setSourceType(albumMedia.getSourceType());
+            item.setFileName(albumMedia.getFileName());
+            item.setMediaType(albumMedia.getMediaType());
+            item.setContentType(albumMedia.getContentType());
+            item.setUrl(buildDeviceExternalContentUrl(albumMedia.getSourceId(), albumMedia.getFilePath()));
+            item.setThumbnailUrl(buildDeviceExternalThumbnailUrl(albumMedia.getSourceId(), albumMedia.getFilePath(), albumMedia.getMediaType()));
+            item.setSortOrder(albumMedia.getSortOrder());
+            item.setItemDuration(resolveItemDuration(albumMedia, distributionItemDuration));
+            item.setFocalPointX(albumMedia.getFocalPointX());
+            item.setFocalPointY(albumMedia.getFocalPointY());
+            item.setFocalPointRegionType(albumMedia.getFocalPointRegionType());
+            item.setFocalPointRegionWidth(albumMedia.getFocalPointRegionWidth());
+            item.setFocalPointRegionHeight(albumMedia.getFocalPointRegionHeight());
+            return item;
+        }
+
         MediaSourceBrowseItemResponse externalItem = resolveExternalMediaItem(
                 albumMedia.getSourceId(),
                 userId,
                 albumMedia.getFilePath(),
-                albumMedia.getExternalMediaKey());
+                albumMedia.getExternalMediaKey(),
+                externalBrowseCache);
         DevicePullResponse.MediaItem item = new DevicePullResponse.MediaItem();
         item.setExternalMediaKey(externalItem.getExternalMediaKey());
         item.setSourceId(externalItem.getSourceId());
@@ -774,6 +1054,11 @@ public class DeviceServiceImpl implements DeviceService {
         item.setThumbnailUrl(buildDeviceExternalThumbnailUrl(externalItem.getSourceId(), externalItem.getPath(), externalItem.getMediaType()));
         item.setSortOrder(albumMedia.getSortOrder());
         item.setItemDuration(resolveItemDuration(albumMedia, distributionItemDuration));
+        item.setFocalPointX(albumMedia.getFocalPointX());
+        item.setFocalPointY(albumMedia.getFocalPointY());
+        item.setFocalPointRegionType(albumMedia.getFocalPointRegionType());
+        item.setFocalPointRegionWidth(albumMedia.getFocalPointRegionWidth());
+        item.setFocalPointRegionHeight(albumMedia.getFocalPointRegionHeight());
         return item;
     }
 
@@ -845,6 +1130,14 @@ public class DeviceServiceImpl implements DeviceService {
                                                                    Long userId,
                                                                    String path,
                                                                    String externalMediaKey) {
+        return resolveExternalMediaItem(sourceId, userId, path, externalMediaKey, new HashMap<>());
+    }
+
+    private MediaSourceBrowseItemResponse resolveExternalMediaItem(Long sourceId,
+                                                                   Long userId,
+                                                                   String path,
+                                                                   String externalMediaKey,
+                                                                   Map<String, MediaSourceBrowseResponse> externalBrowseCache) {
         if (sourceId == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "媒体源不能为空");
         }
@@ -853,7 +1146,8 @@ public class DeviceServiceImpl implements DeviceService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "媒体路径不能为空");
         }
         String parentPath = parentPath(normalizedPath);
-        MediaSourceBrowseResponse browse = mediaSourceService.browse(sourceId, userId, parentPath);
+        String cacheKey = sourceId + "|" + parentPath;
+        MediaSourceBrowseResponse browse = externalBrowseCache.computeIfAbsent(cacheKey, key -> mediaSourceService.browse(sourceId, userId, parentPath));
         if (browse == null || CollectionUtils.isEmpty(browse.getItems())) {
             throw new BusinessException(ResultCode.NOT_FOUND, "外部媒体不存在");
         }
@@ -912,6 +1206,13 @@ public class DeviceServiceImpl implements DeviceService {
             reviewMap.putIfAbsent(record.getMediaId(), record);
         }
         return reviewMap;
+    }
+
+    private void sendHttpError(HttpServletResponse response, int status, String message) {
+        try {
+            response.sendError(status, message);
+        } catch (IOException ignored) {
+        }
     }
 
     private String buildDeviceContentUrl(Long mediaId) {
@@ -1087,5 +1388,140 @@ public class DeviceServiceImpl implements DeviceService {
             }
         }
         return null;
+    }
+
+    private void storeDevicePullSnapshot(DevicePullSnapshot snapshot) {
+        String key = devicePullSnapshotKey(snapshot.getSnapshotId());
+        Map<String, Object> value = new HashMap<>();
+        value.put("snapshotId", snapshot.getSnapshotId());
+        value.put("userId", snapshot.getUserId());
+        value.put("deviceTokenAccess", snapshot.isDeviceTokenAccess());
+        value.put("createdAt", snapshot.getCreatedAt().toString());
+        value.put("orderedDistributionIds", snapshot.getOrderedDistributionIds());
+        devicePullRedisTemplate.opsForValue().set(key, value, Duration.ofMinutes(5));
+    }
+
+    private void refreshDevicePullSnapshotTtl(String snapshotId) {
+        devicePullRedisTemplate.expire(devicePullSnapshotKey(snapshotId), Duration.ofMinutes(5));
+    }
+
+    private void deleteDevicePullSnapshot(String snapshotId) {
+        devicePullRedisTemplate.delete(devicePullSnapshotKey(snapshotId));
+    }
+
+    @SuppressWarnings("unchecked")
+    private DevicePullSnapshot loadDevicePullSnapshot(String snapshotId) {
+        Object value = devicePullRedisTemplate.opsForValue().get(devicePullSnapshotKey(snapshotId));
+        if (!(value instanceof Map<?, ?> map)) {
+            return null;
+        }
+        DevicePullSnapshot snapshot = new DevicePullSnapshot();
+        snapshot.setSnapshotId(String.valueOf(map.get("snapshotId")));
+        snapshot.setUserId(toLong(map.get("userId")));
+        snapshot.setDeviceTokenAccess(Boolean.TRUE.equals(map.get("deviceTokenAccess")));
+        snapshot.setCreatedAt(LocalDateTime.parse(String.valueOf(map.get("createdAt"))));
+        Object ids = map.get("orderedDistributionIds");
+        if (ids instanceof List<?> list) {
+            snapshot.setOrderedDistributionIds(list.stream().map(this::toLong).toList());
+        } else {
+            snapshot.setOrderedDistributionIds(Collections.emptyList());
+        }
+        return snapshot;
+    }
+
+    private Long toLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String text && StringUtils.hasText(text)) {
+            return Long.parseLong(text);
+        }
+        return null;
+    }
+
+    private PullChunkCursor parsePullChunkCursor(String cursor) {
+        try {
+            String json = new String(Base64.getUrlDecoder().decode(cursor));
+            Map<?, ?> map = devicePullObjectMapper.readValue(json, Map.class);
+            String snapshotId = map.get("snapshotId") == null ? null : String.valueOf(map.get("snapshotId"));
+            int nextDistributionIndex = map.get("nextDistributionIndex") == null ? 0 : ((Number) map.get("nextDistributionIndex")).intValue();
+            int returnedMediaCount = map.get("returnedMediaCount") == null ? 0 : ((Number) map.get("returnedMediaCount")).intValue();
+            if (!StringUtils.hasText(snapshotId)) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "非法拉取游标");
+            }
+            return new PullChunkCursor(snapshotId, nextDistributionIndex, returnedMediaCount);
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "非法拉取游标");
+        }
+    }
+
+    private String encodePullChunkCursor(PullChunkCursor cursor) {
+        try {
+            Map<String, Object> map = new HashMap<>();
+            map.put("snapshotId", cursor.snapshotId());
+            map.put("nextDistributionIndex", cursor.nextDistributionIndex());
+            map.put("returnedMediaCount", cursor.returnedMediaCount());
+            String json = devicePullObjectMapper.writeValueAsString(map);
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes());
+        } catch (JsonProcessingException ex) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "生成拉取游标失败");
+        }
+    }
+
+    private String devicePullSnapshotKey(String snapshotId) {
+        return "device:pull:snapshot:" + snapshotId;
+    }
+
+    private record PullChunkCursor(String snapshotId, int nextDistributionIndex, int returnedMediaCount) {}
+
+    private static class DevicePullSnapshot {
+
+        private String snapshotId;
+        private Long userId;
+        private boolean deviceTokenAccess;
+        private LocalDateTime createdAt;
+        private List<Long> orderedDistributionIds = Collections.emptyList();
+
+        public String getSnapshotId() {
+            return snapshotId;
+        }
+
+        public void setSnapshotId(String snapshotId) {
+            this.snapshotId = snapshotId;
+        }
+
+        public Long getUserId() {
+            return userId;
+        }
+
+        public void setUserId(Long userId) {
+            this.userId = userId;
+        }
+
+        public boolean isDeviceTokenAccess() {
+            return deviceTokenAccess;
+        }
+
+        public void setDeviceTokenAccess(boolean deviceTokenAccess) {
+            this.deviceTokenAccess = deviceTokenAccess;
+        }
+
+        public LocalDateTime getCreatedAt() {
+            return createdAt;
+        }
+
+        public void setCreatedAt(LocalDateTime createdAt) {
+            this.createdAt = createdAt;
+        }
+
+        public List<Long> getOrderedDistributionIds() {
+            return orderedDistributionIds;
+        }
+
+        public void setOrderedDistributionIds(List<Long> orderedDistributionIds) {
+            this.orderedDistributionIds = orderedDistributionIds;
+        }
     }
 }

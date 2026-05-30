@@ -47,6 +47,8 @@ public class MediaSource {
 
     private Boolean enabled;
 
+    private String storageMode;
+
     private LocalDateTime lastScanAt;
 
     @TableField(fill = FieldFill.INSERT)

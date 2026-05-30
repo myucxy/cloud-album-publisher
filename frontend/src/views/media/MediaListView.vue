@@ -44,7 +44,10 @@
                       <div :style="sourceCardStyle(source)" @click="selectSource(source)">
                         <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start">
                           <div style="min-width:0; flex:1">
-                            <div style="font-weight:500; word-break:break-all">{{ source.sourceName || sourceTypeLabel(source.sourceType) }}</div>
+                            <div style="font-weight:500; word-break:break-all">
+                              {{ source.sourceName || sourceTypeLabel(source.sourceType) }}
+                              <a-tag v-if="source.storageMode === 'IMPORTED'" color="orange" size="small" style="margin-left:4px">导入</a-tag>
+                            </div>
                             <div style="color:#8c8c8c; font-size:12px; margin-top:4px">
                               {{ sourceSummaryText(source) }}
                             </div>
@@ -367,6 +370,17 @@
           </div>
         </a-form-item>
 
+        <a-form-item label="存储模式">
+          <a-radio-group v-model:value="mediaSourceForm.storageMode" :disabled="editingMediaSourceId && mediaSourceForm.storageMode === 'IMPORTED'">
+            <a-radio value="EXTERNAL_CACHE">实时缓存模式</a-radio>
+            <a-radio value="IMPORTED">导入模式</a-radio>
+          </a-radio-group>
+          <div style="font-size:12px; color:#8c8c8c; margin-top:4px">
+            <template v-if="mediaSourceForm.storageMode === 'IMPORTED'">文件将永久导入到系统存储，不依赖外部源。已导入模式不可切换回缓存模式。</template>
+            <template v-else>首次访问时从外部源下载并缓存，外部源不可用时内容无法访问。</template>
+          </div>
+        </a-form-item>
+
         <a-form-item label="启用状态">
           <a-switch v-model:checked="mediaSourceForm.enabled" checked-children="启用" un-checked-children="停用" />
         </a-form-item>
@@ -402,6 +416,14 @@
             @click="applyExternalBrowseToLibrary"
           >
             在媒体管理中打开当前目录
+          </a-button>
+          <a-button
+            v-if="browseStorageMode === 'IMPORTED' && browseSelectionMode !== 'bind'"
+            type="primary"
+            :loading="importLoading"
+            @click="importCurrentDirectory"
+          >
+            导入当前目录
           </a-button>
         </a-space>
       </div>
@@ -452,14 +474,19 @@
           <template v-if="column.key === 'action'">
             <a-space>
               <a-button v-if="record.directory" type="link" size="small" @click="enterBrowseDirectory(record)">进入</a-button>
-              <a-button
-                v-else-if="browseSelectionMode !== 'bind'"
-                type="link"
-                size="small"
-                @click="viewDetail(record)"
-              >
-                预览
-              </a-button>
+              <template v-else-if="browseSelectionMode !== 'bind'">
+                <a-button type="link" size="small" @click="viewDetail(record)">预览</a-button>
+                <a-button
+                  v-if="browseStorageMode === 'IMPORTED' && record.importable && !record.importedMediaId"
+                  type="link"
+                  size="small"
+                  :loading="importLoading"
+                  @click="importSingleFile(record)"
+                >
+                  导入
+                </a-button>
+                <a-tag v-if="record.importedMediaId" color="green" size="small">已导入</a-tag>
+              </template>
             </a-space>
           </template>
         </template>
@@ -698,6 +725,8 @@ const browseRootPath = ref('/')
 const browseBoundPath = ref('')
 const browseBoundPathName = ref('')
 const browseItems = ref([])
+const browseStorageMode = ref('EXTERNAL_CACHE')
+const importLoading = ref(false)
 
 const externalBrowseSource = ref(null)
 const externalBrowsePath = ref('')
@@ -916,6 +945,7 @@ function createMediaSourceForm(sourceType = 'SMB') {
       password: ''
     },
     enabled: true,
+    storageMode: 'EXTERNAL_CACHE',
     boundPath: '/',
     boundPathName: ''
   }
@@ -1132,6 +1162,7 @@ function openEditMediaSource(source) {
       password: ''
     },
     enabled: !!source.enabled,
+    storageMode: source.storageMode || 'EXTERNAL_CACHE',
     boundPath: normalizePath(source.boundPath || sourceRootPath(source)),
     boundPathName: source.boundPathName || ''
   }
@@ -1233,6 +1264,7 @@ async function submitMediaSource() {
     boundPath: normalizePath(mediaSourceForm.value.boundPath || mediaSourceForm.value.config?.rootPath || '/'),
     boundPathName: mediaSourceForm.value.boundPathName?.trim() || undefined,
     enabled: !!mediaSourceForm.value.enabled,
+    storageMode: mediaSourceForm.value.storageMode || 'EXTERNAL_CACHE',
     config: buildSourceConfigPayload(),
     credentials: buildSourceCredentialsPayload()
   }
@@ -1304,6 +1336,7 @@ function closeBrowseModal() {
   browseBoundPath.value = ''
   browseBoundPathName.value = ''
   browseItems.value = []
+  browseStorageMode.value = 'EXTERNAL_CACHE'
 }
 
 async function loadBrowse(path = browseCurrentPath.value) {
@@ -1329,6 +1362,7 @@ async function loadBrowse(path = browseCurrentPath.value) {
     browseCurrentPath.value = normalizePath(res.data?.currentPath || targetPath)
     browseBoundPath.value = res.data?.boundPath ? normalizePath(res.data.boundPath) : browseBoundPath.value
     browseBoundPathName.value = res.data?.boundPathName || browseBoundPathName.value
+    browseStorageMode.value = res.data?.storageMode || 'EXTERNAL_CACHE'
     browseItems.value = res.data?.items || []
   } finally {
     browseLoading.value = false
@@ -1337,6 +1371,43 @@ async function loadBrowse(path = browseCurrentPath.value) {
 
 async function refreshBrowse() {
   await loadBrowse(browseCurrentPath.value)
+}
+
+async function importSingleFile(record) {
+  const sourceId = browseMediaSource.value?.id ?? browseMediaSource.value?.sourceId
+  if (!sourceId) return
+  importLoading.value = true
+  try {
+    await mediaSourceApi.importMedia(sourceId, { paths: [record.path] })
+    message.success(`已导入: ${record.name}`)
+    await loadBrowse(browseCurrentPath.value)
+  } catch (e) {
+    message.error('导入失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    importLoading.value = false
+  }
+}
+
+async function importCurrentDirectory() {
+  const sourceId = browseMediaSource.value?.id ?? browseMediaSource.value?.sourceId
+  if (!sourceId) return
+  const importablePaths = browseItems.value
+    .filter(item => !item.directory && item.importable && !item.importedMediaId)
+    .map(item => item.path)
+  if (importablePaths.length === 0) {
+    message.info('当前目录没有可导入的文件')
+    return
+  }
+  importLoading.value = true
+  try {
+    await mediaSourceApi.importMedia(sourceId, { paths: importablePaths })
+    message.success(`已导入 ${importablePaths.length} 个文件`)
+    await loadBrowse(browseCurrentPath.value)
+  } catch (e) {
+    message.error('批量导入失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    importLoading.value = false
+  }
 }
 
 async function navigateBrowseUp() {

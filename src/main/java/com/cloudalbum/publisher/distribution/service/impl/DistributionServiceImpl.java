@@ -1,11 +1,13 @@
 package com.cloudalbum.publisher.distribution.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cloudalbum.publisher.album.entity.Album;
 import com.cloudalbum.publisher.album.entity.AlbumMedia;
 import com.cloudalbum.publisher.album.mapper.AlbumMapper;
 import com.cloudalbum.publisher.album.mapper.AlbumMediaMapper;
+import com.cloudalbum.publisher.album.support.AlbumDisplaySettingsSupport;
 import com.cloudalbum.publisher.common.enums.ResultCode;
 import com.cloudalbum.publisher.common.exception.BusinessException;
 import com.cloudalbum.publisher.common.model.PageRequest;
@@ -62,6 +64,11 @@ public class DistributionServiceImpl implements DistributionService {
     @Override
     @Transactional
     public DistributionResponse createDistribution(Long userId, DistributionCreateRequest request) {
+        Album album = albumMapper.selectById(request.getAlbumId());
+        if (album == null || !userId.equals(album.getUserId())) {
+            throw new BusinessException(ResultCode.ALBUM_NOT_FOUND);
+        }
+
         Distribution dist = new Distribution();
         dist.setAlbumId(request.getAlbumId());
         dist.setUserId(userId);
@@ -69,6 +76,12 @@ public class DistributionServiceImpl implements DistributionService {
         dist.setLoopPlay(request.getLoopPlay());
         dist.setShuffle(request.getShuffle());
         dist.setItemDuration(request.getItemDuration());
+        applyDisplayOverrides(dist,
+                request.getTransitionStyle(),
+                request.getDisplayStyle(),
+                request.getDisplayVariant(),
+                request.getShowTimeAndDate(),
+                album);
         dist.setStatus("DRAFT");
         distributionMapper.insert(dist);
 
@@ -105,7 +118,24 @@ public class DistributionServiceImpl implements DistributionService {
         if (request.getLoopPlay() != null) dist.setLoopPlay(request.getLoopPlay());
         if (request.getShuffle() != null) dist.setShuffle(request.getShuffle());
         if (request.getItemDuration() != null) dist.setItemDuration(request.getItemDuration());
-        distributionMapper.updateById(dist);
+        if (request.isTransitionStylePresent()
+                || request.isDisplayStylePresent()
+                || request.isDisplayVariantPresent()
+                || request.isShowTimeAndDatePresent()) {
+            Album album = albumMapper.selectById(dist.getAlbumId());
+            if (album == null || !userId.equals(album.getUserId())) {
+                throw new BusinessException(ResultCode.ALBUM_NOT_FOUND);
+            }
+            applyDisplayOverrides(dist,
+                    request.isTransitionStylePresent() ? request.getTransitionStyle() : dist.getTransitionStyle(),
+                    request.isDisplayStylePresent() ? request.getDisplayStyle() : dist.getDisplayStyle(),
+                    request.isDisplayVariantPresent() ? request.getDisplayVariant() : dist.getDisplayVariant(),
+                    request.isShowTimeAndDatePresent() ? request.getShowTimeAndDate() : dist.getShowTimeAndDate(),
+                    album);
+            updateDistributionWithNullableOverrides(dist);
+        } else {
+            distributionMapper.updateById(dist);
+        }
 
         List<Long> deviceIds = request.getDeviceIds();
         List<Long> groupIds = request.getGroupIds();
@@ -423,6 +453,36 @@ public class DistributionServiceImpl implements DistributionService {
         }
     }
 
+    private void updateDistributionWithNullableOverrides(Distribution dist) {
+        distributionMapper.update(null, new LambdaUpdateWrapper<Distribution>()
+                .eq(Distribution::getId, dist.getId())
+                .set(Distribution::getName, dist.getName())
+                .set(Distribution::getLoopPlay, dist.getLoopPlay())
+                .set(Distribution::getShuffle, dist.getShuffle())
+                .set(Distribution::getItemDuration, dist.getItemDuration())
+                .set(Distribution::getTransitionStyle, dist.getTransitionStyle())
+                .set(Distribution::getDisplayStyle, dist.getDisplayStyle())
+                .set(Distribution::getDisplayVariant, dist.getDisplayVariant())
+                .set(Distribution::getShowTimeAndDate, dist.getShowTimeAndDate()));
+    }
+
+    private void applyDisplayOverrides(Distribution dist,
+                                       String transitionStyle,
+                                       String displayStyle,
+                                       String displayVariant,
+                                       Boolean showTimeAndDate,
+                                       Album album) {
+        String normalizedTransitionStyle = AlbumDisplaySettingsSupport.normalizeDistributionTransitionStyle(transitionStyle);
+        String normalizedDisplayStyle = AlbumDisplaySettingsSupport.normalizeDistributionDisplayStyle(displayStyle);
+        String effectiveDisplayStyle = StringUtils.hasText(normalizedDisplayStyle)
+                ? normalizedDisplayStyle
+                : AlbumDisplaySettingsSupport.resolveDisplayStyle(album.getDisplayStyle());
+        dist.setTransitionStyle(normalizedTransitionStyle);
+        dist.setDisplayStyle(normalizedDisplayStyle);
+        dist.setDisplayVariant(AlbumDisplaySettingsSupport.normalizeDistributionDisplayVariant(displayVariant, effectiveDisplayStyle));
+        dist.setShowTimeAndDate(showTimeAndDate);
+    }
+
     private DistributionResponse toResponse(Distribution dist, List<Long> deviceIds, List<Long> groupIds) {
         return DistributionResponse.builder()
                 .id(dist.getId())
@@ -431,6 +491,10 @@ public class DistributionServiceImpl implements DistributionService {
                 .loopPlay(dist.getLoopPlay())
                 .shuffle(dist.getShuffle())
                 .itemDuration(dist.getItemDuration())
+                .transitionStyle(dist.getTransitionStyle())
+                .displayStyle(dist.getDisplayStyle())
+                .displayVariant(dist.getDisplayVariant())
+                .showTimeAndDate(dist.getShowTimeAndDate())
                 .status(dist.getStatus())
                 .deviceIds(deviceIds == null ? Collections.emptyList() : deviceIds)
                 .groupIds(groupIds == null ? Collections.emptyList() : groupIds)

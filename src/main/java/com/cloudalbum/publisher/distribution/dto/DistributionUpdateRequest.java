@@ -1,5 +1,6 @@
 package com.cloudalbum.publisher.distribution.dto;
 
+import com.fasterxml.jackson.annotation.JsonSetter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
@@ -27,9 +28,57 @@ public class DistributionUpdateRequest {
     @Min(value = 1, message = "展示时长不能小于1秒")
     private Integer itemDuration;
 
+    @Schema(description = "播放转场覆盖，空表示使用相册设置")
+    private String transitionStyle;
+
+    @Schema(description = "展示布局覆盖，空表示使用相册设置")
+    private String displayStyle;
+
+    @Schema(description = "展示布局子样式覆盖，空表示使用相册设置")
+    private String displayVariant;
+
+    @Schema(description = "是否显示时间日期覆盖，空表示使用相册设置")
+    private Boolean showTimeAndDate;
+
+    @Getter
+    private boolean transitionStylePresent;
+
+    @Getter
+    private boolean displayStylePresent;
+
+    @Getter
+    private boolean displayVariantPresent;
+
+    @Getter
+    private boolean showTimeAndDatePresent;
+
     @Schema(description = "关联的设备ID列表（全量替换）")
     private List<Long> deviceIds;
 
     @Schema(description = "关联的设备组ID列表（全量替换）")
     private List<Long> groupIds;
+
+    @JsonSetter("transitionStyle")
+    public void setTransitionStyle(String transitionStyle) {
+        this.transitionStyle = transitionStyle;
+        this.transitionStylePresent = true;
+    }
+
+    @JsonSetter("displayStyle")
+    public void setDisplayStyle(String displayStyle) {
+        this.displayStyle = displayStyle;
+        this.displayStylePresent = true;
+    }
+
+    @JsonSetter("displayVariant")
+    public void setDisplayVariant(String displayVariant) {
+        this.displayVariant = displayVariant;
+        this.displayVariantPresent = true;
+    }
+
+    @JsonSetter("showTimeAndDate")
+    public void setShowTimeAndDate(Boolean showTimeAndDate) {
+        this.showTimeAndDate = showTimeAndDate;
+        this.showTimeAndDatePresent = true;
+    }
 }

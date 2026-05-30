@@ -7,5 +7,6 @@ export const mediaSourceApi = {
   remove: id => request.delete(`/media-sources/${id}`),
   browse: (id, params) => request.get(`/media-sources/${id}/browse`, { params }),
   browseDraft: data => request.post('/media-sources/browse', data),
-  listMedia: (id, params) => request.get(`/media-sources/${id}/media`, { params })
+  listMedia: (id, params) => request.get(`/media-sources/${id}/media`, { params }),
+  importMedia: (id, data) => request.post(`/media-sources/${id}/import`, data)
 }

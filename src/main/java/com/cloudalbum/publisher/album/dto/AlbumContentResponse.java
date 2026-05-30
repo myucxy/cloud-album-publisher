@@ -21,4 +21,9 @@ public class AlbumContentResponse {
     private String thumbnailUrl;
     private Integer sortOrder;
     private Integer duration;
+    private Double focalPointX;
+    private Double focalPointY;
+    private String focalPointProvider;
+    private Double focalPointConfidence;
+    private String focalPointRegionType;
 }

@@ -3,6 +3,28 @@ import { onBeforeUnmount, ref, unref, watch } from 'vue'
 
 const API_PREFIX = '/api/v1'
 
+// Module-level blob URL cache: normalizedUrl → { objectUrl, refCount }
+const blobCache = new Map()
+
+function acquireBlobUrl(normalizedUrl) {
+  const entry = blobCache.get(normalizedUrl)
+  if (entry) {
+    entry.refCount++
+    return entry.objectUrl
+  }
+  return null
+}
+
+function releaseBlobUrl(normalizedUrl) {
+  const entry = blobCache.get(normalizedUrl)
+  if (!entry) return
+  entry.refCount--
+  if (entry.refCount <= 0) {
+    URL.revokeObjectURL(entry.objectUrl)
+    blobCache.delete(normalizedUrl)
+  }
+}
+
 export function isProtectedApiUrl(src) {
   if (!src || src.startsWith('blob:') || src.startsWith('data:')) {
     return false
@@ -47,20 +69,20 @@ function resolveSourceValue(source) {
 export function useSecureObjectUrl(source) {
   const resolvedSrc = ref('')
   const error = ref(null)
-  let objectUrl = ''
+  let currentNormalizedUrl = ''
   let requestToken = 0
 
-  function clearObjectUrl() {
-    if (objectUrl) {
-      URL.revokeObjectURL(objectUrl)
-      objectUrl = ''
+  function clearCurrentUrl() {
+    if (currentNormalizedUrl) {
+      releaseBlobUrl(currentNormalizedUrl)
+      currentNormalizedUrl = ''
     }
   }
 
   async function resolveSource(src) {
     requestToken += 1
     const currentToken = requestToken
-    clearObjectUrl()
+    clearCurrentUrl()
     resolvedSrc.value = ''
     error.value = null
 
@@ -77,8 +99,18 @@ export function useSecureObjectUrl(source) {
       return
     }
 
+    const requestUrl = normalizeProtectedRequestUrl(src)
+
+    // Check cache first
+    const cached = acquireBlobUrl(requestUrl)
+    if (cached) {
+      if (currentToken !== requestToken) return
+      currentNormalizedUrl = requestUrl
+      resolvedSrc.value = cached
+      return
+    }
+
     try {
-      const requestUrl = normalizeProtectedRequestUrl(src)
       const blob = await request.get(requestUrl, {
         responseType: 'blob'
       })
@@ -87,7 +119,9 @@ export function useSecureObjectUrl(source) {
         return
       }
 
-      objectUrl = URL.createObjectURL(blob)
+      const objectUrl = URL.createObjectURL(blob)
+      blobCache.set(requestUrl, { objectUrl, refCount: 1 })
+      currentNormalizedUrl = requestUrl
       resolvedSrc.value = objectUrl
     } catch (err) {
       if (currentToken !== requestToken) {
@@ -102,7 +136,7 @@ export function useSecureObjectUrl(source) {
 
   onBeforeUnmount(() => {
     requestToken += 1
-    clearObjectUrl()
+    clearCurrentUrl()
   })
 
   return {

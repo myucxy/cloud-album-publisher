@@ -4,9 +4,13 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import com.cloudalbum.publisher.android.data.model.DevicePullChunkResponse;
 import com.cloudalbum.publisher.android.data.model.DevicePullResponse;
 import com.cloudalbum.publisher.android.data.repository.CloudAlbumRepository;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -20,6 +24,7 @@ public class PullSyncCoordinator {
     }
 
     private static final long SYNC_INTERVAL_MS = 30000L;
+    private static final int MAX_CHUNK_RETRIES = 500;
 
     private final CloudAlbumRepository repository;
     private final Listener listener;
@@ -60,7 +65,7 @@ public class PullSyncCoordinator {
             @Override
             public void run() {
                 try {
-                    final DevicePullResponse response = repository.pullCurrent();
+                    final DevicePullResponse response = pullFullContent();
                     if (stopped) return;
                     handler.post(new Runnable() {
                         @Override
@@ -83,6 +88,46 @@ public class PullSyncCoordinator {
                 }
             }
         });
+    }
+
+    private DevicePullResponse pullFullContent() throws IOException {
+        try {
+            return pullChunked();
+        } catch (IOException e) {
+            String message = e.getMessage();
+            if (message != null && (message.contains("404") || message.contains("Not Found"))) {
+                Log.d(TAG, "Chunk endpoint not available, falling back to full pull");
+                return repository.pullCurrent();
+            }
+            throw e;
+        }
+    }
+
+    private DevicePullResponse pullChunked() throws IOException {
+        List<DevicePullResponse.DistributionItem> allDistributions = new ArrayList<DevicePullResponse.DistributionItem>();
+        String pulledAt = null;
+        String cursor = null;
+        int safetyCounter = 0;
+
+        do {
+            DevicePullChunkResponse chunk = repository.pullCurrentChunk(cursor);
+            if (chunk.getDistributions() != null) {
+                allDistributions.addAll(chunk.getDistributions());
+            }
+            if (chunk.getPulledAt() != null) {
+                pulledAt = chunk.getPulledAt();
+            }
+            if (!chunk.isHasMore()) {
+                break;
+            }
+            cursor = chunk.getCursor();
+            safetyCounter += 1;
+        } while (cursor != null && safetyCounter < MAX_CHUNK_RETRIES);
+
+        DevicePullResponse merged = new DevicePullResponse();
+        merged.setDistributions(allDistributions);
+        merged.setPulledAt(pulledAt);
+        return merged;
     }
 
     public void stop() {

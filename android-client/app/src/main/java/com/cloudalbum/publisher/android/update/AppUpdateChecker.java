@@ -36,7 +36,7 @@ import java.util.concurrent.Executors;
 public class AppUpdateChecker {
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static final String APK_MIME_TYPE = "application/vnd.android.package-archive";
-    private static boolean checkedInProcess = false;
+    private static volatile boolean checkedInProcess = false;
 
     private final AppCompatActivity activity;
     private final CloudAlbumRepository repository;

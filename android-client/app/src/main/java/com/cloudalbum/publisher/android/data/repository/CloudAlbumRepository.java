@@ -6,6 +6,7 @@ import com.cloudalbum.publisher.android.BuildConfig;
 import com.cloudalbum.publisher.android.data.api.CloudAlbumApi;
 import com.cloudalbum.publisher.android.data.model.ApiResult;
 import com.cloudalbum.publisher.android.data.model.AppUpdateResponse;
+import com.cloudalbum.publisher.android.data.model.DevicePullChunkResponse;
 import com.cloudalbum.publisher.android.data.model.DevicePullResponse;
 import com.cloudalbum.publisher.android.data.model.DeviceResponse;
 import com.cloudalbum.publisher.android.data.model.DeviceSelfRegisterRequest;
@@ -16,10 +17,7 @@ import java.io.IOException;
 import java.net.SocketTimeoutException;
 import java.util.concurrent.TimeUnit;
 
-import okhttp3.Interceptor;
 import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
 import retrofit2.Call;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
@@ -29,7 +27,16 @@ public class CloudAlbumRepository {
     private static final int CODE_DEVICE_NOT_FOUND = 404;
     private static final int CODE_DEVICE_NOT_BOUND = 409;
 
+    public static final OkHttpClient SHARED_CLIENT = new OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            .build();
+
     private final DeviceSessionRepository sessionRepository;
+    private final Object apiLock = new Object();
+    private volatile CloudAlbumApi cachedApi;
+    private volatile String cachedBaseUrl;
 
     public CloudAlbumRepository(Context context) {
         Context appContext = context.getApplicationContext();
@@ -41,7 +48,7 @@ public class CloudAlbumRepository {
     }
 
     public DeviceResponse selfRegisterCurrentDevice() throws IOException {
-        CloudAlbumApi api = createApi(sessionRepository.getServerBaseUrl(), null);
+        CloudAlbumApi api = resolveApi(sessionRepository.getServerBaseUrl());
         DeviceSelfRegisterRequest request = new DeviceSelfRegisterRequest(
                 sessionRepository.getDeviceUid(),
                 sessionRepository.getDeviceType(),
@@ -55,8 +62,9 @@ public class CloudAlbumRepository {
     }
 
     public DeviceTokenResponse issueDeviceToken() throws IOException {
-        CloudAlbumApi api = createApi(sessionRepository.getServerBaseUrl(), null);
-        ApiResult<DeviceTokenResponse> result = execute(api.createDeviceToken(new DeviceTokenRequest(sessionRepository.getDeviceUid())));
+        CloudAlbumApi api = resolveApi(sessionRepository.getServerBaseUrl());
+        ApiResult<DeviceTokenResponse> result = execute(api.createDeviceToken(
+                new DeviceTokenRequest(sessionRepository.getDeviceUid()), null));
         if (result.getData() == null || result.getData().getAccessToken() == null || result.getData().getAccessToken().trim().isEmpty()) {
             throw new IOException(result.getMessage() == null ? "设备令牌为空，请先在后台完成绑定" : result.getMessage());
         }
@@ -66,47 +74,66 @@ public class CloudAlbumRepository {
     }
 
     public AppUpdateResponse checkAndroidUpdate() throws IOException {
-        CloudAlbumApi api = createApi(sessionRepository.getServerBaseUrl(), null);
+        CloudAlbumApi api = resolveApi(sessionRepository.getServerBaseUrl());
         ApiResult<AppUpdateResponse> result = execute(api.checkUpdate(
                 "android",
                 BuildConfig.VERSION_NAME,
                 BuildConfig.VERSION_CODE,
-                "stable"
-        ));
-        return result.getData();
+                "stable",
+                null));
+        AppUpdateResponse data = result.getData();
+        if (data != null && data.getDownloadUrl() != null && !data.getDownloadUrl().isEmpty()) {
+            String url = data.getDownloadUrl().trim();
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                String base = sessionRepository.getServerBaseUrl();
+                if (base != null && !base.isEmpty()) {
+                    String normalizedBase = base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
+                    String normalizedPath = url.startsWith("/") ? url : "/" + url;
+                    data.setDownloadUrl(normalizedBase + normalizedPath);
+                }
+            }
+        }
+        return data;
     }
 
     public DevicePullResponse pullCurrent() throws IOException {
-        CloudAlbumApi api = createApi(sessionRepository.getServerBaseUrl(), sessionRepository.getDeviceAccessToken());
-        ApiResult<DevicePullResponse> result = execute(api.pullCurrent());
+        String token = bearerToken();
+        CloudAlbumApi api = resolveApi(sessionRepository.getServerBaseUrl());
+        ApiResult<DevicePullResponse> result = execute(api.pullCurrent(token));
         return result.getData();
     }
 
-    private CloudAlbumApi createApi(String baseUrl, final String bearerToken) {
-        OkHttpClient.Builder clientBuilder = new OkHttpClient.Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .writeTimeout(15, TimeUnit.SECONDS)
-                .addInterceptor(new Interceptor() {
-                    @Override
-                    public Response intercept(Chain chain) throws IOException {
-                        Request request = chain.request();
-                        if (bearerToken != null && !bearerToken.trim().isEmpty()) {
-                            request = request.newBuilder()
-                                    .header("Authorization", "Bearer " + bearerToken)
-                                    .build();
-                        }
-                        return chain.proceed(request);
-                    }
-                });
+    public DevicePullChunkResponse pullCurrentChunk(String cursor) throws IOException {
+        String token = bearerToken();
+        CloudAlbumApi api = resolveApi(sessionRepository.getServerBaseUrl());
+        ApiResult<DevicePullChunkResponse> result = execute(api.pullCurrentChunk(token, cursor));
+        return result.getData();
+    }
 
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl(baseUrl + "/")
-                .client(clientBuilder.build())
-                .addConverterFactory(GsonConverterFactory.create())
-                .build();
+    private String bearerToken() {
+        String token = sessionRepository.getDeviceAccessToken();
+        return (token != null && !token.trim().isEmpty()) ? "Bearer " + token : null;
+    }
 
-        return retrofit.create(CloudAlbumApi.class);
+    private CloudAlbumApi resolveApi(String baseUrl) {
+        CloudAlbumApi existing = cachedApi;
+        if (existing != null && baseUrl.equals(cachedBaseUrl)) {
+            return existing;
+        }
+        synchronized (apiLock) {
+            if (cachedApi != null && baseUrl.equals(cachedBaseUrl)) {
+                return cachedApi;
+            }
+            Retrofit retrofit = new Retrofit.Builder()
+                    .baseUrl(baseUrl + "/")
+                    .client(SHARED_CLIENT)
+                    .addConverterFactory(GsonConverterFactory.create())
+                    .build();
+            CloudAlbumApi api = retrofit.create(CloudAlbumApi.class);
+            cachedApi = api;
+            cachedBaseUrl = baseUrl;
+            return api;
+        }
     }
 
     private <T> ApiResult<T> execute(Call<ApiResult<T>> call) throws IOException {

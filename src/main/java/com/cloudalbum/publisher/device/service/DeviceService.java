@@ -32,6 +32,8 @@ public interface DeviceService {
 
     DevicePullResponse pullContentByDevice(Long deviceId);
 
+    DevicePullChunkResponse pullContentByDeviceChunk(Long deviceId, String cursor);
+
     List<DeviceGroupResponse> listGroups(Long userId);
 
     DeviceGroupResponse createGroup(Long userId, DeviceGroupCreateRequest request);

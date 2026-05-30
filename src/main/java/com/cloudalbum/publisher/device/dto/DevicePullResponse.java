@@ -175,5 +175,20 @@ public class DevicePullResponse {
 
         @Schema(description = "最终展示时长（秒）")
         private Integer itemDuration;
+
+        @Schema(description = "焦点 X 坐标 (0.0-1.0)")
+        private Double focalPointX;
+
+        @Schema(description = "焦点 Y 坐标 (0.0-1.0)")
+        private Double focalPointY;
+
+        @Schema(description = "焦点区域类型: FACE / SALIENCY / CENTER")
+        private String focalPointRegionType;
+
+        @Schema(description = "焦点区域宽度 (0.0-1.0)")
+        private Double focalPointRegionWidth;
+
+        @Schema(description = "焦点区域高度 (0.0-1.0)")
+        private Double focalPointRegionHeight;
     }
 }

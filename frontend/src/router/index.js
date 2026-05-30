@@ -19,7 +19,10 @@ const routes = [
       { path: 'admin/stats', component: () => import('@/views/admin/AdminStatsView.vue'), meta: { adminOnly: true } },
       { path: 'admin/users', component: () => import('@/views/admin/UserListView.vue'), meta: { adminOnly: true } },
       { path: 'admin/reviews', component: () => import('@/views/admin/ReviewListView.vue'), meta: { adminOnly: true } },
-      { path: 'admin/audit-logs', component: () => import('@/views/admin/AuditLogListView.vue'), meta: { adminOnly: true } }
+      { path: 'admin/audit-logs', component: () => import('@/views/admin/AuditLogListView.vue'), meta: { adminOnly: true } },
+      { path: 'focal-point', component: () => import('@/views/focalpoint/FocalPointListView.vue') },
+      { path: 'focal-point/albums/:albumId', component: () => import('@/views/focalpoint/FocalPointAlbumView.vue') },
+      { path: 'focal-point/llm-configs', component: () => import('@/views/focalpoint/LlmConfigListView.vue') }
     ]
   },
   { path: '/:pathMatch(.*)*', redirect: '/' }

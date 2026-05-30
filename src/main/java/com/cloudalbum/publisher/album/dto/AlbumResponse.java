@@ -38,6 +38,11 @@ public class AlbumResponse {
     private String displayStyle;
     private String displayVariant;
     private Boolean showTimeAndDate;
+    private Boolean focalPointEnabled;
+    private String focalPointProvider;
+    private Integer contentCount;
+    private Integer focalPointDetectedCount;
+    private Integer focalPointTotalCount;
     private String visibility;
     private String status;
     private Integer sortOrder;

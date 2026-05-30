@@ -2,7 +2,7 @@
   <a-layout style="min-height: 100vh">
     <a-layout-sider v-model:collapsed="collapsed" collapsible>
       <div class="logo">{{ collapsed ? '云影' : '智控云影' }}</div>
-      <a-menu theme="dark" mode="inline" :selected-keys="[route.path]" @click="onMenuClick">
+      <a-menu theme="dark" mode="inline" :selected-keys="menuSelectedKeys" @click="onMenuClick">
         <a-menu-item key="/albums">
           <picture-outlined />
           <span>相册管理</span>
@@ -18,6 +18,10 @@
         <a-menu-item key="/devices">
           <desktop-outlined />
           <span>设备管理</span>
+        </a-menu-item>
+        <a-menu-item key="/focal-point">
+          <aim-outlined />
+          <span>焦点管理</span>
         </a-menu-item>
         <a-menu-item v-if="isAdmin" key="/admin/users">
           <team-outlined />
@@ -78,7 +82,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   PictureOutlined, FileImageOutlined, DesktopOutlined, DeploymentUnitOutlined,
-  TeamOutlined, UserOutlined
+  TeamOutlined, UserOutlined, AimOutlined
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
@@ -94,11 +98,23 @@ const changePasswordForm = reactive({ oldPassword: '', newPassword: '', confirmP
 
 const isAdmin = computed(() => authStore.isAdmin)
 
+const menuSelectedKeys = computed(() => {
+  const path = route.path
+  if (path.startsWith('/focal-point')) return ['/focal-point']
+  if (path.startsWith('/albums')) return ['/albums']
+  if (path.startsWith('/admin/')) {
+    const key = '/' + path.split('/').slice(0, 3).join('/')
+    return [key]
+  }
+  return [path]
+})
+
 const titleMap = {
   '/albums': '相册管理',
   '/media': '媒体管理',
   '/devices': '设备管理',
   '/distributions': '内容分发',
+  '/focal-point': '焦点管理',
   '/admin/stats': '管理统计',
   '/admin/users': '用户管理',
   '/admin/reviews': '内容审核',

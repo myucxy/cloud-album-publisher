@@ -166,6 +166,10 @@ CREATE TABLE IF NOT EXISTS t_distribution (
     loop_play     TINYINT NOT NULL DEFAULT 1,
     shuffle       TINYINT NOT NULL DEFAULT 0,
     item_duration INT NOT NULL DEFAULT 10,
+    transition_style VARCHAR(20),
+    display_style VARCHAR(20),
+    display_variant VARCHAR(32),
+    show_time_and_date TINYINT,
     status        VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
     created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -183,6 +187,10 @@ CREATE TABLE IF NOT EXISTS t_distribution_device (
 );
 
 ALTER TABLE t_distribution_device ALTER COLUMN device_id BIGINT NULL;
+ALTER TABLE t_distribution ADD COLUMN IF NOT EXISTS transition_style VARCHAR(20);
+ALTER TABLE t_distribution ADD COLUMN IF NOT EXISTS display_style VARCHAR(20);
+ALTER TABLE t_distribution ADD COLUMN IF NOT EXISTS display_variant VARCHAR(32);
+ALTER TABLE t_distribution ADD COLUMN IF NOT EXISTS show_time_and_date TINYINT;
 ALTER TABLE t_distribution_device ADD COLUMN IF NOT EXISTS group_id BIGINT;
 CREATE INDEX IF NOT EXISTS idx_distribution_device_group_id ON t_distribution_device (group_id);
 
@@ -300,6 +308,7 @@ ALTER TABLE t_media_source ADD COLUMN IF NOT EXISTS root_path VARCHAR(500) NOT N
 ALTER TABLE t_media_source ADD COLUMN IF NOT EXISTS username VARCHAR(255) NOT NULL DEFAULT '';
 ALTER TABLE t_media_source ADD COLUMN IF NOT EXISTS password_ciphertext VARCHAR(1000);
 ALTER TABLE t_media_source ADD COLUMN IF NOT EXISTS enabled TINYINT NOT NULL DEFAULT 1;
+ALTER TABLE t_media_source ADD COLUMN IF NOT EXISTS storage_mode VARCHAR(20) NOT NULL DEFAULT 'EXTERNAL_CACHE';
 ALTER TABLE t_media_source ADD COLUMN IF NOT EXISTS last_scan_at DATETIME;
 ALTER TABLE t_media_source ADD COLUMN IF NOT EXISTS created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
 ALTER TABLE t_media_source ADD COLUMN IF NOT EXISTS updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
@@ -412,7 +421,45 @@ CREATE TABLE IF NOT EXISTS t_device_group_rel (
     CONSTRAINT uk_group_device UNIQUE (group_id, device_id)
 );
 
+-- ===================== 焦点检测 =====================
+
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS focal_point_enabled TINYINT NOT NULL DEFAULT 0;
+ALTER TABLE t_album ADD COLUMN IF NOT EXISTS focal_point_provider VARCHAR(32);
+
+ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS focal_point_x DOUBLE;
+ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS focal_point_y DOUBLE;
+ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS focal_point_provider VARCHAR(32);
+ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS focal_point_confidence DOUBLE;
+ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS focal_point_region_type VARCHAR(20);
+ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS focal_point_region_width DOUBLE;
+ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS focal_point_region_height DOUBLE;
+ALTER TABLE t_album_media ADD COLUMN IF NOT EXISTS focal_point_updated_at DATETIME;
+
+CREATE TABLE IF NOT EXISTS t_vision_llm_config (
+    id                BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id           BIGINT NOT NULL,
+    name              VARCHAR(100) NOT NULL,
+    api_endpoint      VARCHAR(500) NOT NULL,
+    api_key_encrypted VARCHAR(500) NOT NULL,
+    model_name        VARCHAR(100) NOT NULL,
+    max_tokens        INT NOT NULL DEFAULT 1024,
+    timeout_seconds   INT NOT NULL DEFAULT 30,
+    extra_params      TEXT,
+    enabled           TINYINT NOT NULL DEFAULT 1,
+    created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted           TINYINT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_vision_llm_config_user_id ON t_vision_llm_config (user_id);
+
 -- ===================== 初始化数据 =====================
 
 MERGE INTO t_role (code, name) KEY (code)
     VALUES ('ROLE_USER', '普通用户'), ('ROLE_ADMIN', '管理员');
+
+CREATE INDEX IF NOT EXISTS idx_distribution_user_status_created ON t_distribution (user_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_distribution_device_dist_device ON t_distribution_device (distribution_id, device_id);
+CREATE INDEX IF NOT EXISTS idx_distribution_device_dist_group ON t_distribution_device (distribution_id, group_id);
+CREATE INDEX IF NOT EXISTS idx_device_group_rel_device_group ON t_device_group_rel (device_id, group_id);
+CREATE INDEX IF NOT EXISTS idx_album_media_album_sort_id ON t_album_media (album_id, sort_order, id);
+CREATE INDEX IF NOT EXISTS idx_review_record_media_created ON t_review_record (media_id, created_at);

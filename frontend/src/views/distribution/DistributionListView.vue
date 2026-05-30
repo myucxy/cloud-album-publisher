@@ -33,9 +33,20 @@
           </div>
         </template>
         <template v-if="column.key === 'playOptions'">
-          <a-space size="small">
-            <a-tag>{{ record.loopPlay ? '循环播放' : '单次播放' }}</a-tag>
-            <a-tag>{{ record.shuffle ? '随机播放' : '顺序播放' }}</a-tag>
+          <a-space size="small" direction="vertical">
+            <a-space size="small" wrap>
+              <a-tag>{{ record.loopPlay ? '循环播放' : '单次播放' }}</a-tag>
+              <a-tag>{{ record.shuffle ? '随机播放' : '顺序播放' }}</a-tag>
+            </a-space>
+            <div style="color:#8c8c8c; font-size:12px">
+              转场：{{ overrideLabel(TRANSITION_STYLE_OPTIONS, record.transitionStyle) }}
+            </div>
+            <div style="color:#8c8c8c; font-size:12px">
+              布局：{{ displayOverrideLabel(record) }}
+            </div>
+            <div style="color:#8c8c8c; font-size:12px">
+              时间日期：{{ timeOverrideLabel(record.showTimeAndDate) }}
+            </div>
           </a-space>
         </template>
         <template v-if="column.key === 'status'">
@@ -108,6 +119,73 @@
         </a-form-item>
         <a-form-item>
           <a-checkbox v-model:checked="form.shuffle">随机播放</a-checkbox>
+        </a-form-item>
+        <a-divider orientation="left">播放与展示覆盖</a-divider>
+        <a-form-item label="播放转场">
+          <a-select v-model:value="form.transitionStyle">
+            <a-select-option :value="INHERIT_VALUE">使用相册设置</a-select-option>
+            <a-select-option v-for="option in TRANSITION_STYLE_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="展示布局">
+          <a-select v-model:value="form.displayStyle" @change="onDistributionDisplayStyleChange">
+            <a-select-option :value="INHERIT_VALUE">使用相册设置</a-select-option>
+            <a-select-option v-for="option in DISPLAY_STYLE_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item v-if="effectiveDistributionDisplayStyle === 'BENTO'" label="Bento 样式">
+          <a-radio-group v-model:value="form.displayVariant" style="width:100%">
+            <div class="distribution-layout-style-grid">
+              <label class="distribution-layout-style-card">
+                <a-radio :value="INHERIT_VALUE">使用相册设置</a-radio>
+                <div class="distribution-layout-style-desc">沿用相册当前配置的 Bento 样式</div>
+              </label>
+              <label v-for="option in BENTO_VARIANT_OPTIONS" :key="option.value" class="distribution-layout-style-card">
+                <a-radio :value="option.value">{{ option.label }}</a-radio>
+                <div class="distribution-layout-preview">
+                  <span
+                    v-for="(slot, index) in getBentoPreviewSlots(option.value)"
+                    :key="`${option.value}-${index}`"
+                    :style="getBentoPreviewSlotStyle(slot, option.value)"
+                  />
+                </div>
+              </label>
+            </div>
+          </a-radio-group>
+        </a-form-item>
+        <a-form-item v-else-if="effectiveDistributionDisplayStyle === 'FRAME_WALL'" label="相框数量">
+          <a-radio-group v-model:value="form.displayVariant" style="width:100%">
+            <div class="distribution-layout-style-grid">
+              <label class="distribution-layout-style-card">
+                <a-radio :value="INHERIT_VALUE">使用相册设置</a-radio>
+                <div class="distribution-layout-style-desc">沿用相册当前配置的相框数量</div>
+              </label>
+              <label v-for="option in FRAME_WALL_VARIANT_OPTIONS" :key="option.value" class="distribution-layout-style-card">
+                <a-radio :value="option.value">{{ option.label }}</a-radio>
+                <div class="distribution-layout-preview">
+                  <span
+                    v-for="(slot, index) in getFrameWallPreviewSlots(option.value)"
+                    :key="`${option.value}-${index}`"
+                    :style="getFrameWallPreviewSlotStyle(slot, option.value)"
+                  />
+                </div>
+              </label>
+            </div>
+          </a-radio-group>
+        </a-form-item>
+        <a-form-item v-else label="布局样式">
+          <a-alert type="info" show-icon message="当前布局没有额外样式可配置" description="Bento 拼贴和相框墙支持选择具体样式；单图播放、轮播墙和日历模式只需要选择布局方式。" />
+        </a-form-item>
+        <a-form-item label="时间日期">
+          <a-radio-group v-model:value="form.showTimeAndDate">
+            <a-radio :value="INHERIT_VALUE">使用相册设置</a-radio>
+            <a-radio :value="true">显示</a-radio>
+            <a-radio :value="false">隐藏</a-radio>
+          </a-radio-group>
         </a-form-item>
         <a-form-item label="目标设备">
           <a-select
@@ -267,7 +345,50 @@ import { albumApi } from '@/api/album'
 import { deviceApi } from '@/api/device'
 import SecureImage from '@/components/SecureImage.vue'
 import { DEFAULT_PAGE_SIZE } from '@/constants/pagination'
+import {
+  BENTO_VARIANT_OPTIONS,
+  DISPLAY_STYLE_OPTIONS,
+  FRAME_WALL_VARIANT_OPTIONS,
+  TRANSITION_STYLE_OPTIONS,
+  optionLabel
+} from '@/constants/albumDisplayOptions'
 
+const INHERIT_VALUE = '__INHERIT__'
+const BENTO_PREVIEW_SLOTS = {
+  DEFAULT: [
+    [0, 0, 3, 2], [3, 0, 1, 2], [0, 2, 1, 1], [1, 2, 2, 1], [3, 2, 1, 1]
+  ],
+  BENTO_1: [
+    [0, 0, 1, 1], [1, 0, 1, 1], [2, 0, 2, 1], [4, 2, 1, 1], [5, 2, 1, 1],
+    [0, 1, 2, 2], [2, 1, 2, 1], [4, 0, 2, 2], [2, 2, 2, 1]
+  ],
+  BENTO_2: [
+    [0, 0, 1, 2], [0, 2, 1.5, 1], [1, 0, 1.5, 1], [2.5, 0, 1.5, 1],
+    [3, 1, 1, 2], [1.5, 2, 1.5, 1], [1, 1, 1, 1], [2, 1, 1, 1]
+  ],
+  BENTO_3: [
+    [0, 0, 1, 1.6], [1, 0, 1, 1], [2, 0, 2, 1], [0, 1.6, 1, 1], [1, 1, 2, 1],
+    [3, 1, 1, 2], [0, 2.6, 2, 0.8], [2, 2, 1, 1], [0, 3.4, 3, 1]
+  ],
+  BENTO_4: [
+    [0, 0, 2, 1.4], [2, 0, 2, 1], [4, 0, 1, 2], [0, 1.4, 1, 1.6], [1, 1.4, 2, 1],
+    [3, 1, 1, 2], [4, 2, 1, 1], [1, 2.4, 2, 1]
+  ],
+  BENTO_5: [
+    [0, 0, 1, 1], [1, 0, 2, 1.4], [3, 0, 1, 1], [4, 0, 1, 1.8], [0, 1, 1, 1.4],
+    [1, 1.4, 1, 1], [2, 1.4, 2, 1.2], [0, 2.4, 2, 1], [2, 2.6, 1, 0.8], [3, 2.6, 2, 0.8]
+  ],
+  BENTO_6: [
+    [0, 0, 2, 2], [2, 0, 1, 1], [3, 0, 2, 1], [5, 0, 1, 1.5], [2, 1, 1.5, 1.2],
+    [3.5, 1, 1.5, 1.2], [0, 2, 1, 1], [1, 2, 2, 1], [3, 2.2, 3, 0.8]
+  ],
+  BENTO_7: [
+    [0, 0, 2, 1], [2, 0, 1, 1.3], [3, 0, 1, 1.3], [4, 0, 1, 1.3], [5, 0, 2, 1],
+    [0, 1, 1, 1], [1, 1, 1, 1], [0, 2, 1, 1], [1, 2, 1, 1], [0, 3, 2, 1],
+    [2, 1.3, 3, 1.4], [2, 2.7, 1, 1.3], [3, 2.7, 1, 1.3], [4, 2.7, 1, 1.3],
+    [5, 1, 1, 1], [6, 1, 1, 0.7], [5, 2, 1, 0.7], [6, 1.7, 1, 1], [5, 2.7, 2, 1.3]
+  ]
+}
 const distributions = ref([])
 const albumMetaMap = ref({})
 const total = ref(0)
@@ -296,6 +417,10 @@ const form = reactive({
   loopPlay: true,
   shuffle: false,
   itemDuration: 10,
+  transitionStyle: INHERIT_VALUE,
+  displayStyle: INHERIT_VALUE,
+  displayVariant: INHERIT_VALUE,
+  showTimeAndDate: INHERIT_VALUE,
   deviceIds: [],
   groupIds: []
 })
@@ -308,12 +433,12 @@ const ALBUM_PICKER_VISIBILITY_OPTIONS = [
 ]
 
 const columns = [
-  { title: '名称', dataIndex: 'name' },
-  { title: '相册', key: 'album', width: 260 },
-  { title: '播放配置', key: 'playOptions', width: 180 },
+  { title: '名称', dataIndex: 'name', width: 150, ellipsis: true },
+  { title: '相册', key: 'album', width: 240 },
+  { title: '播放配置', key: 'playOptions', width: 240 },
   { title: '单项时长', dataIndex: 'itemDuration', width: 100 },
   { title: '状态', key: 'status', width: 90 },
-  { title: '操作', key: 'action', width: 180 }
+  { title: '操作', key: 'action', width: 150 }
 ]
 
 const deviceSelectOptions = computed(() => devices.value.map(item => ({ value: item.id, label: item.name || `设备 #${item.id}` })))
@@ -331,6 +456,12 @@ const albumPickerDraftAlbum = computed(() => {
 const albumPickerVisibilityLabel = computed(() => {
   const current = ALBUM_PICKER_VISIBILITY_OPTIONS.find(option => option.value === albumPickerVisibility.value)
   return current?.label || '全部相册'
+})
+const effectiveDistributionDisplayStyle = computed(() => {
+  if (form.displayStyle !== INHERIT_VALUE) {
+    return form.displayStyle
+  }
+  return selectedAlbum.value?.displayStyle || 'SINGLE'
 })
 
 const expandedRowRender = (record) => {
@@ -405,6 +536,10 @@ function openCreate() {
     loopPlay: true,
     shuffle: false,
     itemDuration: 10,
+    transitionStyle: INHERIT_VALUE,
+    displayStyle: INHERIT_VALUE,
+    displayVariant: INHERIT_VALUE,
+    showTimeAndDate: INHERIT_VALUE,
     deviceIds: [],
     groupIds: []
   })
@@ -420,6 +555,10 @@ async function openEdit(record) {
     loopPlay: record.loopPlay,
     shuffle: record.shuffle,
     itemDuration: record.itemDuration,
+    transitionStyle: toFormOverride(record.transitionStyle),
+    displayStyle: toFormOverride(record.displayStyle),
+    displayVariant: toFormOverride(record.displayVariant),
+    showTimeAndDate: record.showTimeAndDate === null || record.showTimeAndDate === undefined ? INHERIT_VALUE : record.showTimeAndDate,
     deviceIds: [...(record.deviceIds || [])],
     groupIds: [...(record.groupIds || [])]
   })
@@ -492,6 +631,7 @@ function confirmChooseAlbum() {
   }
   form.albumId = albumPickerDraftAlbum.value.id
   selectedAlbum.value = albumPickerDraftAlbum.value
+  onDistributionDisplayStyleChange(form.displayStyle)
   albumPickerOpen.value = false
 }
 
@@ -515,6 +655,10 @@ async function submitForm() {
       loopPlay: form.loopPlay,
       shuffle: form.shuffle,
       itemDuration: form.itemDuration,
+      transitionStyle: fromFormOverride(form.transitionStyle),
+      displayStyle: fromFormOverride(form.displayStyle),
+      displayVariant: fromFormOverride(form.displayVariant),
+      showTimeAndDate: form.showTimeAndDate === INHERIT_VALUE ? null : form.showTimeAndDate,
       deviceIds: form.deviceIds,
       groupIds: form.groupIds
     }
@@ -548,6 +692,91 @@ async function deleteDistribution(id) {
   await distributionApi.remove(id)
   message.success('已删除')
   await load()
+}
+
+function toFormOverride(value) {
+  return value === null || value === undefined || value === '' ? INHERIT_VALUE : value
+}
+
+function fromFormOverride(value) {
+  return value === INHERIT_VALUE ? null : value
+}
+
+function overrideLabel(options, value) {
+  return value ? optionLabel(options, value, value) : '继承相册'
+}
+
+function displayOverrideLabel(record) {
+  if (!record.displayStyle) {
+    return '继承相册'
+  }
+  const styleLabel = optionLabel(DISPLAY_STYLE_OPTIONS, record.displayStyle, record.displayStyle)
+  if (!record.displayVariant) {
+    return styleLabel
+  }
+  const variantOptions = record.displayStyle === 'FRAME_WALL' ? FRAME_WALL_VARIANT_OPTIONS : BENTO_VARIANT_OPTIONS
+  return `${styleLabel} / ${optionLabel(variantOptions, record.displayVariant, record.displayVariant)}`
+}
+
+function timeOverrideLabel(value) {
+  if (value === null || value === undefined) {
+    return '继承相册'
+  }
+  return value ? '显示' : '隐藏'
+}
+
+function onDistributionDisplayStyleChange(style) {
+  const effectiveStyle = style === INHERIT_VALUE ? (selectedAlbum.value?.displayStyle || 'SINGLE') : style
+  if (effectiveStyle === 'BENTO') {
+    if (form.displayVariant !== INHERIT_VALUE && !String(form.displayVariant || '').startsWith('BENTO_') && form.displayVariant !== 'DEFAULT') {
+      form.displayVariant = INHERIT_VALUE
+    }
+  } else if (effectiveStyle === 'FRAME_WALL') {
+    if (form.displayVariant !== INHERIT_VALUE && !String(form.displayVariant || '').startsWith('FRAME_WALL_')) {
+      form.displayVariant = INHERIT_VALUE
+    }
+  } else {
+    form.displayVariant = INHERIT_VALUE
+  }
+}
+
+function getBentoPreviewSlots(value) {
+  return BENTO_PREVIEW_SLOTS[value] || BENTO_PREVIEW_SLOTS.DEFAULT
+}
+
+function getBentoPreviewSlotStyle(slot, value) {
+  const slots = getBentoPreviewSlots(value)
+  const maxX = Math.max(...slots.map(item => item[0] + item[2]))
+  const maxY = Math.max(...slots.map(item => item[1] + item[3]))
+  return {
+    left: `${slot[0] / maxX * 100}%`,
+    top: `${slot[1] / maxY * 100}%`,
+    width: `${slot[2] / maxX * 100}%`,
+    height: `${slot[3] / maxY * 100}%`
+  }
+}
+
+function getFrameWallPreviewSlots(value) {
+  const option = FRAME_WALL_VARIANT_OPTIONS.find(o => o.value === value) || FRAME_WALL_VARIANT_OPTIONS[3]
+  const { cols, rows } = option
+  const slots = []
+  for (let r = 0; r < rows; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      slots.push([c, r, 1, 1])
+    }
+  }
+  return slots
+}
+
+function getFrameWallPreviewSlotStyle(slot, value) {
+  const option = FRAME_WALL_VARIANT_OPTIONS.find(o => o.value === value) || FRAME_WALL_VARIANT_OPTIONS[3]
+  const { cols, rows } = option
+  return {
+    left: `${slot[0] / cols * 100}%`,
+    top: `${slot[1] / rows * 100}%`,
+    width: `${slot[2] / cols * 100}%`,
+    height: `${slot[3] / rows * 100}%`
+  }
 }
 
 function statusColor(status) {
@@ -634,6 +863,50 @@ function statusLabel(status) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+
+.distribution-layout-style-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.distribution-layout-style-card {
+  display: block;
+  padding: 10px;
+  border: 1px solid #f0f0f0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.distribution-layout-style-desc {
+  color: #8c8c8c;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.distribution-layout-preview {
+  position: relative;
+  height: 86px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #f5f7fb;
+}
+
+.distribution-layout-preview span {
+  position: absolute;
+  padding: 2px;
+  background: transparent;
+}
+
+.distribution-layout-preview span::after {
+  content: '';
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+  background: linear-gradient(135deg, #91caff, #b7eb8f);
 }
 
 @media (max-width: 1200px) {

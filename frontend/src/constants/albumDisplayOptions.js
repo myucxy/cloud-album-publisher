@@ -1,0 +1,39 @@
+export const TRANSITION_STYLE_OPTIONS = [
+  { value: 'NONE', label: '无转场' },
+  { value: 'FADE', label: '淡入淡出' },
+  { value: 'SLIDE', label: '滑动缩放' },
+  { value: 'CUBE', label: '立方体' },
+  { value: 'REVEAL', label: '圆形揭示' },
+  { value: 'FLIP', label: '翻页' },
+  { value: 'RANDOM', label: '随机' }
+]
+
+export const DISPLAY_STYLE_OPTIONS = [
+  { value: 'SINGLE', label: '单图播放' },
+  { value: 'BENTO', label: 'Bento 拼贴' },
+  { value: 'FRAME_WALL', label: '相框墙' },
+  { value: 'CAROUSEL', label: '轮播墙' },
+  { value: 'CALENDAR', label: '日历模式' }
+]
+
+export const BENTO_VARIANT_OPTIONS = [
+  { value: 'DEFAULT', label: '自动' },
+  { value: 'BENTO_1', label: '样式 1' },
+  { value: 'BENTO_2', label: '样式 2' },
+  { value: 'BENTO_3', label: '样式 3' },
+  { value: 'BENTO_4', label: '样式 4' },
+  { value: 'BENTO_5', label: '样式 5' },
+  { value: 'BENTO_6', label: '样式 6' },
+  { value: 'BENTO_7', label: '样式 7' }
+]
+
+export const FRAME_WALL_VARIANT_OPTIONS = [
+  { value: 'FRAME_WALL_2', label: '2 张', cols: 2, rows: 1 },
+  { value: 'FRAME_WALL_4', label: '4 张', cols: 2, rows: 2 },
+  { value: 'FRAME_WALL_6', label: '6 张', cols: 3, rows: 2 },
+  { value: 'FRAME_WALL_8', label: '8 张', cols: 4, rows: 2 }
+]
+
+export function optionLabel(options, value, fallback = '-') {
+  return options.find(option => option.value === value)?.label || fallback
+}

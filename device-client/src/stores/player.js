@@ -86,13 +86,33 @@ function saveNumberSetting(key, value) {
   localStorage.setItem(key, String(value))
 }
 
+const playableMediaListCache = new Map()
+
+function buildPlayableMediaListCacheKey(distribution) {
+  if (!distribution || !Array.isArray(distribution.mediaList)) {
+    return 'empty'
+  }
+
+  const list = distribution.mediaList
+  const lastItem = list[list.length - 1]
+  return `${distribution.id || 'noid'}|${list.length}|${distribution.shuffle ? 1 : 0}|${lastItem ? resolveMediaIdentity(lastItem) : ''}`
+}
+
 function getPlayableMediaList(distribution) {
   if (!distribution || !Array.isArray(distribution.mediaList)) {
     return []
   }
 
+  const cacheKey = buildPlayableMediaListCacheKey(distribution)
+  const cached = playableMediaListCache.get(cacheKey)
+  if (cached) {
+    return cached
+  }
+
   const sorted = [...distribution.mediaList].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-  return distribution.shuffle ? stableShuffle(sorted, distribution.id) : sorted
+  const result = distribution.shuffle ? stableShuffle(sorted, distribution.id) : sorted
+  playableMediaListCache.set(cacheKey, result)
+  return result
 }
 
 function getSortedBgmList(distribution) {
@@ -365,15 +385,29 @@ export const usePlayerStore = defineStore('player', () => {
     const previousBgmIdentity = resolveBgmIdentity(currentBgm.value)
 
     try {
-      const res = await deviceApi.pullCurrent()
-      distributions.value = res.data?.distributions || []
-      pulledAt.value = res.data?.pulledAt || ''
+      let aggregatedDistributions = []
+      let pulledAtValue = ''
+      let cursor = undefined
+      let safetyCounter = 0
+      playableMediaListCache.clear()
+
+      do {
+        const res = await deviceApi.pullCurrentChunk(cursor)
+        const data = res.data || {}
+        pulledAtValue = data.pulledAt || pulledAtValue
+        aggregatedDistributions = aggregatedDistributions.concat(data.distributions || [])
+        cursor = data.hasMore ? data.cursor : undefined
+        safetyCounter += 1
+      } while (cursor && safetyCounter < 500)
+
+      distributions.value = aggregatedDistributions
+      pulledAt.value = pulledAtValue
       errorMessage.value = ''
       syncDisabledDistributionSelection()
       restoreSelection(previousDistributionId, previousMediaIdentity)
       restoreBgmSelection(previousBgmIdentity)
       syncStatus.value = 'ready'
-      return res.data
+      return { distributions: aggregatedDistributions, pulledAt: pulledAtValue }
     } catch (error) {
       syncStatus.value = 'error'
       errorMessage.value = error.response?.data?.message || error.message || '同步失败'

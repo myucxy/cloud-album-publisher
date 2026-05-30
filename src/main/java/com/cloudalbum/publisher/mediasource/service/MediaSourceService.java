@@ -15,6 +15,7 @@ import com.cloudalbum.publisher.mediasource.dto.MediaSourceUpdateRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+import java.io.InputStream;
 import java.util.List;
 
 public interface MediaSourceService {
@@ -53,4 +54,6 @@ public interface MediaSourceService {
                            HttpServletResponse response);
 
     List<MediaResponse> importMedia(Long mediaSourceId, Long userId, MediaSourceImportRequest request);
+
+    InputStream openExternalContent(Long mediaSourceId, Long userId, String path);
 }

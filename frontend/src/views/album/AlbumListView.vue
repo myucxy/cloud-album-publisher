@@ -110,43 +110,12 @@ import { PlusOutlined, PictureOutlined, EditOutlined, DeleteOutlined } from '@an
 import { albumApi } from '@/api/album'
 import SecureImage from '@/components/SecureImage.vue'
 import { DEFAULT_PAGE_SIZE } from '@/constants/pagination'
-
-const TRANSITION_STYLE_OPTIONS = [
-  { value: 'NONE', label: '无转场' },
-  { value: 'FADE', label: '淡入淡出' },
-  { value: 'SLIDE', label: '滑动缩放' },
-  { value: 'CUBE', label: '立方体' },
-  { value: 'REVEAL', label: '圆形揭示' },
-  { value: 'FLIP', label: '翻页' },
-  { value: 'RANDOM', label: '随机' }
-]
-
-const DISPLAY_STYLE_OPTIONS = [
-  { value: 'SINGLE', label: '单图播放' },
-  { value: 'BENTO', label: 'Bento 拼贴' },
-  { value: 'FRAME_WALL', label: '相框墙' },
-  { value: 'CAROUSEL', label: '轮播墙' }
-]
-
-DISPLAY_STYLE_OPTIONS.push({ value: 'CALENDAR', label: '日历模式' })
-
-const BENTO_VARIANT_OPTIONS = [
-  { value: 'DEFAULT', label: '自动' },
-  { value: 'BENTO_1', label: '样式 1' },
-  { value: 'BENTO_2', label: '样式 2' },
-  { value: 'BENTO_3', label: '样式 3' },
-  { value: 'BENTO_4', label: '样式 4' },
-  { value: 'BENTO_5', label: '样式 5' },
-  { value: 'BENTO_6', label: '样式 6' },
-  { value: 'BENTO_7', label: '样式 7' }
-]
-
-const FRAME_WALL_VARIANT_OPTIONS = [
-  { value: 'FRAME_WALL_2', label: '2 张', cols: 2, rows: 1 },
-  { value: 'FRAME_WALL_4', label: '4 张', cols: 2, rows: 2 },
-  { value: 'FRAME_WALL_6', label: '6 张', cols: 3, rows: 2 },
-  { value: 'FRAME_WALL_8', label: '8 张', cols: 4, rows: 2 }
-]
+import {
+  BENTO_VARIANT_OPTIONS,
+  DISPLAY_STYLE_OPTIONS,
+  FRAME_WALL_VARIANT_OPTIONS,
+  TRANSITION_STYLE_OPTIONS
+} from '@/constants/albumDisplayOptions'
 
 const BENTO_PREVIEW_SLOTS = {
   DEFAULT: [

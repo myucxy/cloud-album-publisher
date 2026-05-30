@@ -75,6 +75,12 @@ public class Album {
     /** 是否显示时间日期 */
     private Boolean showTimeAndDate;
 
+    /** 是否启用焦点自动检测 */
+    private Boolean focalPointEnabled;
+
+    /** 焦点检测 Provider: NOOP / OPENCV / ONNX / VISION_LLM */
+    private String focalPointProvider;
+
     /** PUBLIC / PRIVATE / DEVICE_ONLY */
     private String visibility;
 

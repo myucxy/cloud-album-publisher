@@ -18,6 +18,7 @@ public class MediaSourceResponse {
     private String boundPath;
     private String boundPathName;
     private Boolean enabled;
+    private String storageMode;
     private Boolean passwordConfigured;
     private LocalDateTime lastScanAt;
     private LocalDateTime createdAt;

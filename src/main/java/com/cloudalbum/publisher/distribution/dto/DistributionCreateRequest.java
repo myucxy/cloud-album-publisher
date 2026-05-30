@@ -34,6 +34,18 @@ public class DistributionCreateRequest {
     @Min(value = 1, message = "展示时长不能小于1秒")
     private Integer itemDuration = 10;
 
+    @Schema(description = "播放转场覆盖，空表示使用相册设置")
+    private String transitionStyle;
+
+    @Schema(description = "展示布局覆盖，空表示使用相册设置")
+    private String displayStyle;
+
+    @Schema(description = "展示布局子样式覆盖，空表示使用相册设置")
+    private String displayVariant;
+
+    @Schema(description = "是否显示时间日期覆盖，空表示使用相册设置")
+    private Boolean showTimeAndDate;
+
     @Schema(description = "关联的设备ID列表")
     private List<Long> deviceIds;
 

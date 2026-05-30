@@ -29,6 +29,18 @@ public class Distribution {
     /** 每张展示时长（秒） */
     private Integer itemDuration;
 
+    /** 播放转场覆盖，空表示继承相册 */
+    private String transitionStyle;
+
+    /** 展示布局覆盖，空表示继承相册 */
+    private String displayStyle;
+
+    /** 展示布局子样式覆盖，空表示继承相册 */
+    private String displayVariant;
+
+    /** 是否显示时间日期覆盖，空表示继承相册 */
+    private Boolean showTimeAndDate;
+
     /** 状态：DRAFT / ACTIVE / DISABLED */
     private String status;
 
