@@ -9,6 +9,15 @@
         <a-tag :color="syncColor">{{ syncLabel }}</a-tag>
       </div>
 
+      <div class="section-title" style="margin-top: 18px">当前播放</div>
+      <div class="now-card">
+        <div class="now-name">{{ currentMedia?.fileName || '暂无媒体' }}</div>
+        <div class="device-meta">分组: {{ currentDistribution?.name || '-' }}</div>
+        <div class="device-meta">相册: {{ currentDistribution?.album?.title || '-' }}</div>
+        <div class="device-meta">最近同步: {{ pulledAt || '-' }}</div>
+        <div v-if="errorMessage" class="error-text">{{ errorMessage }}</div>
+      </div>
+
       <div class="section-header">
         <div class="section-title">播放分组</div>
         <div class="section-summary">已启用 {{ enabledDistributionCount }} / {{ playableDistributions.length }}</div>
@@ -36,14 +45,6 @@
     </div>
 
     <div>
-      <div class="section-title">当前播放</div>
-      <div class="now-card">
-        <div class="now-name">{{ currentMedia?.fileName || '暂无媒体' }}</div>
-        <div class="device-meta">分组: {{ currentDistribution?.name || '-' }}</div>
-        <div class="device-meta">相册: {{ currentDistribution?.album?.title || '-' }}</div>
-        <div class="device-meta">最近同步: {{ pulledAt || '-' }}</div>
-        <div v-if="errorMessage" class="error-text">{{ errorMessage }}</div>
-      </div>
 
       <div class="mute-card">
         <div class="section-title">声音设置</div>
@@ -107,7 +108,7 @@
         <a-button block type="primary" @click="$emit('refresh')">立即同步</a-button>
         <a-button block @click="$emit('check-update')">检查更新</a-button>
         <a-button block @click="$emit('show-system-info')">系统能力</a-button>
-        <a-button block @click="$emit('open-setup')">设备设置</a-button>
+        <a-button block @click="$emit('open-setup')">服务器设置</a-button>
       </a-space>
     </div>
   </div>

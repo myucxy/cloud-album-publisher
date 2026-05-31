@@ -79,9 +79,9 @@ async function collectInteractiveOptions() {
     console.log('')
     const action = await askChoice(rl, '请选择操作', [
       ['all-bump', '全量发布：PC+Android 自动升版本，构建管理前端/PC/Android，更新 manifest'],
-      ['all-docker-bump', '全量发布 + Docker：PC+Android 自动升版本，构建全部客户端后构建 Docker 镜像'],
+      ['all-docker-bump', '全量发布 + Docker：PC+Android 自动升版本，构建管理前端/全部客户端后构建 Docker 镜像'],
       ['all', '全量重打包：不改版本，构建管理前端/PC/Android，更新 manifest'],
-      ['all-docker', '全量重打包 + Docker：不改版本，构建全部客户端后构建 Docker 镜像'],
+      ['all-docker', '全量重打包 + Docker：不改版本，构建管理前端/全部客户端后构建 Docker 镜像'],
       ['pc-bump', 'PC 发布：PC 自动升版本，只构建 PC 客户端，更新 manifest'],
       ['pc', 'PC 重打包：不改版本，只构建 PC 客户端，更新 manifest'],
       ['android-bump', 'Android 发布：Android 自动升版本，只构建 Android APK，更新 manifest'],
@@ -1021,7 +1021,7 @@ function printCompletionMessage(artifacts, dockerResult) {
   if (dockerResult) {
     console.log(`Docker: ${dockerResult.versionImageRef}`)
     console.log(`Docker latest: ${dockerResult.latestImageRef}`)
-    console.log(`示例运行: docker run --rm -p 8080:8080 -e DB_HOST=host.docker.internal -e DB_PORT=3306 -e DB_NAME=cloud_album -e DB_USER=root -e DB_PASSWORD=root -e REDIS_HOST=host.docker.internal -e MINIO_ENDPOINT=http://host.docker.internal:9000 ${dockerResult.latestImageRef}`)
+    console.log(`示例运行: docker run --rm -p 8910:8910 -e DB_HOST=host.docker.internal -e DB_PORT=3306 -e DB_NAME=cloud_album -e DB_USER=root -e DB_PASSWORD=root -e REDIS_HOST=host.docker.internal -e MINIO_ENDPOINT=http://host.docker.internal:9000 ${dockerResult.latestImageRef}`)
   }
 }
 

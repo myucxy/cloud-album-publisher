@@ -15,7 +15,7 @@
       <a-button @click="load">刷新</a-button>
     </div>
 
-    <a-table :data-source="logs" :columns="columns" row-key="id" :loading="loading"
+    <a-table :data-source="logs" :columns="columns" row-key="id" :loading="loading" :scroll="{ x: 'max-content' }"
              :pagination="{ total, current: page, pageSize, onChange: p => { page = p; load() } }">
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'result'">

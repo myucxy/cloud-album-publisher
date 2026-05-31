@@ -102,7 +102,7 @@
     />
 
     <!-- Detail Modal: preview + edit combined -->
-    <a-modal
+    <ResponsiveModal
       v-model:open="detailVisible"
       :title="detailItem?.fileName || '焦点详情'"
       :width="960"
@@ -112,7 +112,7 @@
       cancel-text="关闭"
       :confirm-loading="saving"
     >
-      <div v-if="detailItem" style="display:flex; gap:20px">
+      <div v-if="detailItem" :style="isMobile ? 'display:flex; flex-direction:column; gap:16px' : 'display:flex; gap:20px'">
         <!-- Left: image with editable focal point -->
         <div style="flex:1; min-width:0">
           <div
@@ -122,6 +122,9 @@
             @mousemove="onContainerMouseMove"
             @mouseup="onContainerMouseUp"
             @mouseleave="onContainerMouseUp"
+            @touchstart.prevent="onTouchStart"
+            @touchmove.prevent="onTouchMove"
+            @touchend="onContainerMouseUp"
           >
             <SecureImage
               v-if="detailItem.url"
@@ -136,16 +139,17 @@
               :class="{ dragging: isDragging }"
               :style="markerStyle"
               @mousedown.stop="onMarkerMouseDown"
+              @touchstart.prevent.stop="onMarkerMouseDown"
             />
           </div>
           <div style="margin-top:6px; color:#8c8c8c; font-size:12px; display:flex; justify-content:space-between">
-            <span>点击图片或拖动标记设置焦点</span>
+            <span>{{ isMobile ? '点击/拖动设置焦点' : '点击图片或拖动标记设置焦点' }}</span>
             <a-button size="small" @click="resetEditor">重置为中心</a-button>
           </div>
         </div>
 
         <!-- Right: metadata + coordinates + crop preview -->
-        <div style="width:240px; flex-shrink:0">
+        <div :style="isMobile ? 'width:100%' : 'width:240px; flex-shrink:0'">
           <a-descriptions :column="1" size="small" bordered style="margin-bottom:16px">
             <a-descriptions-item label="文件名">{{ detailItem.fileName }}</a-descriptions-item>
             <a-descriptions-item label="类型">{{ detailItem.mediaType }}</a-descriptions-item>
@@ -184,7 +188,7 @@
           </div>
         </div>
       </div>
-    </a-modal>
+    </ResponsiveModal>
   </div>
 </template>
 
@@ -195,10 +199,13 @@ import { message, Modal } from 'ant-design-vue'
 import { albumApi } from '@/api/album'
 import { focalPointApi } from '@/api/focal-point'
 import SecureImage from '@/components/SecureImage.vue'
+import ResponsiveModal from '@/components/ResponsiveModal.vue'
+import { useResponsive } from '@/composables/useResponsive'
 import { PictureOutlined } from '@ant-design/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
+const { isMobile } = useResponsive()
 const albumId = route.params.albumId
 
 const album = ref(null)
@@ -313,6 +320,30 @@ const onContainerMouseMove = (e) => {
 
 const onContainerMouseUp = () => {
   isDragging.value = false
+}
+
+const updateFocalFromTouch = (e) => {
+  const touch = e.touches?.[0]
+  if (!touch) return
+  const container = imageContainer.value
+  if (!container) return
+  const rect = container.getBoundingClientRect()
+  const x = (touch.clientX - rect.left) / rect.width
+  const y = (touch.clientY - rect.top) / rect.height
+  editorFocalX.value = Math.max(0, Math.min(1, x))
+  editorFocalY.value = Math.max(0, Math.min(1, y))
+}
+
+const onTouchStart = (e) => {
+  if (!isDragging.value) {
+    updateFocalFromTouch(e)
+  }
+}
+
+const onTouchMove = (e) => {
+  if (isDragging.value) {
+    updateFocalFromTouch(e)
+  }
 }
 
 onMounted(async () => {

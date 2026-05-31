@@ -5,7 +5,7 @@
       <a-button @click="load">刷新</a-button>
     </div>
 
-    <a-table :data-source="users" :columns="columns" row-key="id" :loading="loading"
+    <a-table :data-source="users" :columns="columns" row-key="id" :loading="loading" :scroll="{ x: 'max-content' }"
              :pagination="{ total, current: page, pageSize, onChange: p => { page = p; load() } }">
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'status'">
@@ -20,7 +20,10 @@
         <template v-if="column.key === 'action'">
           <a-space>
             <a-button type="link" size="small" @click="openEdit(record)">编辑</a-button>
-            <a-popconfirm title="确认删除该用户？" @confirm="deleteUser(record.id)">
+            <a-tooltip v-if="isAdmin(record)" title="不能删除管理员用户">
+              <a-button type="link" danger size="small" disabled>删除</a-button>
+            </a-tooltip>
+            <a-popconfirm v-else title="确认删除该用户？" @confirm="deleteUser(record.id)">
               <a-button type="link" danger size="small">删除</a-button>
             </a-popconfirm>
           </a-space>
@@ -28,7 +31,7 @@
       </template>
     </a-table>
 
-    <a-modal v-model:open="modalOpen" title="编辑用户" :width="480" @ok="submitForm" :confirm-loading="saving" ok-text="保存" cancel-text="取消">
+    <ResponsiveModal v-model:open="modalOpen" title="编辑用户" :width="480" @ok="submitForm" :confirm-loading="saving" ok-text="保存" cancel-text="取消">
       <a-form :model="form" layout="vertical" ref="formRef">
         <a-form-item label="用户名">
           <a-input v-model:value="form.username" disabled />
@@ -43,7 +46,7 @@
           <a-input v-model:value="form.avatarUrl" placeholder="https://..." />
         </a-form-item>
       </a-form>
-    </a-modal>
+    </ResponsiveModal>
   </div>
 </template>
 
@@ -52,6 +55,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { adminApi } from '@/api/distribution'
 import { DEFAULT_PAGE_SIZE } from '@/constants/pagination'
+import ResponsiveModal from '@/components/ResponsiveModal.vue'
 
 const users = ref([])
 const total = ref(0)
@@ -112,6 +116,10 @@ async function submitForm() {
   } finally {
     saving.value = false
   }
+}
+
+function isAdmin(record) {
+  return (record.roles || []).includes('ADMIN')
 }
 
 async function deleteUser(id) {

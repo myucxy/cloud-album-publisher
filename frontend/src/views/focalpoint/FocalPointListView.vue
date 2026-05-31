@@ -76,7 +76,7 @@
     />
 
     <!-- Config Modal -->
-    <a-modal
+    <ResponsiveModal
       v-model:open="configVisible"
       :title="'配置焦点检测 - ' + (configAlbum?.title || '')"
       @ok="saveConfig"
@@ -102,7 +102,7 @@
           </a-select>
         </a-form-item>
       </a-form>
-    </a-modal>
+    </ResponsiveModal>
   </div>
 </template>
 
@@ -113,6 +113,7 @@ import { message } from 'ant-design-vue'
 import { albumApi } from '@/api/album'
 import { focalPointApi } from '@/api/focal-point'
 import SecureImage from '@/components/SecureImage.vue'
+import ResponsiveModal from '@/components/ResponsiveModal.vue'
 import {
   PictureOutlined,
   SettingOutlined,

@@ -5,7 +5,7 @@ WORKDIR /app
 
 ENV TZ=Asia/Shanghai \
     SPRING_PROFILES_ACTIVE=prod \
-    SERVER_PORT=8080 \
+    SERVER_PORT=8910 \
     DB_HOST=mysql \
     DB_PORT=3306 \
     DB_NAME=cloud_album \
@@ -23,6 +23,6 @@ COPY docker-build/releases/ /app/releases/
 
 RUN mkdir -p /app/data /app/logs
 
-EXPOSE 8080
+EXPOSE 8910
 
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar --server.port=${SERVER_PORT} --spring.profiles.active=${SPRING_PROFILES_ACTIVE}"]

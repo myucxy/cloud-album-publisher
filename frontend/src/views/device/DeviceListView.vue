@@ -15,8 +15,24 @@
       </a-space>
     </div>
 
+    <!-- Mobile: group dropdown -->
+    <div v-if="isMobile" style="margin-bottom:12px">
+      <a-select
+        :value="selectedGroupId"
+        style="width:100%"
+        placeholder="选择设备分组"
+        allow-clear
+        @change="v => selectGroup(v)"
+      >
+        <a-select-option :value="null">全部分组</a-select-option>
+        <a-select-option v-for="group in groups" :key="group.id" :value="group.id">
+          {{ group.name || `设备组 #${group.id}` }} ({{ group.deviceCount || 0 }} 台)
+        </a-select-option>
+      </a-select>
+    </div>
+
     <div class="device-layout">
-      <div class="device-layout-side">
+      <div v-if="!isMobile" class="device-layout-side">
         <a-card class="section-card compact-card">
           <template #title>
             <div class="card-title-row">
@@ -110,6 +126,7 @@
           :loading="deviceLoading || unboundDeviceLoading"
           :pagination="false"
           :locale="{ emptyText: '暂无设备' }"
+          :scroll="{ x: 'max-content' }"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'identity'">
@@ -151,7 +168,7 @@
       </a-card>
     </div>
 
-    <a-modal v-model:open="bindModalOpen" title="绑定未绑定设备" :width="420" @ok="submitBind" :confirm-loading="bindSaving" ok-text="绑定" cancel-text="取消">
+    <ResponsiveModal v-model:open="bindModalOpen" title="绑定未绑定设备" :width="420" @ok="submitBind" :confirm-loading="bindSaving" ok-text="绑定" cancel-text="取消">
       <a-form :model="bindForm" layout="vertical" ref="bindFormRef">
         <a-form-item label="设备唯一 ID">
           <a-input :value="bindForm.deviceUid" disabled />
@@ -163,17 +180,17 @@
           <a-input v-model:value="bindForm.name" placeholder="请输入绑定后的设备名称" />
         </a-form-item>
       </a-form>
-    </a-modal>
+    </ResponsiveModal>
 
-    <a-modal v-model:open="renameModalOpen" title="重命名设备" :width="400" @ok="submitRename" :confirm-loading="renameSaving" ok-text="保存" cancel-text="取消">
+    <ResponsiveModal v-model:open="renameModalOpen" title="重命名设备" :width="400" @ok="submitRename" :confirm-loading="renameSaving" ok-text="保存" cancel-text="取消">
       <a-form :model="renameForm" layout="vertical" ref="renameFormRef">
         <a-form-item label="设备名称" name="name" :rules="[{ required: true, message: '请输入设备名称' }]">
           <a-input v-model:value="renameForm.name" />
         </a-form-item>
       </a-form>
-    </a-modal>
+    </ResponsiveModal>
 
-    <a-modal v-model:open="groupModalOpen" :title="editingGroupId ? '编辑分组' : '新建设备组'" :width="440" @ok="submitGroup" :confirm-loading="groupSaving" ok-text="保存" cancel-text="取消">
+    <ResponsiveModal v-model:open="groupModalOpen" :title="editingGroupId ? '编辑分组' : '新建设备组'" :width="440" @ok="submitGroup" :confirm-loading="groupSaving" ok-text="保存" cancel-text="取消">
       <a-form :model="groupForm" layout="vertical" ref="groupFormRef">
         <a-form-item label="分组名称" name="name" :rules="[{ required: true, message: '请输入分组名称' }]">
           <a-input v-model:value="groupForm.name" />
@@ -182,9 +199,9 @@
           <a-textarea v-model:value="groupForm.description" :rows="3" />
         </a-form-item>
       </a-form>
-    </a-modal>
+    </ResponsiveModal>
 
-    <a-modal v-model:open="memberModalOpen" :title="memberMode === 'add' ? '添加分组成员' : '移除分组成员'"
+    <ResponsiveModal v-model:open="memberModalOpen" :title="memberMode === 'add' ? '添加分组成员' : '移除分组成员'"
              :width="440"
              @ok="submitMember" :confirm-loading="memberSaving"
              :ok-text="memberMode === 'add' ? '添加' : '移除'"
@@ -217,7 +234,7 @@
         <a-alert v-if="memberMode === 'add' && memberDeviceOptions.length === 0" type="info" show-icon message="当前分组已包含所有已绑定设备。" />
         <a-alert v-if="memberMode === 'remove'" type="info" show-icon message="若所选设备当前不在该分组内，接口会返回提示。" />
       </a-form>
-    </a-modal>
+    </ResponsiveModal>
   </div>
 </template>
 
@@ -225,6 +242,10 @@
 import { computed, ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { deviceApi } from '@/api/device'
+import ResponsiveModal from '@/components/ResponsiveModal.vue'
+import { useResponsive } from '@/composables/useResponsive'
+
+const { isMobile } = useResponsive()
 
 const devices = ref([])
 const unboundDevices = ref([])
@@ -336,7 +357,11 @@ async function loadGroups() {
 }
 
 function selectGroup(groupId) {
-  selectedGroupId.value = selectedGroupId.value === groupId ? null : groupId
+  if (isMobile.value) {
+    selectedGroupId.value = groupId ?? null
+  } else {
+    selectedGroupId.value = selectedGroupId.value === groupId ? null : groupId
+  }
 }
 
 function onDeviceFilterChange(event) {

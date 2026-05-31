@@ -25,7 +25,7 @@ public class CloudAlbumPublisherApplication {
     public void onApplicationReady(ApplicationReadyEvent event) {
         Environment environment = event.getApplicationContext().getEnvironment();
         String appName = environment.getProperty("spring.application.name", "cloud-album-publisher");
-        String port = environment.getProperty("server.port", "8080");
+        String port = environment.getProperty("server.port", "8910");
         String contextPath = normalizeContextPath(environment.getProperty("server.servlet.context-path", ""));
         String[] activeProfiles = environment.getActiveProfiles();
         String profileText = activeProfiles.length > 0 ? Arrays.toString(activeProfiles) : "[default]";

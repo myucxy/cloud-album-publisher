@@ -12,7 +12,7 @@
         <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item label="服务器地址">
-              <a-input v-model:value="deviceAuth.serverBaseUrl" placeholder="192.168.1.10:8080">
+              <a-input v-model:value="deviceAuth.serverBaseUrl" placeholder="192.168.1.10:8910">
                 <template #suffix>
                   <a-button type="link" size="small" :loading="discovering" @click="startDiscovery">自动发现</a-button>
                 </template>

@@ -1,6 +1,45 @@
 <template>
-  <div style="display:flex; gap:16px; align-items:flex-start">
-    <div style="width:300px; flex-shrink:0">
+  <div>
+    <!-- Mobile: top filters -->
+    <div v-if="isMobile" style="margin-bottom:8px">
+      <a-card size="small">
+        <a-input-search
+          v-model:value="keywordInput"
+          placeholder="搜索文件名 / 来源 / 目录"
+          allow-clear
+          @search="applyKeyword"
+          style="margin-bottom:8px"
+        />
+        <div style="display:flex; flex-wrap:wrap; gap:6px">
+          <a-tag :color="!filterSourceType ? 'blue' : 'default'" style="cursor:pointer" @click="selectAllLibrary">全部媒体</a-tag>
+          <template v-for="typeGroup in sourceTypeSections" :key="typeGroup.sourceType">
+            <a-tag
+              :color="filterSourceType === typeGroup.sourceType && !filterSourceId ? 'blue' : 'default'"
+              style="cursor:pointer"
+              @click="selectSourceTypeSection(typeGroup)"
+            >
+              {{ sourceTypeLabel(typeGroup.sourceType) }} · {{ typeGroup.mediaCount }}
+            </a-tag>
+          </template>
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px">
+          <a-tag :color="!filterType ? 'blue' : 'default'" style="cursor:pointer" @click="clearTypeFilter">全部类型</a-tag>
+          <a-tag
+            v-for="item in mediaTypeGroups"
+            :key="item.value"
+            :color="filterType === item.value ? 'blue' : 'default'"
+            style="cursor:pointer"
+            @click="selectType(item)"
+          >
+            {{ item.label }} · {{ item.count }}
+          </a-tag>
+        </div>
+      </a-card>
+    </div>
+
+    <div style="display:flex; gap:16px; align-items:flex-start">
+      <!-- Desktop: sidebar -->
+      <div v-if="!isMobile" style="width:300px; flex-shrink:0">
       <a-card title="媒体来源" size="small">
         <template #extra>
           <a-button type="link" size="small" @click="reloadLibrary" :loading="groupLoading || loading">刷新</a-button>
@@ -122,7 +161,7 @@
     <div style="flex:1; min-width:0">
       <a-card>
         <div style="display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:16px">
-          <div style="display:flex; flex-direction:column; gap:12px; flex:1; min-width:320px">
+          <div style="display:flex; flex-direction:column; gap:12px; flex:1; min-width:0">
             <a-space wrap>
               <a-tag color="blue">{{ currentLibraryTitle }}</a-tag>
               <a-tag v-if="externalBrowseActive">路径：{{ externalBrowsePath }}</a-tag>
@@ -167,6 +206,7 @@
           :columns="columns"
           :row-key="resolveMediaRowKey"
           :loading="loading"
+          :scroll="{ x: 'max-content' }"
           :pagination="externalBrowseActive
             ? { total, current: externalBrowsePage, pageSize: externalBrowsePageSize, onChange: onTablePageChange, showLessItems: true }
             : { total, current: page, pageSize, onChange: onTablePageChange }"
@@ -244,8 +284,9 @@
         </a-table>
       </a-card>
     </div>
+    </div>
 
-    <a-drawer v-model:open="mediaSourceDrawerOpen" title="外部媒体源" width="760">
+    <a-drawer v-model:open="mediaSourceDrawerOpen" title="外部媒体源" :width="isMobile ? '100vw' : 760">
       <template #extra>
         <a-space>
           <a-button @click="loadMediaSources" :loading="mediaSourceLoading">刷新</a-button>
@@ -294,7 +335,7 @@
       </a-spin>
     </a-drawer>
 
-    <a-modal
+    <ResponsiveModal
       v-model:open="mediaSourceModalOpen"
       :title="editingMediaSourceId ? '编辑媒体源' : '新增媒体源'"
       :confirm-loading="mediaSourceSaving"
@@ -385,9 +426,9 @@
           <a-switch v-model:checked="mediaSourceForm.enabled" checked-children="启用" un-checked-children="停用" />
         </a-form-item>
       </a-form>
-    </a-modal>
+    </ResponsiveModal>
 
-    <a-modal
+    <ResponsiveModal
       v-model:open="browseModalOpen"
       :title="browseModalTitle"
       :footer="null"
@@ -450,7 +491,7 @@
         size="small"
         :loading="browseLoading"
         :pagination="false"
-        :scroll="{ y: 420 }"
+        :scroll="{ x: 'max-content', y: 420 }"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'name'">
@@ -491,9 +532,9 @@
           </template>
         </template>
       </a-table>
-    </a-modal>
+    </ResponsiveModal>
 
-    <a-drawer v-model:open="uploadDrawerOpen" title="上传媒体文件" width="480" :destroy-on-close="true">
+    <a-drawer v-model:open="uploadDrawerOpen" title="上传媒体文件" :width="isMobile ? '100vw' : 480" :destroy-on-close="true">
       <a-steps :current="uploadStep" size="small" style="margin-bottom:24px">
         <a-step title="选择文件" />
         <a-step title="上传中" />
@@ -575,7 +616,7 @@
       </div>
     </a-drawer>
 
-    <a-modal v-model:open="detailModalOpen" title="媒体详情" :footer="null" :width="620"
+    <ResponsiveModal v-model:open="detailModalOpen" title="媒体详情" :footer="null" :width="620"
              :body-style="{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }">
       <template v-if="selectedMedia">
         <div style="margin-bottom:16px; background:#fafafa; border-radius:8px; padding:16px; text-align:center">
@@ -658,7 +699,7 @@
           <a-descriptions-item v-else label="访问方式" :span="2">服务端代理访问</a-descriptions-item>
         </a-descriptions>
       </template>
-    </a-modal>
+    </ResponsiveModal>
   </div>
 </template>
 
@@ -676,6 +717,8 @@ import {
 import { mediaApi } from '@/api/media'
 import { mediaSourceApi } from '@/api/media-source'
 import SecureImage from '@/components/SecureImage.vue'
+import ResponsiveModal from '@/components/ResponsiveModal.vue'
+import { useResponsive } from '@/composables/useResponsive'
 import { useSecureObjectUrl } from '@/components/useSecureObjectUrl'
 import { DEFAULT_PAGE_SIZE } from '@/constants/pagination'
 
@@ -692,6 +735,8 @@ const mediaList = ref([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = DEFAULT_PAGE_SIZE
+const { isMobile } = useResponsive()
+
 const loading = ref(false)
 const groupLoading = ref(false)
 const filterStatus = ref(undefined)

@@ -29,6 +29,8 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
 import java.net.HttpURLConnection;
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -38,7 +40,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -230,7 +234,11 @@ public class SetupActivity extends AppCompatActivity {
                 .show();
 
         new Thread(() -> {
-            List<String> found = scanSubnet(subnet);
+            List<String> udpResults = broadcastUdpDiscover();
+            List<String> httpResults = scanSubnet(subnet);
+            Set<String> seen = new LinkedHashSet<>(udpResults);
+            seen.addAll(httpResults);
+            List<String> found = new ArrayList<>(seen);
             runOnUiThread(() -> {
                 if (discoverLoadingDialog != null && discoverLoadingDialog.isShowing()) {
                     discoverLoadingDialog.dismiss();
@@ -299,7 +307,7 @@ public class SetupActivity extends AppCompatActivity {
     private List<String> scanSubnet(String subnet) {
         List<String> results = Collections.synchronizedList(new ArrayList<>());
         List<Integer> ports = new ArrayList<>();
-        ports.add(8080);
+        ports.add(8910);
         try {
             URL savedUrl = new URL(sessionRepository.getServerBaseUrl());
             int savedPort = savedUrl.getPort();
@@ -341,6 +349,41 @@ public class SetupActivity extends AppCompatActivity {
         try {
             pool.awaitTermination(8, TimeUnit.SECONDS);
         } catch (InterruptedException ignored) {
+        }
+        return results;
+    }
+
+    private List<String> broadcastUdpDiscover() {
+        List<String> results = new ArrayList<>();
+        try {
+            DatagramSocket socket = new DatagramSocket();
+            socket.setBroadcast(true);
+            socket.setSoTimeout(1500);
+            byte[] request = "CloudAlbum?".getBytes(StandardCharsets.UTF_8);
+            DatagramPacket sendPacket = new DatagramPacket(
+                    request, request.length,
+                    InetAddress.getByName("255.255.255.255"), 8911
+            );
+            socket.send(sendPacket);
+
+            byte[] buf = new byte[512];
+            long deadline = System.currentTimeMillis() + 1500;
+            while (System.currentTimeMillis() < deadline) {
+                try {
+                    DatagramPacket recvPacket = new DatagramPacket(buf, buf.length);
+                    socket.receive(recvPacket);
+                    String response = new String(recvPacket.getData(), 0, recvPacket.getLength(), StandardCharsets.UTF_8).trim();
+                    JSONObject json = new JSONObject(response);
+                    if ("CloudAlbum".equals(json.optString("name"))) {
+                        String ip = recvPacket.getAddress().getHostAddress();
+                        int port = json.optInt("port", 8910);
+                        results.add(ip + ":" + port);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+            socket.close();
+        } catch (Exception ignored) {
         }
         return results;
     }

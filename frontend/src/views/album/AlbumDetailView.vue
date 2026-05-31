@@ -37,6 +37,7 @@
             row-key="id"
             :loading="loading"
             :row-selection="contentRowSelection"
+            :scroll="{ x: 'max-content' }"
             :pagination="{ total, current: page, pageSize, onChange: p => { page = p; loadContents() } }"
           >
 
@@ -94,7 +95,7 @@
               <a-button type="primary" size="small" @click="openBgmModal">添加 BGM</a-button>
             </a-space>
           </template>
-          <a-table :data-source="bgms" :columns="bgmColumns" row-key="id" :pagination="false" :loading="bgmListLoading" :row-class-name="() => 'album-bgm-row'">
+          <a-table :data-source="bgms" :columns="bgmColumns" row-key="id" :pagination="false" :loading="bgmListLoading" :row-class-name="() => 'album-bgm-row'" :scroll="{ x: 'max-content' }">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'index'">
                 {{ (record.sortOrder ?? 0) + 1 }}
@@ -130,7 +131,7 @@
       </a-tab-pane>
     </a-tabs>
 
-    <a-modal v-model:open="coverModalOpen" title="从媒体库选择相册封面" @ok="submitCover" :confirm-loading="saving" :width="1320"
+    <ResponsiveModal v-model:open="coverModalOpen" title="从媒体库选择相册封面" @ok="submitCover" :confirm-loading="saving" :width="1320"
              ok-text="保存" cancel-text="取消"
              :ok-button-props="{ disabled: coverSubmitDisabled }"
              :body-style="{ padding: '16px 20px' }">
@@ -302,9 +303,9 @@
           </div>
         </div>
       </div>
-    </a-modal>
+    </ResponsiveModal>
 
-    <a-modal v-model:open="bgmModalOpen" title="设置 BGM" :width="1320" @ok="submitBgm" :confirm-loading="saving" ok-text="保存" cancel-text="取消"
+    <ResponsiveModal v-model:open="bgmModalOpen" title="设置 BGM" :width="1320" @ok="submitBgm" :confirm-loading="saving" ok-text="保存" cancel-text="取消"
              :ok-button-props="{ disabled: bgmSubmitDisabled }"
              :body-style="{ padding: '16px 20px' }">
       <div class="album-picker-modal-layout album-picker-modal-layout-fixed">
@@ -434,9 +435,9 @@
           </div>
         </div>
       </div>
-    </a-modal>
+    </ResponsiveModal>
 
-    <a-modal v-model:open="addMediaModalOpen" title="添加媒体到相册" @ok="submitAddMedia" :confirm-loading="saving" :width="1320"
+    <ResponsiveModal v-model:open="addMediaModalOpen" title="添加媒体到相册" @ok="submitAddMedia" :confirm-loading="saving" :width="1320"
              ok-text="保存" cancel-text="取消"
              :ok-button-props="{ disabled: addMediaSubmitDisabled }"
              :body-style="{ padding: '16px 20px' }">
@@ -624,7 +625,7 @@
           </div>
         </div>
       </div>
-    </a-modal>
+    </ResponsiveModal>
   </div>
 </template>
 
@@ -643,6 +644,7 @@ import { albumApi } from '@/api/album'
 import { mediaApi } from '@/api/media'
 import { mediaSourceApi } from '@/api/media-source'
 import SecureImage from '@/components/SecureImage.vue'
+import ResponsiveModal from '@/components/ResponsiveModal.vue'
 import SecureAudio from '@/components/SecureAudio.vue'
 import { useSecureObjectUrl } from '@/components/useSecureObjectUrl'
 import { DEFAULT_PAGE_SIZE } from '@/constants/pagination'
@@ -1816,6 +1818,22 @@ function sourceTypeLabel(sourceType) {
 
   .album-picker-pane-scroll {
     overflow: visible;
+  }
+}
+
+@media (max-width: 576px) {
+  .album-picker-modal-sidebar {
+    width: 100%;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .album-picker-modal-selection {
+    padding: 12px;
+  }
+
+  .album-picker-media-grid {
+    gap: 8px;
   }
 }
 

@@ -11,7 +11,7 @@
       <a-button type="primary" @click="openCreate"><plus-outlined /> 新建分发</a-button>
     </div>
 
-    <a-table :data-source="distributions" :columns="columns" row-key="id" :loading="loading"
+    <a-table :data-source="distributions" :columns="columns" row-key="id" :loading="loading" :scroll="{ x: 'max-content' }"
              :pagination="{ total, current: page, pageSize, onChange: p => { page = p; load() } }"
              :expandable="{ expandedRowRender }">
       <template #bodyCell="{ column, record }">
@@ -69,7 +69,7 @@
       </template>
     </a-table>
 
-    <a-modal v-model:open="modalOpen" :title="editingId ? '编辑分发' : '新建分发'"
+    <ResponsiveModal v-model:open="modalOpen" :title="editingId ? '编辑分发' : '新建分发'"
              @ok="submitForm" :confirm-loading="saving" :width="560"
              ok-text="保存" cancel-text="取消"
              :body-style="{ maxHeight: 'calc(100vh - 260px)', overflowY: 'auto' }">
@@ -210,9 +210,9 @@
           />
         </a-form-item>
       </a-form>
-    </a-modal>
+    </ResponsiveModal>
 
-    <a-modal v-model:open="albumPickerOpen" title="选择相册" :footer="null" :width="1320"
+    <ResponsiveModal v-model:open="albumPickerOpen" title="选择相册" :footer="null" :width="1320"
              :body-style="{ padding: '16px 20px' }">
       <div class="distribution-album-picker-layout distribution-album-picker-layout-fixed">
         <div class="distribution-album-picker-sidebar distribution-album-picker-pane-scroll">
@@ -332,7 +332,7 @@
           </div>
         </div>
       </div>
-    </a-modal>
+    </ResponsiveModal>
   </div>
 </template>
 
@@ -344,6 +344,7 @@ import { distributionApi } from '@/api/distribution'
 import { albumApi } from '@/api/album'
 import { deviceApi } from '@/api/device'
 import SecureImage from '@/components/SecureImage.vue'
+import ResponsiveModal from '@/components/ResponsiveModal.vue'
 import { DEFAULT_PAGE_SIZE } from '@/constants/pagination'
 import {
   BENTO_VARIANT_OPTIONS,
@@ -930,6 +931,22 @@ function statusLabel(status) {
 
   .distribution-album-picker-pane-scroll {
     overflow: visible;
+  }
+}
+
+@media (max-width: 576px) {
+  .distribution-album-picker-sidebar {
+    width: 100%;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .distribution-album-picker-selection {
+    padding: 12px;
+  }
+
+  .distribution-album-picker-grid {
+    gap: 8px;
   }
 }
 </style>

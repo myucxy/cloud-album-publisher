@@ -31,7 +31,7 @@
       <a-pagination v-model:current="page" :total="total" :page-size="pageSize" @change="load" show-quick-jumper />
     </div>
 
-    <a-modal v-model:open="modalOpen" :title="editingId ? '编辑相册' : '新建相册'" :width="420" @ok="submitForm" :confirm-loading="saving" ok-text="保存" cancel-text="取消">
+    <ResponsiveModal v-model:open="modalOpen" :title="editingId ? '编辑相册' : '新建相册'" :width="420" @ok="submitForm" :confirm-loading="saving" ok-text="保存" cancel-text="取消">
       <a-form :model="form" layout="vertical" ref="formRef">
         <a-form-item label="相册名称" name="title" :rules="[{required:true}]">
           <a-input v-model:value="form.title" />
@@ -98,7 +98,7 @@
           </div>
         </a-form-item>
       </a-form>
-    </a-modal>
+    </ResponsiveModal>
   </div>
 </template>
 
@@ -109,6 +109,7 @@ import { message } from 'ant-design-vue'
 import { PlusOutlined, PictureOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import { albumApi } from '@/api/album'
 import SecureImage from '@/components/SecureImage.vue'
+import ResponsiveModal from '@/components/ResponsiveModal.vue'
 import { DEFAULT_PAGE_SIZE } from '@/constants/pagination'
 import {
   BENTO_VARIANT_OPTIONS,

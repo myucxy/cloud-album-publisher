@@ -10,6 +10,7 @@
       :data-source="configs"
       :loading="loading"
       row-key="id"
+      :scroll="{ x: 'max-content' }"
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'status'">
@@ -32,7 +33,7 @@
     </a-table>
 
     <!-- Create/Edit Modal -->
-    <a-modal
+    <ResponsiveModal
       v-model:open="modalVisible"
       :title="editingId ? '编辑 LLM 配置' : '新建 LLM 配置'"
       :width="600"
@@ -68,7 +69,7 @@
           <a-switch v-model:checked="form.enabled" />
         </a-form-item>
       </a-form>
-    </a-modal>
+    </ResponsiveModal>
   </div>
 </template>
 
@@ -76,6 +77,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { focalPointApi } from '@/api/focal-point'
+import ResponsiveModal from '@/components/ResponsiveModal.vue'
 
 const configs = ref([])
 const loading = ref(false)

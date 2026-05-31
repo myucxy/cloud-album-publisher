@@ -2,6 +2,18 @@
 
 Spring Boot 3 后端主工程，承载认证、用户、相册、媒体源、设备、内容分发、审核、焦点检测等核心能力；仓库同时包含管理端前端、设备端客户端和安卓播放客户端。
 
+---
+
+> **推荐优先使用 [ShowcaseApp](https://github.com/mrjoechen/ShowcaseApp)**
+>
+> 本项目的相册显示模式、日历模式、Bento 布局等功能大量参考了 [ShowcaseApp](https://github.com/mrjoechen/ShowcaseApp)。ShowcaseApp 是一款优雅的数字相框应用，支持 Android、iOS 多平台，提供 FTP/SFTP/SMB/WebDAV 等多种媒体源接入，以及幻灯片、图片墙、日历、Bento 等丰富的显示样式。
+>
+> **如果你的需求是将闲置设备变成数字相框展示照片，ShowcaseApp 是更轻量、更成熟的选择，强烈建议优先使用。**
+>
+> 本项目（cloud-album-publisher）侧重于**服务端管理 + 多设备集中分发**的场景，适合需要通过后台统一管理相册、媒体源、设备绑定和内容分发的用户。
+
+---
+
 ## 技术栈
 
 | 组件 | 版本 |
@@ -92,8 +104,8 @@ npm run dev
 
 ### 第四步：验证
 
-- Swagger UI：`http://localhost:8080/swagger-ui.html`
-- 健康检查：`http://localhost:8080/actuator/health`
+- Swagger UI：`http://localhost:8910/swagger-ui.html`
+- 健康检查：`http://localhost:8910/actuator/health`
 - 数据库：默认连接 MySQL（`localhost:3306/cloud_album`，可通过 `DB_*` 环境变量覆盖）
 
 ## 开发环境与数据库说明

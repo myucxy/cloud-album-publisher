@@ -19,7 +19,7 @@ public class DiscoverController {
     @Operation(summary = "局域网服务发现")
     @GetMapping
     public Result<Map<String, Object>> discover(HttpServletRequest request) {
-        int port = 8080;
+        int port = 8910;
         String host = request.getHeader("Host");
         if (host != null) {
             int colonIndex = host.lastIndexOf(':');

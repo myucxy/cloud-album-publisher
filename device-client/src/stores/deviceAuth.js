@@ -40,7 +40,7 @@ function resolveDeviceType(platform) {
 
 export const useDeviceAuthStore = defineStore('deviceAuth', () => {
   const initialized = ref(false)
-  const serverBaseUrl = ref(sanitizeServerAddress(localStorage.getItem('device_server_base_url') || 'localhost:8080'))
+  const serverBaseUrl = ref(sanitizeServerAddress(localStorage.getItem('device_server_base_url') || 'localhost:8910'))
   const deviceUid = ref(localStorage.getItem('device_uid') || '')
   const deviceId = ref(localStorage.getItem('device_id') || '')
   const deviceName = ref(localStorage.getItem('device_name') || '')
@@ -157,11 +157,11 @@ export const useDeviceAuthStore = defineStore('deviceAuth', () => {
     if (!localIp) return []
 
     const subnet = localIp.split('.').slice(0, 3).join('.')
-    const ports = [8080]
+    const ports = [8910]
     try {
       const parts = serverBaseUrl.value.split(':')
       const savedPort = parseInt(parts[parts.length - 1], 10)
-      if (savedPort && savedPort !== 8080) ports.push(savedPort)
+      if (savedPort && savedPort !== 8910) ports.push(savedPort)
     } catch {}
     const promises = []
     for (let i = 1; i <= 254; i++) {

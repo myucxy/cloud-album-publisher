@@ -14,6 +14,7 @@ import com.cloudalbum.publisher.android.R;
 public class AboutActivity extends AppCompatActivity {
 
     private static final String GITHUB_URL = "https://github.com/myucxy/cloud-album-publisher";
+    private static final String SHOWCASE_URL = "https://github.com/mrjoechen/ShowcaseApp";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,11 +40,15 @@ public class AboutActivity extends AppCompatActivity {
 
         // GitHub 按钮
         Button openGithubButton = findViewById(R.id.openGithubButton);
-        openGithubButton.setOnClickListener(v -> openGithubPage());
+        openGithubButton.setOnClickListener(v -> openUrl(GITHUB_URL));
+
+        // ShowcaseApp 按钮
+        Button openShowcaseButton = findViewById(R.id.openShowcaseButton);
+        openShowcaseButton.setOnClickListener(v -> openUrl(SHOWCASE_URL));
     }
 
-    private void openGithubPage() {
-        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_URL));
+    private void openUrl(String url) {
+        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
         if (intent.resolveActivity(getPackageManager()) != null) {
             startActivity(intent);
         }

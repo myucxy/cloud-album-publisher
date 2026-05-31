@@ -14,7 +14,7 @@ services:
         condition: service_started
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      SERVER_PORT: 8080
+      SERVER_PORT: 8910
       DB_HOST: mysql
       DB_PORT: 3306
       DB_NAME: cloud_album
@@ -28,7 +28,8 @@ services:
       RELEASE_MANIFEST_PATH: /app/releases/manifest.json
       RELEASE_DOWNLOADS_LOCATION: file:/app/releases/
     ports:
-      - "8080:8080"
+      - "8910:8910"
+      - "8911:8911/udp"
 
   mysql:
     image: mysql:8.0

@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { message } from 'ant-design-vue'
 
-const DEFAULT_SERVER_ADDRESS = 'localhost:8080'
+const DEFAULT_SERVER_ADDRESS = 'localhost:8910'
 const SUCCESS_CODE = 200
 
 export function sanitizeServerAddress(value) {
@@ -15,7 +15,7 @@ export function sanitizeServerAddress(value) {
   try {
     const url = new URL(candidate)
     if (!url.port && url.protocol === 'http:') {
-      url.port = '8080'
+      url.port = '8910'
     }
     return url.host || DEFAULT_SERVER_ADDRESS
   } catch {

@@ -10,7 +10,7 @@ param(
     [string]$MinioRootPassword = $(if ($env:MINIO_ROOT_PASSWORD) { $env:MINIO_ROOT_PASSWORD } else { "minioadmin" }),
     [string]$MinioApiPort = $(if ($env:MINIO_API_PORT) { $env:MINIO_API_PORT } else { "9000" }),
     [string]$MinioConsolePort = $(if ($env:MINIO_CONSOLE_PORT) { $env:MINIO_CONSOLE_PORT } else { "9001" }),
-    [string]$AppPort = $(if ($env:APP_PORT) { $env:APP_PORT } else { "8080" }),
+    [string]$AppPort = $(if ($env:APP_PORT) { $env:APP_PORT } else { "8910" }),
     [string]$MysqlImage = $(if ($env:MYSQL_IMAGE) { $env:MYSQL_IMAGE } else { "mysql:8.0" }),
     [string]$RedisImage = $(if ($env:REDIS_IMAGE) { $env:REDIS_IMAGE } else { "redis:7" }),
     [string]$MinioImage = $(if ($env:MINIO_IMAGE) { $env:MINIO_IMAGE } else { "minio/minio:latest" })
@@ -164,7 +164,7 @@ function Ensure-App {
         "--name", $name,
         "--network", $NetworkName,
         "--network-alias", "app",
-        "-p", "${AppPort}:8080",
+        "-p", "${AppPort}:8910",
         "-e", "DB_HOST=mysql",
         "-e", "DB_PORT=3306",
         "-e", "DB_NAME=$MysqlDatabase",

@@ -7,7 +7,7 @@ set PATH=%JAVA_HOME%\bin;%PATH%
 
 :: ── 可在此处修改默认值，也可以通过环境变量覆盖 ────────────────────
 if not defined SPRING_PROFILES_ACTIVE set SPRING_PROFILES_ACTIVE=dev
-if not defined SERVER_PORT               set SERVER_PORT=8080
+if not defined SERVER_PORT               set SERVER_PORT=8910
 if not defined JVM_OPTS                  set JVM_OPTS=-Xms256m -Xmx512m
 if not defined DB_HOST                   set DB_HOST=localhost
 if not defined DB_PORT                   set DB_PORT=3306

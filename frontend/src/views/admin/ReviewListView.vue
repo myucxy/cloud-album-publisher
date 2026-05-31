@@ -7,7 +7,7 @@
       </a-space>
     </div>
 
-    <a-table :data-source="reviews" :columns="columns" row-key="id" :loading="loading"
+    <a-table :data-source="reviews" :columns="columns" row-key="id" :loading="loading" :scroll="{ x: 'max-content' }"
              :pagination="{ total, current: page, pageSize, onChange: p => { page = p; loadReviews() } }">
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'target'">
@@ -36,7 +36,7 @@
       </template>
     </a-table>
 
-    <a-modal v-model:open="reviewModalOpen"
+    <ResponsiveModal v-model:open="reviewModalOpen"
              :title="reviewAction === 'APPROVED' ? '通过审核' : '拒绝审核'"
              :width="440"
              @ok="submitReview" :confirm-loading="saving"
@@ -52,9 +52,9 @@
           <a-textarea v-model:value="reviewComment" :rows="3" placeholder="输入拒绝原因..." />
         </a-form-item>
       </a-form>
-    </a-modal>
+    </ResponsiveModal>
 
-    <a-modal v-model:open="settingsModalOpen"
+    <ResponsiveModal v-model:open="settingsModalOpen"
              title="审核设置"
              :width="420"
              @ok="submitSettings" :confirm-loading="settingsSaving"
@@ -67,7 +67,7 @@
           </a-form-item>
         </a-spin>
       </a-form>
-    </a-modal>
+    </ResponsiveModal>
   </div>
 </template>
 
@@ -76,6 +76,7 @@ import { ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { adminApi } from '@/api/distribution'
 import { DEFAULT_PAGE_SIZE } from '@/constants/pagination'
+import ResponsiveModal from '@/components/ResponsiveModal.vue'
 
 const reviews = ref([])
 const total = ref(0)

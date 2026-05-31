@@ -1,6 +1,6 @@
 <template>
   <div class="auth-wrapper">
-    <a-card title="登录智控云影" style="width: 380px">
+    <a-card title="登录智控云影" style="width: 100%; max-width: 420px; margin: 0 16px">
       <a-form :model="form" :rules="rules" ref="formRef" @finish="onSubmit" layout="vertical">
         <a-form-item label="用户名" name="username">
           <a-input v-model:value="form.username" placeholder="请输入用户名" size="large" />
@@ -18,9 +18,6 @@
             <a-button block size="large">下载客户端</a-button>
           </router-link>
         </a-form-item>
-        <div style="text-align:center">
-          没有账号？<router-link to="/register">立即注册</router-link>
-        </div>
       </a-form>
     </a-card>
   </div>

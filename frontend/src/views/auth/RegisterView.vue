@@ -1,6 +1,6 @@
 <template>
   <div class="auth-wrapper">
-    <a-card title="注册智控云影" style="width: 420px">
+    <a-card title="注册智控云影" style="width: 100%; max-width: 420px; margin: 0 16px">
       <a-form :model="form" :rules="rules" ref="formRef" @finish="onSubmit" layout="vertical">
         <a-form-item label="用户名" name="username">
           <a-input v-model:value="form.username" placeholder="4-20位字母数字" size="large" />

@@ -1,6 +1,7 @@
 <template>
   <a-layout style="min-height: 100vh">
-    <a-layout-sider v-model:collapsed="collapsed" collapsible>
+    <!-- Desktop: sider -->
+    <a-layout-sider v-if="!isMobile" v-model:collapsed="collapsed" collapsible>
       <div class="logo">{{ collapsed ? '云影' : '智控云影' }}</div>
       <a-menu theme="dark" mode="inline" :selected-keys="menuSelectedKeys" @click="onMenuClick">
         <a-menu-item key="/albums">
@@ -30,9 +31,50 @@
       </a-menu>
     </a-layout-sider>
 
+    <!-- Mobile: drawer -->
+    <a-drawer
+      v-if="isMobile"
+      v-model:open="mobileMenuVisible"
+      placement="left"
+      :width="240"
+      :body-style="{ padding: 0, background: '#001529' }"
+      :header-style="{ display: 'none' }"
+    >
+      <div class="logo">智控云影</div>
+      <a-menu theme="dark" mode="inline" :selected-keys="menuSelectedKeys" @click="onMobileMenuClick">
+        <a-menu-item key="/albums">
+          <picture-outlined />
+          <span>相册管理</span>
+        </a-menu-item>
+        <a-menu-item key="/media">
+          <file-image-outlined />
+          <span>媒体管理</span>
+        </a-menu-item>
+        <a-menu-item key="/distributions">
+          <deployment-unit-outlined />
+          <span>内容分发</span>
+        </a-menu-item>
+        <a-menu-item key="/devices">
+          <desktop-outlined />
+          <span>设备管理</span>
+        </a-menu-item>
+        <a-menu-item key="/focal-point">
+          <aim-outlined />
+          <span>焦点管理</span>
+        </a-menu-item>
+        <a-menu-item v-if="isAdmin" key="/admin/users">
+          <team-outlined />
+          <span>用户管理</span>
+        </a-menu-item>
+      </a-menu>
+    </a-drawer>
+
     <a-layout>
-      <a-layout-header style="background:#fff; padding: 0 24px; display:flex; align-items:center; justify-content:space-between">
-        <span style="font-weight:600; font-size:16px">{{ pageTitle }}</span>
+      <a-layout-header class="layout-header">
+        <div style="display:flex; align-items:center; gap:12px">
+          <MenuOutlined v-if="isMobile" style="font-size:18px; cursor:pointer" @click="mobileMenuVisible = true" />
+          <span style="font-weight:600; font-size:16px">{{ pageTitle }}</span>
+        </div>
         <a-dropdown>
           <a-space style="cursor:pointer">
             <user-outlined />
@@ -47,13 +89,13 @@
         </a-dropdown>
       </a-layout-header>
 
-      <a-layout-content style="margin: 24px; min-height: 280px">
+      <a-layout-content class="layout-content">
         <router-view />
       </a-layout-content>
     </a-layout>
   </a-layout>
 
-  <a-modal
+  <ResponsiveModal
     v-model:open="changePasswordOpen"
     title="修改密码"
     :width="420"
@@ -73,7 +115,7 @@
         <a-input-password v-model:value="changePasswordForm.confirmPassword" placeholder="请再次输入新密码" />
       </a-form-item>
     </a-form>
-  </a-modal>
+  </ResponsiveModal>
 </template>
 
 <script setup>
@@ -82,15 +124,19 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   PictureOutlined, FileImageOutlined, DesktopOutlined, DeploymentUnitOutlined,
-  TeamOutlined, UserOutlined, AimOutlined
+  TeamOutlined, UserOutlined, AimOutlined, MenuOutlined
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
+import { useResponsive } from '@/composables/useResponsive'
+import ResponsiveModal from '@/components/ResponsiveModal.vue'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const { isMobile } = useResponsive()
 const collapsed = ref(false)
+const mobileMenuVisible = ref(false)
 const changePasswordOpen = ref(false)
 const changePasswordLoading = ref(false)
 const changePasswordFormRef = ref()
@@ -149,6 +195,11 @@ function onMenuClick({ key }) {
   router.push(key)
 }
 
+function onMobileMenuClick({ key }) {
+  mobileMenuVisible.value = false
+  router.push(key)
+}
+
 function resetChangePasswordForm() {
   Object.assign(changePasswordForm, { oldPassword: '', newPassword: '', confirmPassword: '' })
   changePasswordFormRef.value?.clearValidate()
@@ -193,5 +244,18 @@ async function handleLogout() {
   background: rgba(255,255,255,0.1);
   overflow: hidden;
   white-space: nowrap;
+}
+
+.layout-header {
+  background: #fff;
+  padding: 0 var(--content-padding);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.layout-content {
+  margin: var(--content-padding);
+  min-height: 280px;
 }
 </style>
