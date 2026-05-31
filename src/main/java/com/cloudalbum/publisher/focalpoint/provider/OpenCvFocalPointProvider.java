@@ -7,6 +7,8 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
 import javax.imageio.ImageIO;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -22,6 +24,7 @@ import static org.bytedeco.opencv.global.opencv_imgproc.*;
 public class OpenCvFocalPointProvider implements FocalPointProvider {
 
     private static final String FACE_CASCADE_PATH = "opencv/haarcascade_frontalface_alt.xml";
+    private static final int MAX_PROCESS_DIMENSION = 1600;
     private CascadeClassifier faceCascade;
     private volatile boolean cascadeLoadAttempted = false;
 
@@ -33,9 +36,27 @@ public class OpenCvFocalPointProvider implements FocalPointProvider {
     @Override
     public List<FocalPointResult> detect(InputStream imageInputStream, Map<String, Object> extraConfig) {
         try {
-            BufferedImage bufferedImage = ImageIO.read(imageInputStream);
-            if (bufferedImage == null) {
+            BufferedImage originalImage = ImageIO.read(imageInputStream);
+            if (originalImage == null) {
                 return Collections.emptyList();
+            }
+
+            int originalWidth = originalImage.getWidth();
+            int originalHeight = originalImage.getHeight();
+            BufferedImage bufferedImage = originalImage;
+
+            // Downscale large images to reduce memory usage
+            if (originalWidth > MAX_PROCESS_DIMENSION || originalHeight > MAX_PROCESS_DIMENSION) {
+                double scale = (double) MAX_PROCESS_DIMENSION / Math.max(originalWidth, originalHeight);
+                int scaledWidth = (int) (originalWidth * scale);
+                int scaledHeight = (int) (originalHeight * scale);
+                bufferedImage = new BufferedImage(scaledWidth, scaledHeight, BufferedImage.TYPE_3BYTE_BGR);
+                Graphics2D g = bufferedImage.createGraphics();
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                g.drawImage(originalImage, 0, 0, scaledWidth, scaledHeight, null);
+                g.dispose();
+                originalImage.flush();
+                log.debug("Downscaled image from {}x{} to {}x{}", originalWidth, originalHeight, scaledWidth, scaledHeight);
             }
 
             Mat mat = bufferedImageToMat(bufferedImage);

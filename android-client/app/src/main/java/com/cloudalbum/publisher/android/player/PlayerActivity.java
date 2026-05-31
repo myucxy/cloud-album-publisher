@@ -92,7 +92,6 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private static final long UPDATE_POLL_INTERVAL_MS = 60 * 1000L;
     private static final long IMAGE_ADVANCE_RETRY_DELAY_MS = 200L;
     private static final int IMAGE_ADVANCE_MAX_RETRY_COUNT = 8;
-    private static final int DRAWER_FOCUS_TOP_EXTRA_DP = 96;
     private static final int DRAWER_HANDLE_SWIPE_THRESHOLD_DP = 36;
     private static final long IMAGE_TRANSITION_DURATION_MS = 650L;
     private static final int ADVANCED_IMAGE_POOL_SIZE = 19;
@@ -108,7 +107,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         ADVANCED_DISPLAY_STYLES.add("CAROUSEL");
     }
     private static final String REFRESH_BUTTON_LABEL = "\u7acb\u5373\u540c\u6b65";
-    private static final String SETUP_BUTTON_LABEL = "\u8bbe\u7f6e";
+    private static final String SETUP_BUTTON_LABEL = "\u670d\u52a1\u5668\u8bbe\u7f6e";
     private static final String APP_UPDATE_TITLE = "\u7248\u672c\u66f4\u65b0";
     private static final String APP_UPDATE_CHECKING = "\u6b63\u5728\u68c0\u67e5\u65b0\u7248\u672c...";
     private static final String APP_UPDATE_CURRENT = "\u5df2\u662f\u6700\u65b0\u7248\u672c";
@@ -180,7 +179,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService backgroundExecutor = Executors.newFixedThreadPool(2);
-    private final Rect drawerFocusRect = new Rect();
+
     private final Runnable imageAdvanceRunnable = new Runnable() {
         @Override
         public void run() {
@@ -275,6 +274,12 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     private Button refreshButton;
     private Button setupButton;
     private Button appUpdateButton;
+    private LinearLayout appUpdatePanel;
+    private LinearLayout rotationPanel;
+    private LinearLayout mutePanel;
+    private LinearLayout displayModePanel;
+    private LinearLayout brightnessPanel;
+    private LinearLayout bootAutoStartPanel;
     private Button aboutButton;
     private Button systemCapabilityButton;
     private Button systemCapabilityCloseButton;
@@ -510,6 +515,12 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         refreshButton = findViewById(R.id.refreshButton);
         setupButton = findViewById(R.id.setupButton);
         appUpdateButton = findViewById(R.id.appUpdateButton);
+        appUpdatePanel = findViewById(R.id.appUpdatePanel);
+        rotationPanel = findViewById(R.id.rotationPanel);
+        mutePanel = findViewById(R.id.mutePanel);
+        displayModePanel = findViewById(R.id.displayModePanel);
+        brightnessPanel = findViewById(R.id.brightnessPanel);
+        bootAutoStartPanel = findViewById(R.id.bootAutoStartPanel);
         aboutButton = findViewById(R.id.aboutButton);
         systemCapabilityButton = findViewById(R.id.systemCapabilityButton);
         systemCapabilityCloseButton = findViewById(R.id.systemCapabilityCloseButton);
@@ -557,6 +568,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         rebuildBrightnessHourOptions(brightnessEndSpinner, sessionRepository.getBrightnessEndHour());
         rebuildBrightnessDimOptions();
         updateBrightnessSummary();
+        updateBrightnessSpinnerFocusable(sessionRepository.isBrightnessScheduleEnabled());
         bootAutoStartTitleText.setText(BOOT_AUTO_START_TITLE);
         bootAutoStartToggleCheckBox.setText(BOOT_AUTO_START_LABEL);
         bootAutoStartToggleCheckBox.setChecked(sessionRepository.isBootAutoStartEnabled());
@@ -620,6 +632,12 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
                 }
             }
         });
+        appUpdatePanel.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                checkAppUpdate(false);
+            }
+        });
         muteToggleCheckBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
@@ -643,6 +661,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 sessionRepository.saveBrightnessScheduleEnabled(isChecked);
                 updateBrightnessSummary();
+                updateBrightnessSpinnerFocusable(isChecked);
                 applyBrightness();
             }
         });
@@ -704,6 +723,24 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             }
         };
         homeLauncherToggleCheckBox.setOnCheckedChangeListener(homeLauncherCheckedChangeListener);
+        rotationPanel.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                rotationSpinner.performClick();
+            }
+        });
+        mutePanel.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                muteToggleCheckBox.toggle();
+            }
+        });
+        displayModePanel.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                displayModeToggleCheckBox.toggle();
+            }
+        });
         launchOriginalHomeButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -2936,6 +2973,18 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         }
     }
 
+    private void updateBrightnessSpinnerFocusable(boolean enabled) {
+        brightnessStartSpinner.setFocusable(enabled);
+        brightnessEndSpinner.setFocusable(enabled);
+        brightnessDimSpinner.setFocusable(enabled);
+        if (!enabled) {
+            brightnessStartSpinner.setFocusableInTouchMode(false);
+            brightnessEndSpinner.setFocusableInTouchMode(false);
+            brightnessDimSpinner.setFocusableInTouchMode(false);
+        }
+        rebuildDrawerFocusOrder();
+    }
+
 
     private void updateMuteSummary() {
         muteSummaryText.setText(playbackMuted ? MUTE_ENABLED_LABEL : MUTE_DISABLED_LABEL);
@@ -3486,23 +3535,20 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
     }
 
     private void rebuildDrawerFocusOrder() {
+        View focusedView = getCurrentFocus();
+
         drawerFocusableViews.clear();
         addDrawerFocusableView(deviceInfoPanel);
         addDrawerFocusableView(currentMediaPanel);
         collectFocusableChildren(playbackSelectionContainer);
         addDrawerFocusableView(refreshButton);
         addDrawerFocusableView(setupButton);
-        addDrawerFocusableView(appUpdateButton);
-        addDrawerFocusableView(rotationSpinner);
-        addDrawerFocusableView(muteToggleCheckBox);
-        addDrawerFocusableView(displayModeToggleCheckBox);
-        addDrawerFocusableView(brightnessToggleCheckBox);
-        addDrawerFocusableView(brightnessStartSpinner);
-        addDrawerFocusableView(brightnessEndSpinner);
-        addDrawerFocusableView(brightnessDimSpinner);
-        addDrawerFocusableView(bootAutoStartToggleCheckBox);
-        addDrawerFocusableView(homeLauncherToggleCheckBox);
-        addDrawerFocusableView(launchOriginalHomeButton);
+        addDrawerFocusableView(appUpdatePanel);
+        addDrawerFocusableView(rotationPanel);
+        addDrawerFocusableView(mutePanel);
+        addDrawerFocusableView(displayModePanel);
+        collectFocusableChildren(brightnessPanel);
+        collectFocusableChildren(bootAutoStartPanel);
         addDrawerFocusableView(aboutButton);
         addDrawerFocusableView(systemCapabilityButton);
 
@@ -3512,6 +3558,11 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
             View down = i < drawerFocusableViews.size() - 1 ? drawerFocusableViews.get(i + 1) : current;
             current.setNextFocusUpId(up.getId());
             current.setNextFocusDownId(down.getId());
+        }
+
+        if (focusedView != null && focusedView.isAttachedToWindow()
+                && focusedView.getVisibility() == View.VISIBLE && focusedView.isFocusable()) {
+            focusedView.requestFocus();
         }
     }
 
@@ -3553,7 +3604,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         if (view.getVisibility() != View.VISIBLE || !view.isEnabled()) {
             return;
         }
-        if (view instanceof CheckBox || view instanceof Button) {
+        if (view instanceof CheckBox || view instanceof Button || view instanceof Spinner) {
             addDrawerFocusableView(view);
             return;
         }
@@ -3579,12 +3630,14 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         menuDrawer.post(new Runnable() {
             @Override
             public void run() {
-                focusedView.getDrawingRect(drawerFocusRect);
-                menuDrawer.offsetDescendantRectToMyCoords(focusedView, drawerFocusRect);
-                int extraTop = focusedView == refreshButton ? dp(DRAWER_FOCUS_TOP_EXTRA_DP) : dp(16);
-                drawerFocusRect.top = Math.max(0, drawerFocusRect.top - extraTop);
-                drawerFocusRect.bottom = drawerFocusRect.bottom + dp(16);
-                menuDrawer.requestChildRectangleOnScreen(focusedView, drawerFocusRect, false);
+                int viewTop = 0;
+                View child = focusedView;
+                while (child != menuDrawer && child != null) {
+                    viewTop += child.getTop();
+                    child = (View) child.getParent();
+                }
+                int targetScroll = Math.max(0, viewTop - dp(32));
+                menuDrawer.smoothScrollTo(0, targetScroll);
             }
         });
     }

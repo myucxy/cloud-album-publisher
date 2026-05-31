@@ -21,8 +21,8 @@ android {
         applicationId "com.cloudalbum.publisher.android"
         minSdk 19
         targetSdk 34
-        versionCode 114
-        versionName "1.0.14"
+        versionCode 123
+        versionName "1.0.23"
         multiDexEnabled true
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"

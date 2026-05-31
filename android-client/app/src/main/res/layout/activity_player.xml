@@ -177,7 +177,9 @@
         android:layout_height="match_parent"
         android:layout_gravity="start"
         android:background="@color/ca_background"
-        android:fillViewport="true">
+        android:fillViewport="true"
+        android:focusable="false"
+        android:focusableInTouchMode="false">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -281,7 +283,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
-                android:nextFocusDown="@id/setupButton"
+                android:focusable="true"
+                android:focusableInTouchMode="false"
                 android:text="@string/refresh" />
 
             <Button
@@ -290,7 +293,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:nextFocusUp="@id/refreshButton"
+                android:focusable="true"
+                android:focusableInTouchMode="false"
                 android:text="@string/open_setup" />
 
             <LinearLayout
@@ -298,7 +302,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:background="@drawable/bg_panel"
+                android:background="@drawable/bg_menu_panel"
+                android:clickable="true"
+                android:descendantFocusability="blocksDescendants"
+                android:focusable="true"
+                android:focusableInTouchMode="false"
                 android:orientation="vertical"
                 android:padding="@dimen/panel_padding">
 
@@ -332,7 +340,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:background="@drawable/bg_panel"
+                android:background="@drawable/bg_menu_panel"
+                android:descendantFocusability="blocksDescendants"
+                android:focusable="true"
+                android:focusableInTouchMode="false"
                 android:orientation="vertical"
                 android:padding="@dimen/panel_padding">
 
@@ -366,7 +377,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:background="@drawable/bg_panel"
+                android:background="@drawable/bg_menu_panel"
+                android:descendantFocusability="blocksDescendants"
+                android:focusable="true"
+                android:focusableInTouchMode="false"
                 android:orientation="vertical"
                 android:padding="@dimen/panel_padding">
 
@@ -398,7 +412,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:background="@drawable/bg_panel"
+                android:background="@drawable/bg_menu_panel"
+                android:descendantFocusability="blocksDescendants"
+                android:focusable="true"
+                android:focusableInTouchMode="false"
                 android:orientation="vertical"
                 android:padding="@dimen/panel_padding">
 
@@ -430,7 +447,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:background="@drawable/bg_panel"
+                android:background="@drawable/bg_menu_panel"
+                android:descendantFocusability="afterDescendants"
                 android:orientation="vertical"
                 android:padding="@dimen/panel_padding">
 
@@ -476,6 +494,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
+                        android:background="@drawable/bg_menu_option"
                         android:focusable="true"
                         android:focusableInTouchMode="false" />
                 </LinearLayout>
@@ -500,6 +519,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
+                        android:background="@drawable/bg_menu_option"
                         android:focusable="true"
                         android:focusableInTouchMode="false" />
                 </LinearLayout>
@@ -524,6 +544,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
+                        android:background="@drawable/bg_menu_option"
                         android:focusable="true"
                         android:focusableInTouchMode="false" />
                 </LinearLayout>
@@ -535,7 +556,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:background="@drawable/bg_panel"
+                android:background="@drawable/bg_menu_panel"
+                android:descendantFocusability="afterDescendants"
                 android:orientation="vertical"
                 android:padding="@dimen/panel_padding">
 

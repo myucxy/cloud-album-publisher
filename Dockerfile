@@ -16,7 +16,20 @@ ENV TZ=Asia/Shanghai \
     MINIO_ENDPOINT=http://minio:9000 \
     RELEASE_MANIFEST_PATH=/app/releases/manifest.json \
     RELEASE_DOWNLOADS_LOCATION=file:/app/releases/ \
-    JAVA_OPTS="-Xms256m -Xmx512m"
+    JAVA_OPTS="-Xms512m -Xmx1024m"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgtk2.0-0 \
+    libglib2.0-0 \
+    libcairo2 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libfontconfig1 \
+    libfreetype6 \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY docker-build/app.jar /app/app.jar
 COPY docker-build/releases/ /app/releases/
