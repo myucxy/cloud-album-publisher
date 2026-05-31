@@ -3489,6 +3489,7 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         drawerFocusableViews.clear();
         addDrawerFocusableView(deviceInfoPanel);
         addDrawerFocusableView(currentMediaPanel);
+        collectFocusableChildren(playbackSelectionContainer);
         addDrawerFocusableView(refreshButton);
         addDrawerFocusableView(setupButton);
         addDrawerFocusableView(appUpdateButton);
@@ -3502,7 +3503,6 @@ public class PlayerActivity extends AppCompatActivity implements PullSyncCoordin
         addDrawerFocusableView(bootAutoStartToggleCheckBox);
         addDrawerFocusableView(homeLauncherToggleCheckBox);
         addDrawerFocusableView(launchOriginalHomeButton);
-        collectFocusableChildren(playbackSelectionContainer);
         addDrawerFocusableView(aboutButton);
         addDrawerFocusableView(systemCapabilityButton);
 
